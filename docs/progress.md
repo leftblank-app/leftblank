@@ -7,7 +7,7 @@ Date: 2026-10-01. This record preserves evidence from each development iteration
 ## 0.5.0 (9) follow-up · Real books and visual discovery
 
 - Reproduced multi-megabyte input stalls and distant pointer errors with real books. Incremental metrics, revision-based reconciliation, off-main token decoding and stable contiguous text layout passed [the book benchmarks](large-document-performance.md). Current War and Peace typing median is 3.38 ms; SICP is 1.96 ms on the measured Mac. CPU draw measurements are explicitly separate from display FPS.
-- The library opens a spacious visual template gallery using official thumbnails and complete project scaffolding. Package discovery has separate writing-intent collections and bilingual search. FM remains optional future work, not a requirement for finding tools.
+- The library opens a spacious visual template gallery using official thumbnails and complete project scaffolding. Package discovery has separate writing-intent collections and bilingual search.
 - SICP is an on-demand example: a 1.9 MB verified download, independent editable copies, offline reuse, local imported typography and 84 illustrations. The complete books, original sources, PDFs and conversion/packaging code are committed with their own attribution and licenses.
 - 108 enabled Swift tests passed (112 reported including four opt-in skips), plus three profile checks. Overall production line coverage is 86.91% (5440/6259). Both additional real-book benchmark scenarios passed, including a 448-page SICP export. Focused official-registry template/preview scenarios also passed during this iteration.
 - Release-configuration build, strict development-signature verification and relocated cold-launch/resource/icon/Tinymist smoke checks passed. Version remains 0.5.0 (9); no release tag was created. Tests use checkout-local temporary directories because Xcode can override TMPDIR.
@@ -43,7 +43,7 @@ Deleting the active document previously created a new Untitled as a safe landing
 - An explicit Code Notes template bundles pinned Codly packages for styled code blocks. It compiles without a first-use package download. Executing code blocks is documented as a separate future feature, not enabled by the template.
 - **69 Swift tests passed**, plus **3 provisioning-profile checks**. Production source-line coverage was **87.33% (3907/4474)** with an 80% gate. Tests include real Tinymist compilation, native editing/undo and PDF/page content.
 - Native app acceptance checked document creation, Code Notes rendering, language/menu changes and outline placement. The final release-configuration development build is 0.4.0 (6).
-- Research records cover [three-way merge and Forked](merge-evaluation.md) and [optional local intelligence](local-intelligence.md). A synthetic on-device Foundation Models probe classified four bilingual requests correctly (first request about 1.5 seconds, later requests about 0.4 seconds); this is feasibility evidence, not a quality or responsiveness benchmark. Model suggestions are not part of the shipped editor yet.
+- Research records cover [three-way merge and Forked](merge-evaluation.md).
 
 ### 0.4 acceptance follow-up
 

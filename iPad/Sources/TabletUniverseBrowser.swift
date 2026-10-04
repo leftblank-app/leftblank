@@ -199,6 +199,7 @@ struct TabletUniverseBrowser: View {
             Button { Task { await model.load(forceRefresh: true) } } label: {
                 TabletIcon(name: "arrow-clockwise", size: 16).frame(width: 44, height: 44)
             }.disabled(model.isLoading).accessibilityLabel(L10n.text("Refresh Index"))
+                .accessibilityIdentifier("universe-refresh")
         }.padding(.horizontal, 16)
             .overlay(alignment: .top) { Rectangle().fill(TabletTheme.border).frame(height: 0.5) }
     }

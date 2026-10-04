@@ -36,5 +36,4 @@ Unicode editing, marked-text protection, undo and saving have automated coverage
 - [Localization](localization.md)
 - [Library and synchronization](library-and-sync.md)
 - [Code notes](code-notes.md)
-- [Local intelligence evaluation](local-intelligence.md)
 - [Merge evaluation](merge-evaluation.md)

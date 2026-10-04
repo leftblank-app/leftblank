@@ -4,6 +4,10 @@ import UniformTypeIdentifiers
 
 struct TabletRoot: View {
     @ObservedObject var workspace: TabletWorkspace
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
+    @AppStorage("iPadAppearance") private var appearance = AppAppearance.system.rawValue
+    @State private var searchResults: [LibraryDocument] = []
     @State private var column: NavigationSplitViewColumn = .sidebar
     @State private var visibility: NavigationSplitViewVisibility = .all
     @State private var detailWidth: CGFloat = 0
@@ -19,9 +23,7 @@ struct TabletRoot: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $visibility, preferredCompactColumn: $column) {
             List {
-                ForEach(workspace.documents
-                    .filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) })
-                { item in
+                ForEach(query.isEmpty ? workspace.documents : searchResults) { item in
                     Button {
                         Task { await workspace.open(item)
                             if workspace.document?.id == item.id {
@@ -63,6 +65,9 @@ struct TabletRoot: View {
             }.toolbar(removing: .sidebarToggle)
         }
         .tint(TabletTheme.accent)
+        .preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
+        .task(id: query) { await searchLibrary() }
+        .onChange(of: workspace.documents) { _, _ in Task { await searchLibrary() } }
         .onChange(of: workspace.document?.id) { _, id in
             if id != nil {
                 visibility = .detailOnly
@@ -115,7 +120,7 @@ struct TabletRoot: View {
             }
         }
         .alert(
-            L10n.text("Save Needs Attention"),
+            L10n.text("LeftBlank"),
             isPresented: Binding(get: { workspace.message != nil }, set: {
                 if !$0 {
                     workspace.message = nil
@@ -129,6 +134,21 @@ struct TabletRoot: View {
             Button(L10n.text("Save")) { Task { await workspace.rename(title) } }
             Button(L10n.text("Cancel"), role: .cancel) {}
         }
+    }
+
+    private func searchLibrary() async {
+        let requested = query
+        guard !requested.isEmpty else {
+            searchResults = []
+            return
+        }
+        do {
+            let result = try await workspace.library.list(query: requested)
+            guard query == requested, !Task.isCancelled else {
+                return
+            }
+            searchResults = result
+        } catch { workspace.message = error.localizedDescription }
     }
 
     private var libraryHeader: some View {
@@ -161,7 +181,9 @@ struct TabletRoot: View {
                     .init(title: L10n.text("Import Project…"), icon: "folder-open") { importingProject = true },
                     .init(title: L10n.text("Settings"), icon: "gear") { workspace.panel = .settings },
                     .init(title: L10n.text("Trash"), icon: "trash") { Task { await workspace.showTrash() } },
-                ]).frame(width: 44, height: 44)
+                ] + (supportsMultipleWindows ? [
+                    .init(title: L10n.text("New Window"), icon: "copy") { openWindow(id: "writing") },
+                ] : [])).frame(width: 44, height: 44)
             }
         }.padding(16).foregroundStyle(TabletTheme.secondary).background(TabletTheme.background)
             .overlay(alignment: .bottom) { Rectangle().fill(TabletTheme.border).frame(height: 0.5) }
@@ -313,8 +335,14 @@ struct TabletRoot: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { sidebarToggle }
             ToolbarItem(placement: .principal) {
-                Text(workspace.document?.title ?? L10n.text("Untitled")).font(.system(size: 15, weight: .medium))
-                    .lineLimit(1)
+                VStack(spacing: 2) {
+                    Text(workspace.document?.title ?? L10n.text("Untitled")).font(.system(size: 15, weight: .medium))
+                        .lineLimit(1)
+                    if let source = workspace.sourceURL, source != workspace.entryURL {
+                        Text(workspace.sourceLabel(source)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            .accessibilityIdentifier("active-source")
+                    }
+                }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 layoutButton(.writing, icon: "pencil-simple", title: "Writing", key: "1")
@@ -339,11 +367,31 @@ struct TabletRoot: View {
                         ) }
                     }.accessibilityIdentifier("new-document")
                     Button(L10n.text("Outline")) { workspace.panel = .outline }.keyboardShortcut("4")
+                    Button(L10n.text("Project Files")) { workspace.showProjectFiles() }
+                        .accessibilityIdentifier("project-files")
+                    Menu(L10n.text("Writing Assistance")) {
+                        Button(L10n.text("Complete at Cursor")) { workspace.requestAssistance(.completion) }
+                        Button(L10n.text("Explain at Cursor")) { workspace.requestAssistance(.help) }
+                        Button(L10n.text("Actions at Cursor")) { workspace.requestAssistance(.actions) }
+                        Button(L10n.text("Go to Definition")) { workspace.goToDefinition() }
+                        Button(L10n.text("Go Back")) { workspace.navigateBack() }
+                        Button(L10n.text("Reveal in Preview")) { workspace.revealPreview() }
+                    }.disabled(!workspace.serviceReady)
+                    Button(L10n.text("Check Source")) { workspace.panel = .checks }.keyboardShortcut("5")
                     Button(L10n.text("Document History…")) { Task { await workspace.showHistory() } }
                     Button(L10n.text("Rename")) { title = workspace.document?.title ?? ""
                         renaming = true
                     }
                     Button(L10n.text("Save")) { Task { await workspace.save() } }.keyboardShortcut("s")
+                    Button(L10n.text("Export Source…")) { workspace.exportSource() }
+                        .accessibilityIdentifier("export-source")
+                    Button(L10n.text("Print…")) { Task { await workspace.printDocument() } }
+                        .keyboardShortcut("p").disabled(!workspace.serviceReady)
+                        .accessibilityIdentifier("print-document")
+                    if supportsMultipleWindows {
+                        Button(L10n.text("New Window")) { openWindow(id: "writing") }
+                            .keyboardShortcut("n", modifiers: [.command, .shift])
+                    }
                     Button(subscriptionText("Export Project…", "导出项目…")) { Task { await workspace.exportProject() } }
                         .accessibilityIdentifier("export-project")
                     Button(L10n.text("Export PDF…")) { Task { await workspace.exportPDF() } }

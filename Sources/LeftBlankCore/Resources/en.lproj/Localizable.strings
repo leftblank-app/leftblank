@@ -784,3 +784,29 @@
 "You can also drop images here or paste a screenshot with ⌘V." = "You can also drop images here or paste a screenshot with ⌘V.";
 "Module" = "Module";
 "Document" = "Document";
+
+"Choose Main File" = "Choose Main File";
+
+"Choose the file that compiles the complete project." = "Choose the file that compiles the complete project.";
+
+"Complete at Cursor" = "Complete at Cursor";
+
+"Export Source…" = "Export Source…";
+
+"Latest 7 snapshots · This iPad · Current source only" = "Latest 7 snapshots · This iPad · Current source only";
+
+"New Window" = "New Window";
+
+"Preview entry" = "Preview entry";
+
+"Project Files" = "Project Files";
+
+"Selected" = "Selected";
+
+"The document could not be prepared for printing." = "The document could not be prepared for printing.";
+
+"Writing Assistance" = "Writing Assistance";
+
+"The iCloud account changed. Your writing is preserved. Check iCloud settings before continuing sync." = "The iCloud account changed. Your writing is preserved. Check iCloud settings before continuing sync.";
+
+"Close other windows before changing iCloud Sync." = "Close other windows before changing iCloud Sync.";

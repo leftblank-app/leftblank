@@ -36,15 +36,6 @@ final class WritingTests: XCTestCase {
         launchInLandscape(app)
         let create = app.buttons["new-document"]
         let actions = app.buttons["document-actions"]
-        let loading = app.progressIndicators["document-loading"]
-        // First launch opens Welcome asynchronously; later launches show the library.
-        // Wait for either entry point before opening the template gallery.
-        let launched = NSPredicate { _, _ in
-            !loading.exists && ((create.exists && create.isEnabled && create.isHittable) ||
-                (actions.exists && actions.isHittable))
-        }
-        expectation(for: launched, evaluatedWith: app)
-        waitForExpectations(timeout: 60)
         if actions.exists, actions.isHittable {
             // Fresh libraries open Welcome. Use its menu without waiting for
             // NavigationSplitView to reveal the sidebar after startup.
@@ -59,8 +50,10 @@ final class WritingTests: XCTestCase {
             create.tap()
         }
         let starter = app.buttons["universe.builtin." + template]
-        waitForStableControl(starter, in: app)
-        starter.tap()
+        selectTemplate(starter, in: app)
+        // An old manuscript remains in the hierarchy behind the gallery.
+        // Require the creation flow to close it before accepting the editor.
+        waitForState(NSPredicate { _, _ in !starter.exists }, in: app, name: "Template creation")
         expect(app.textViews["manuscript"].waitForExistence(timeout: 60)) == true
         let settled = NSPredicate { _, _ in !app.progressIndicators["document-loading"].exists }
         expectation(for: settled, evaluatedWith: app)
@@ -86,11 +79,30 @@ final class WritingTests: XCTestCase {
 
     private func launchInLandscape(_ app: XCUIApplication) {
         app.launch()
-        // Prelaunch device orientation does not ensure the app's window orientation.
-        // Deliver a real rotation after launch, including when the last test was landscape.
-        XCUIDevice.shared.orientation = .portrait
-        waitForOrientation(in: app, landscape: false)
-        XCUIDevice.shared.orientation = .landscapeLeft
+        // A cold accessibility session can become ready after app.launch returns.
+        // Establish the window before measuring either rotation.
+        expect(app.windows.firstMatch.waitForExistence(timeout: 60)) == true
+        // Scene restoration opens the engine and restores the caret asynchronously.
+        // Finish that transition before rotating the editor and software keyboard.
+        let loading = app.progressIndicators["document-loading"]
+        let create = app.buttons["new-document"]
+        let actions = app.buttons["document-actions"]
+        let launched = NSPredicate { _, _ in
+            !loading.exists && ((create.exists && create.isEnabled && create.isHittable) ||
+                (actions.exists && actions.isHittable))
+        }
+        expectation(for: launched, evaluatedWith: app)
+        waitForExpectations(timeout: 60)
+        // Most launches already inherit landscape. Rotate only when needed;
+        // the dedicated rotation scenarios still exercise both orientations.
+        let frame = app.windows.firstMatch.frame
+        if frame.width <= frame.height {
+            // Toggle the device even if it already reports landscape while the
+            // restored window remains portrait.
+            XCUIDevice.shared.orientation = .portrait
+            waitForOrientation(in: app, landscape: false)
+            XCUIDevice.shared.orientation = .landscapeLeft
+        }
         waitForOrientation(in: app, landscape: true)
     }
 
@@ -106,18 +118,33 @@ final class WritingTests: XCTestCase {
         var previous = CGRect.zero
         var changed = Date()
         let settled = NSPredicate { _, _ in
-            guard control.exists, control.isEnabled, control.isHittable else {
+            // Read enabled state and geometry from one accessibility snapshot.
+            // Separate queries can each block on a cold hosted simulator.
+            guard let snapshot = try? control.snapshot(), snapshot.isEnabled,
+                  snapshot.frame.width > 0, snapshot.frame.height > 0
+            else {
                 changed = Date()
                 return false
             }
-            let frame = control.frame
+            let frame = snapshot.frame
             if frame != previous {
                 previous = frame
                 changed = Date()
             }
-            return Date().timeIntervalSince(changed) >= 1
+            return Date().timeIntervalSince(changed) >= 1 && control.isHittable
         }
         waitForState(settled, in: app, name: "Template control position")
+    }
+
+    private func selectTemplate(_ starter: XCUIElement, in app: XCUIApplication) {
+        // Loading the community catalog can change the adaptive grid's columns.
+        // Wait for that update before measuring a built-in template's position.
+        let refresh = app.buttons["universe-refresh"]
+        waitForState(NSPredicate { _, _ in
+            (try? refresh.snapshot().isEnabled) == true
+        }, in: app, name: "Template catalog loading")
+        waitForStableControl(starter, in: app)
+        starter.tap()
     }
 
     private func waitForState(_ predicate: NSPredicate, in app: XCUIApplication, name: String) {
@@ -224,6 +251,7 @@ final class WritingTests: XCTestCase {
         launchInLandscape(app)
         let banner = app.buttons["subscription-banner"]
         if !banner.waitForExistence(timeout: 3) || !banner.isHittable {
+            waitForStableControl(app.buttons["sidebar-toggle"], in: app)
             app.buttons["sidebar-toggle"].tap()
         }
         expect(banner.waitForExistence(timeout: 30)) == true
@@ -262,6 +290,7 @@ final class WritingTests: XCTestCase {
     }
 
     func testExpiredSubscriptionProjectExport() throws {
+        executionTimeAllowance = 180
         let session = try XCTUnwrap(storeSession)
         let app = startWriting()
         let banner = app.buttons["subscription-banner"]
@@ -285,8 +314,14 @@ final class WritingTests: XCTestCase {
         try session.expireSubscription(productIdentifier: "app.leftblank.writer.ipad.monthly")
         app.terminate()
         launchInLandscape(app)
-        expect(app.buttons["library-actions"].waitForExistence(timeout: 30)) == true
-        app.buttons["library-actions"].tap()
+        // Scene recovery can reopen the document. Reveal the library before opening settings.
+        let libraryActions = app.buttons["library-actions"]
+        if !libraryActions.waitForExistence(timeout: 3) || !libraryActions.isHittable {
+            waitForStableControl(app.buttons["sidebar-toggle"], in: app)
+            app.buttons["sidebar-toggle"].tap()
+        }
+        expect(libraryActions.waitForExistence(timeout: 30)) == true
+        libraryActions.tap()
         app.buttons["Settings"].tap()
         app.buttons["subscription-settings"].tap()
         expect(form.waitForExistence(timeout: 30)) == true
@@ -303,13 +338,12 @@ final class WritingTests: XCTestCase {
         expect(banner.exists) == true
         app.buttons["new-document"].tap()
         let starter = app.buttons["universe.builtin.blank"]
-        waitForStableControl(starter, in: app)
-        starter.tap()
+        selectTemplate(starter, in: app)
         expect(form.waitForExistence(timeout: 30)) == true
         expect(app.buttons["universe.builtin.blank"].exists) == false
         app.buttons["Done"].tap()
         waitForState(NSPredicate { _, _ in !form.exists }, in: app, name: "Subscription dismissal")
-        app.staticTexts[title].tap()
+        app.collectionViews.staticTexts[title].firstMatch.tap()
         expect(app.textViews["manuscript"].waitForExistence(timeout: 30)) == true
         expect(app.textViews["manuscript"].value as? String) == manuscript
         app.buttons["document-actions"].tap()
@@ -402,6 +436,81 @@ final class WritingTests: XCTestCase {
         expectShareSheet(in: app)
     }
 
+    func testAssistanceHistoryAndProjectNavigation() {
+        executionTimeAllowance = 180
+        let app = startWriting()
+        let editor = app.textViews["manuscript"]
+        editor.tap()
+        editor.typeText("\n#rec")
+        let ready = NSPredicate { _, _ in
+            ["Ready", "Preview Updated", "Document Needs Attention"].contains(app.staticTexts["engine-status"].label)
+        }
+        waitForState(ready, in: app, name: "Typesetting ready for completion")
+        app.buttons["document-actions"].tap()
+        app.buttons["Writing Assistance"].tap()
+        app.buttons["Complete at Cursor"].tap()
+        let completion = app.buttons["completion-item-0"]
+        expect(completion.waitForExistence(timeout: 30)) == true
+        capture("Native completion suggestions")
+        let before = editor.value as? String
+        completion.tap()
+        waitForState(NSPredicate { _, _ in
+            editor.exists && editor.value as? String != before
+        }, in: app, name: "Completion inserted")
+        app.buttons["commands"].tap()
+        app.buttons["Undo"].tap()
+        expect(editor.value as? String) == before
+        app.buttons["document-actions"].tap()
+        let history = app.buttons["Document History…"]
+        waitForStableControl(history, in: app)
+        history.tap()
+        let revision = app.buttons["history-revision"].firstMatch
+        expect(revision.waitForExistence(timeout: 15)) == true
+        revision.tap()
+        expect(app.buttons["history-restore"].waitForExistence(timeout: 15)) == true
+        expect(app.staticTexts["Current writing"].exists) == true
+        capture("History comparison")
+        app.buttons["Back"].tap()
+        expect(app.navigationBars["Document History"].waitForExistence(timeout: 10)) == true
+        app.buttons["Done"].tap()
+        app.buttons["document-actions"].tap()
+        let files = app.buttons["project-files"]
+        waitForStableControl(files, in: app)
+        files.tap()
+        let entry = app.buttons["project-source-main.typ"]
+        expect(entry.waitForExistence(timeout: 10)) == true
+        entry.tap()
+        expect(editor.waitForExistence(timeout: 10)) == true
+    }
+
+    func testExistingProjectImageInsertionAndUndo() {
+        let app = startWriting(template: "welcome")
+        let editor = app.textViews["manuscript"]
+        let original = editor.value as? String
+        app.buttons["commands"].tap()
+        let search = app.searchFields["Search Commands"]
+        expect(search.waitForExistence(timeout: 10)) == true
+        search.tap()
+        search.typeText("image\n")
+        let image = app.buttons["command-image"]
+        expect(image.waitForExistence(timeout: 10)) == true
+        image.tap()
+        let resources = app.buttons["resource-existing"]
+        expect(resources.waitForExistence(timeout: 15)) == true
+        resources.tap()
+        app.buttons["leftblank-mark.svg"].tap()
+        expect(app.buttons["Insert"].isEnabled) == true
+        app.buttons["Insert"].tap()
+        waitForState(NSPredicate { _, _ in
+            editor.exists && editor.value as? String != original
+        }, in: app, name: "Project image inserted")
+        expect((editor.value as? String)?.components(separatedBy: "leftblank-mark.svg").count) == 3
+        capture("Reused project image")
+        app.buttons["commands"].tap()
+        app.buttons["Undo"].tap()
+        expect(editor.value as? String) == original
+    }
+
     func testCommandInsertionAndPDFExport() {
         let app = startWriting()
         let original = app.textViews["manuscript"].value as? String
@@ -464,6 +573,7 @@ final class WritingTests: XCTestCase {
     func testTemplateDiscoveryAndPackageImport() {
         let app = startWriting()
         let original = app.textViews["manuscript"].value as? String
+        waitForStableControl(app.buttons["sidebar-toggle"], in: app)
         app.buttons["sidebar-toggle"].tap()
         expect(app.staticTexts["library-title"].waitForExistence(timeout: 10)) == true
         expect(app.staticTexts["library-title"].label) == "Your writing"

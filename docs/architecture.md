@@ -131,7 +131,7 @@ References: [Tinymist preview](https://myriad-dreamin.github.io/tinymist/feature
 
 The library actor owns UUID-based folders and coordinated filesystem operations; LibraryController connects navigation to the live Workspace. UI titles are metadata, while source and assets retain stable relative paths. A conservative background three-way diff incorporates non-overlapping remote edits through native undo. Native iCloud conflicts block overwrites. See [library and sync](library-and-sync.md) and [merge evaluation](merge-evaluation.md).
 
-Localization uses native resource bundles and observable language changes without replacing the editor. Explicit package imports in the [Code notes template](code-notes.md) keep exported source portable. [Local intelligence](local-intelligence.md) remains a research prototype outside the app build.
+Localization uses native resource bundles and observable language changes without replacing the editor. Explicit package imports in the [Code notes template](code-notes.md) keep exported source portable.
 
 ### Book-length WebKit preview
 

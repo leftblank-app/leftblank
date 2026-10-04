@@ -115,21 +115,26 @@ through the website; the pipeline records this handoff rather than claiming
 submission. Later releases can submit through the API after subscription approval.
 Development signing does not validate production signing or Apple review.
 
-## Current parity and release gaps
+## Current parity and remaining validation
 
 | Area | Current iPad behavior | Remaining work or evidence |
 | --- | --- | --- |
-| Local typesetting and PDF | Live preview and native PDF sharing; fallback/system fonts supplied | Matching fonts/assets required for equal pagination; large-book performance unmeasured |
-| Preview to source | A preview tap reveals the main `.typ` file's UTF-16 source position; split view stays split | Included-file editing/navigation is missing and reports that limitation |
-| Source to preview | Live updates and outline-to-editor navigation | Explicit caret-to-preview reveal is missing |
-| Templates/packages | Shared bilingual search, distinct category icons, offline catalog, downloads and installation; window-sized adaptive gallery with catalog/detail panes; built-in documents and SICP within discovery | Physical community-template creation and broad package compatibility need verification |
-| Editor assistance | Syntax styling, checks, outline, command insertion, formatting, native undo/find | Completion, signature-help and hover UI are missing |
-| Projects | Built-in/community templates and folder import | Folder import expects `main.typ`; only the entry file can be edited |
-| History and recovery | Shared snapshots, version restore and conflict-aware saves | Mac's full history diff UI is missing; background/relaunch recovery needs stress testing |
-| Native workflows | Adaptive writing/preview/split, rotation, touch controls, common shortcuts and complete project ZIP export | Multiwindow, complete keyboard-menu parity and printing are missing |
-| Input/accessibility | Native UIKit editor with composition safeguards | Chinese IME, hardware keyboard/trackpad, VoiceOver and Dynamic Type need manual verification |
-| Cloud/lifecycle | Shared iCloud library services and background save hook | Cross-device conflicts, suspension/resume and memory-pressure behavior need device testing |
+| Local typesetting and PDF | Live preview, native PDF sharing, source/project export and AirPrint | Matching fonts/assets required for equal pagination; large-book performance needs device measurement |
+| Project navigation | Browse project sources, choose any `.typ` import entry, edit included files, follow definitions and return | Navigation stays inside the current project; cross-library chapter references are not exposed |
+| Source/preview navigation | Preview taps open the corresponding project source; explicit caret-to-preview reveal waits for compilation | Source positions use UTF-16; preview protocol columns use UTF-8 |
+| Editor assistance | Explicit completion, hover/signature help, context actions, formatting, snippets and hardware keyboard shortcuts | Completion supports plain text and simple numbered placeholders; variable/transform snippets and file-creating code actions remain unsupported |
+| Resources | Import or reuse project images, bibliography and local Typst files; paste screenshots and drop images | Resource imports copy files; dependencies of a standalone `.typ` file require project import |
+| History and recovery | Per-source history, highlighted before/after comparison, undoable restore, hourly/daily snapshots, asset-preserving recovery | History stays on this device; background/relaunch recovery still needs prolonged physical-device testing |
+| Native workflows | Independent windows and recovery files, content search, print, appearance settings, recoverable trash and confirmed Empty Trash | AirPrint output and Stage Manager need manual device verification |
+| Cloud/lifecycle | File-presenter and iCloud discovery, foreground refresh, conservative three-way merge, conflict protection | Real Mac/iPad delivery, account transitions and suspension need physical-device verification |
+| Input/accessibility | Native UIKit editor, Dynamic Type font scaling, touch targets, keyboard commands and IME guards | Chinese IME, VoiceOver and full hardware-keyboard workflows need manual verification |
 
-This PR establishes the native iPad app and shared boundaries. It is not complete
-Mac feature parity or a distribution-ready release. Record physical test evidence
-in [ipad.md](ipad.md); keep unmeasured performance and missing features explicit.
+Each window owns its editor, engine connection and export directory. Restored scenes
+reuse their recovery identity. Windows share the history actor to serialize snapshot
+updates. Close other windows before switching the library between local and iCloud storage. External changes merge only when the shared merge
+algorithm can preserve both edits. Overlapping edits retain the unsaved buffer
+and recovery snapshot and block destructive saves.
+
+AI probes and planning files have been removed. No model runs in either app.
+Hosted validation and physical-device checks establish different boundaries;
+compilation alone does not establish editing quality or cross-device reliability.

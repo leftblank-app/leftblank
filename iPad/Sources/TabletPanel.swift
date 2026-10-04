@@ -9,6 +9,12 @@ struct TabletPanel: View {
     @State private var command: WritingCommand?
     @State private var values: [String: String] = [:]
     @State private var language = L10n.language
+    @State private var resource: TabletResourceSelection?
+    @State private var insertingResource = false
+    @State private var trashSnapshot: LibraryTrashSnapshot?
+    @State private var confirmingEmptyTrash = false
+    @AppStorage("iPadAppearance") private var appearance = AppAppearance.system
+    @AppStorage("iPadPreviewDark") private var previewDark = false
 
     var body: some View {
         NavigationStack {
@@ -22,6 +28,9 @@ struct TabletPanel: View {
                 case .universe: TabletUniverseBrowser(workspace: workspace)
                 case .trash: trash
                 case .subscription: TabletSubscriptionView(subscription: workspace.subscription)
+                case .files: TabletProjectFiles(workspace: workspace)
+                case .projectEntry: TabletProjectEntryPicker(workspace: workspace)
+                case .assistance: TabletAssistanceView(workspace: workspace)
                 }
             }
             .navigationTitle(title)
@@ -40,6 +49,9 @@ struct TabletPanel: View {
         case .universe: L10n.text("Templates & Packages")
         case .trash: L10n.text("Trash")
         case .subscription: subscriptionText("Subscription", "订阅")
+        case .files: L10n.text("Project Files")
+        case .projectEntry: L10n.text("Choose Main File")
+        case .assistance: L10n.text("Writing Assistance")
         }
     }
 
@@ -49,14 +61,44 @@ struct TabletPanel: View {
                 Section(command.title) {
                     Text(command.detail).foregroundStyle(.secondary)
                     ForEach(command.fields) { field in
-                        TextField(
-                            field.title,
-                            text: Binding(get: { values[field.id] ?? field.initial }, set: { values[field.id] = $0 }),
-                        )
-                        .autocorrectionDisabled().textInputAutocapitalization(.never)
+                        if let kind = field.resourceKind {
+                            TabletResourcePicker(workspace: workspace, kind: kind, selection: $resource)
+                                .id(command.id)
+                        } else {
+                            TextField(
+                                field.title,
+                                text: Binding(
+                                    get: { values[field.id] ?? field.initial },
+                                    set: { values[field.id] = $0 },
+                                ),
+                            )
+                            .autocorrectionDisabled().textInputAutocapitalization(.never)
+                        }
                     }
-                    Button(L10n.text("Insert")) { workspace.insert(command, values: values) }
-                    Button(L10n.text("Back")) { self.command = nil }
+                    Button(L10n.text("Insert")) {
+                        if command.fields.contains(where: { $0.resourceKind != nil }) {
+                            guard let resource else {
+                                return
+                            }
+                            insertingResource = true
+                            Task {
+                                defer { insertingResource = false }
+                                do { try await workspace.insertResourceCommand(
+                                    command,
+                                    values: values,
+                                    resource: resource,
+                                ) } catch { workspace.message = error.localizedDescription }
+                            }
+                        } else {
+                            workspace.insert(command, values: values)
+                        }
+                    }
+                    .disabled(insertingResource || !workspace.canWrite || workspace.busy ||
+                        (command.fields.contains(where: { $0.resourceKind != nil }) && resource == nil))
+                    Button(L10n.text("Back")) { self.command = nil
+                        resource = nil
+                    }
+                    .disabled(insertingResource)
                 }
             } else {
                 Section {
@@ -90,6 +132,7 @@ struct TabletPanel: View {
                         Section(group.title) {
                             ForEach(choices) { item in
                                 Button { command = item
+                                    resource = nil
                                     values = Dictionary(uniqueKeysWithValues: item.fields.map { ($0.id, $0.initial) })
                                 } label: {
                                     VStack(alignment: .leading, spacing: 4) {
@@ -161,7 +204,7 @@ struct TabletPanel: View {
                     Text(ByteCountFormatter.string(fromByteCount: Int64(revision.bytes), countStyle: .file))
                         .font(.subheadline).foregroundStyle(.secondary)
                 }.padding(.vertical, 6)
-            }
+            }.accessibilityIdentifier("history-revision")
         }.overlay {
             if workspace.revisions.isEmpty {
                 TabletEmptyState(title: L10n.text("No history yet"), icon: "clock-counter-clockwise")
@@ -170,12 +213,42 @@ struct TabletPanel: View {
     }
 
     private var trash: some View {
-        List(workspace.trashedDocuments) { item in
-            HStack {
-                Text(item.title)
-                Spacer()
-                Button(L10n.text("Restore")) { Task { await workspace.restoreDocument(item) } }.buttonStyle(.bordered)
+        List {
+            ForEach(workspace.trashedDocuments) { item in
+                HStack {
+                    Text(item.title)
+                    Spacer()
+                    Button(L10n.text("Restore")) { Task { await workspace.restoreDocument(item) } }
+                        .buttonStyle(.bordered).disabled(workspace.busy)
+                }
             }
+            if !workspace.trashedDocuments.isEmpty {
+                Button(L10n.text("Empty Trash…"), role: .destructive) {
+                    Task {
+                        do {
+                            let snapshot = try await workspace.library.trashSnapshot()
+                            guard workspace.panel == .trash, !snapshot.isEmpty else {
+                                return
+                            }
+                            trashSnapshot = snapshot
+                            confirmingEmptyTrash = true
+                        } catch { workspace.message = error.localizedDescription }
+                    }
+                }.disabled(workspace.busy)
+            }
+        }
+        .confirmationDialog(L10n.text("Empty Trash?"), isPresented: $confirmingEmptyTrash) {
+            Button(L10n.text("Empty Trash"), role: .destructive) {
+                guard let trashSnapshot else {
+                    return
+                }
+                Task { await workspace.emptyTrash(trashSnapshot) }
+            }
+        } message: {
+            Text(L10n.format(
+                "Permanently delete %d documents and their attachments? This cannot be undone.",
+                trashSnapshot?.count ?? 0,
+            ))
         }
     }
 
@@ -184,6 +257,14 @@ struct TabletPanel: View {
             Section(subscriptionText("Subscription", "订阅")) {
                 Button(subscriptionText("Subscription & purchases", "订阅与购买")) { workspace.panel = .subscription }
                     .accessibilityIdentifier("subscription-settings")
+            }
+            Section(L10n.text("Appearance")) {
+                Picker(L10n.text("Appearance"), selection: $appearance) {
+                    Text(L10n.text("Follow System")).tag(AppAppearance.system)
+                    Text(L10n.text("Light")).tag(AppAppearance.light)
+                    Text(L10n.text("Dark")).tag(AppAppearance.dark)
+                }
+                Toggle(L10n.text("Dark preview"), isOn: $previewDark)
             }
             Section(L10n.text("Writing")) {
                 Stepper(
@@ -197,6 +278,14 @@ struct TabletPanel: View {
                     Text("简体中文").tag(AppLanguage.simplifiedChinese)
                 }.onChange(of: language) { _, language in L10n.setLanguage(language) }
             }
+            Section(L10n.text("Document History")) {
+                Picker(L10n.text("Keep edited versions"), selection: $workspace.historyInterval) {
+                    Text(L10n.text("Every hour")).tag(HistoryInterval.hourly)
+                    Text(L10n.text("Every day")).tag(HistoryInterval.daily)
+                }
+                Text(L10n.text("Latest 7 snapshots · This iPad · Current source only"))
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
             Section("iCloud") {
                 Toggle(
                     L10n.text("iCloud Sync"),
@@ -208,28 +297,5 @@ struct TabletPanel: View {
                 .disabled(workspace.busy)
             }
         }
-    }
-}
-
-private struct TabletRevision: View {
-    @ObservedObject var workspace: TabletWorkspace
-    let revision: DocumentRevision
-    @State private var confirming = false
-    @State private var source = ""
-
-    var body: some View {
-        Form {
-            Text(revision.createdAt, format: .dateTime)
-            ScrollView { Text(source).font(.system(.body, design: .monospaced)).textSelection(.enabled) }
-            Text(L10n.text("Your current writing will be preserved before restoring this version."))
-            Button(L10n.text("Restore")) { confirming = true }
-        }.task {
-            do { source = try await workspace.revisionSource(revision) }
-            catch { workspace.message = error.localizedDescription }
-        }.confirmationDialog(L10n.text("Restore this version?"), isPresented: $confirming) {
-            Button(L10n.text("Restore")) { Task { await workspace.restore(revision) } }
-        }
-        .navigationBarBackButtonHidden()
-        .toolbar { ToolbarItem(placement: .topBarLeading) { TabletBackButton(title: L10n.text("Back")) } }
     }
 }

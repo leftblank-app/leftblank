@@ -9,6 +9,7 @@ from pathlib import Path
 import plistlib
 import re
 import selectors
+import shutil
 import shlex
 import signal
 import subprocess
@@ -126,6 +127,15 @@ def diagnostics(path, device=None):
                 print(result.stdout, flush=True)
             except subprocess.TimeoutExpired:
                 output.write(f'Diagnostic command timed out after {timeout} seconds.\n')
+
+    # Xcode's bounded diagnostics can omit the actual simulator crash report.
+    # Retain only this application's newest reports, with a fixed size limit.
+    reports = Path.home() / 'Library/Logs/DiagnosticReports'
+    crashes = [report for pattern in ('LeftBlank*.ips', 'LeftBlank*.crash')
+               for report in reports.glob(pattern)]
+    for report in sorted(crashes, key=lambda item: item.stat().st_mtime, reverse=True)[:3]:
+        if report.stat().st_size <= 5 * 1024 * 1024:
+            shutil.copy2(report, path.parent / report.name)
 
 
 def shutdown(device):

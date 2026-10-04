@@ -70,7 +70,7 @@ The app includes a metadata-only catalog snapshot for first-launch offline disco
 
 Community template creation and the first SICP download still require a connection unless already cached; the welcome guide and blank page are fully included. An explicit Cancel action interrupts pending downloads and leaves the current writing open. Browsing package metadata does not download or execute package code.
 
-No document text, click history, or query is uploaded to a recommendation service. Foundation Models is not required for discovery. It may later translate natural-language intent into these same bounded collections and queries, but the catalog must remain the source of package names and versions. The bilingual evaluation gate in [local-intelligence.md](local-intelligence.md) still applies before that feature ships.
+Discovery uses the package catalog and bilingual search. No document text, click history, or query is uploaded to a recommendation service.
 
 ## Verification
 
@@ -98,7 +98,6 @@ an unselected hosted view.
 - [Official Typst package catalog](https://packages.typst.org/preview/index.json)
 - [Typst packages repository and template manifest documentation](https://github.com/typst/packages)
 - [Tinymist template scaffolding implementation](https://github.com/Myriad-Dreamin/tinymist/blob/v0.15.8/crates/tinymist/src/cmd.rs)
-- [Foundation Models](https://developer.apple.com/documentation/foundationmodels)
 
 ## A future Chinese book sample
 
