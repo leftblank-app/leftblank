@@ -285,8 +285,13 @@ final class WritingTests: XCTestCase {
         try session.expireSubscription(productIdentifier: "app.leftblank.writer.ipad.monthly")
         app.terminate()
         launchInLandscape(app)
-        expect(app.buttons["library-actions"].waitForExistence(timeout: 30)) == true
-        app.buttons["library-actions"].tap()
+        // Scene recovery can reopen the document. Reveal the library before opening settings.
+        let libraryActions = app.buttons["library-actions"]
+        if !libraryActions.waitForExistence(timeout: 3) || !libraryActions.isHittable {
+            app.buttons["sidebar-toggle"].tap()
+        }
+        expect(libraryActions.waitForExistence(timeout: 30)) == true
+        libraryActions.tap()
         app.buttons["Settings"].tap()
         app.buttons["subscription-settings"].tap()
         expect(form.waitForExistence(timeout: 30)) == true
@@ -433,6 +438,8 @@ final class WritingTests: XCTestCase {
         expect(app.buttons["history-restore"].waitForExistence(timeout: 15)) == true
         expect(app.staticTexts["Current writing"].exists) == true
         capture("History comparison")
+        app.buttons["Back"].tap()
+        expect(app.navigationBars["Document History"].waitForExistence(timeout: 10)) == true
         app.buttons["Done"].tap()
         app.buttons["document-actions"].tap()
         app.buttons["project-files"].tap()
@@ -440,6 +447,34 @@ final class WritingTests: XCTestCase {
         expect(entry.waitForExistence(timeout: 10)) == true
         entry.tap()
         expect(editor.waitForExistence(timeout: 10)) == true
+    }
+
+    func testExistingProjectImageInsertionAndUndo() {
+        let app = startWriting(template: "welcome")
+        let editor = app.textViews["manuscript"]
+        let original = editor.value as? String
+        app.buttons["commands"].tap()
+        let search = app.searchFields["Search Commands"]
+        expect(search.waitForExistence(timeout: 10)) == true
+        search.tap()
+        search.typeText("image\n")
+        let image = app.buttons["command-image"]
+        expect(image.waitForExistence(timeout: 10)) == true
+        image.tap()
+        let resources = app.buttons["resource-existing"]
+        expect(resources.waitForExistence(timeout: 15)) == true
+        resources.tap()
+        app.buttons["leftblank-mark.svg"].tap()
+        expect(app.buttons["Insert"].isEnabled) == true
+        app.buttons["Insert"].tap()
+        waitForState(NSPredicate { _, _ in
+            editor.exists && editor.value as? String != original
+        }, in: app, name: "Project image inserted")
+        expect((editor.value as? String)?.components(separatedBy: "leftblank-mark.svg").count) == 3
+        capture("Reused project image")
+        app.buttons["commands"].tap()
+        app.buttons["Undo"].tap()
+        expect(editor.value as? String) == original
     }
 
     func testCommandInsertionAndPDFExport() {
