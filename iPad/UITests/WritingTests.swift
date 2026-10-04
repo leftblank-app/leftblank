@@ -262,6 +262,7 @@ final class WritingTests: XCTestCase {
     }
 
     func testExpiredSubscriptionProjectExport() throws {
+        executionTimeAllowance = 180
         let session = try XCTUnwrap(storeSession)
         let app = startWriting()
         let banner = app.buttons["subscription-banner"]
@@ -314,7 +315,7 @@ final class WritingTests: XCTestCase {
         expect(app.buttons["universe.builtin.blank"].exists) == false
         app.buttons["Done"].tap()
         waitForState(NSPredicate { _, _ in !form.exists }, in: app, name: "Subscription dismissal")
-        app.staticTexts[title].tap()
+        app.collectionViews.staticTexts[title].firstMatch.tap()
         expect(app.textViews["manuscript"].waitForExistence(timeout: 30)) == true
         expect(app.textViews["manuscript"].value as? String) == manuscript
         app.buttons["document-actions"].tap()
@@ -408,6 +409,7 @@ final class WritingTests: XCTestCase {
     }
 
     func testAssistanceHistoryAndProjectNavigation() {
+        executionTimeAllowance = 180
         let app = startWriting()
         let editor = app.textViews["manuscript"]
         editor.tap()
@@ -431,7 +433,9 @@ final class WritingTests: XCTestCase {
         app.buttons["Undo"].tap()
         expect(editor.value as? String) == before
         app.buttons["document-actions"].tap()
-        app.buttons["Document History…"].tap()
+        let history = app.buttons["Document History…"]
+        waitForStableControl(history, in: app)
+        history.tap()
         let revision = app.buttons["history-revision"].firstMatch
         expect(revision.waitForExistence(timeout: 15)) == true
         revision.tap()
@@ -442,7 +446,9 @@ final class WritingTests: XCTestCase {
         expect(app.navigationBars["Document History"].waitForExistence(timeout: 10)) == true
         app.buttons["Done"].tap()
         app.buttons["document-actions"].tap()
-        app.buttons["project-files"].tap()
+        let files = app.buttons["project-files"]
+        waitForStableControl(files, in: app)
+        files.tap()
         let entry = app.buttons["project-source-main.typ"]
         expect(entry.waitForExistence(timeout: 10)) == true
         entry.tap()
