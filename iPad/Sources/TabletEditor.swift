@@ -196,7 +196,7 @@ struct TabletEditor: UIViewRepresentable {
                         continue
                     }
                     let data: Data = try await withCheckedThrowingContinuation { continuation in
-                        provider.loadDataRepresentation(forTypeIdentifier: type) { data, error in
+                        provider.loadDataRepresentation(forTypeIdentifier: type) { @Sendable data, error in
                             if let error {
                                 continuation.resume(throwing: error)
                             } else if let data {

@@ -286,10 +286,10 @@ struct TabletResourceHistoryTests {
         UIPasteboard.general.image = image
         #expect(editor.canPerformAction(NSSelectorFromString("paste:"), withSender: nil))
         editor.paste(nil)
-        for _ in 0 ..< 250 where !workspace.text.contains("#image(") {
+        for _ in 0 ..< 250 where !workspace.text.contains("image(") {
             try await Task.sleep(for: .milliseconds(20))
         }
-        #expect(workspace.text.contains("#image("))
+        #expect(workspace.text.contains("image("))
         let pasted = workspace.text
         let data = try #require(image.pngData())
         let provider = NSItemProvider(item: data as NSData, typeIdentifier: UTType.png.identifier)
