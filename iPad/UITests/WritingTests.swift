@@ -50,8 +50,10 @@ final class WritingTests: XCTestCase {
             create.tap()
         }
         let starter = app.buttons["universe.builtin." + template]
-        waitForStableControl(starter, in: app)
-        starter.tap()
+        selectTemplate(starter, in: app)
+        // An old manuscript remains in the hierarchy behind the gallery.
+        // Require the creation flow to close it before accepting the editor.
+        waitForState(NSPredicate { _, _ in !starter.exists }, in: app, name: "Template creation")
         expect(app.textViews["manuscript"].waitForExistence(timeout: 60)) == true
         let settled = NSPredicate { _, _ in !app.progressIndicators["document-loading"].exists }
         expectation(for: settled, evaluatedWith: app)
@@ -132,6 +134,17 @@ final class WritingTests: XCTestCase {
             return Date().timeIntervalSince(changed) >= 1 && control.isHittable
         }
         waitForState(settled, in: app, name: "Template control position")
+    }
+
+    private func selectTemplate(_ starter: XCUIElement, in app: XCUIApplication) {
+        // Loading the community catalog can change the adaptive grid's columns.
+        // Wait for that update before measuring a built-in template's position.
+        let refresh = app.buttons["universe-refresh"]
+        waitForState(NSPredicate { _, _ in
+            (try? refresh.snapshot().isEnabled) == true
+        }, in: app, name: "Template catalog loading")
+        waitForStableControl(starter, in: app)
+        starter.tap()
     }
 
     private func waitForState(_ predicate: NSPredicate, in app: XCUIApplication, name: String) {
@@ -325,8 +338,7 @@ final class WritingTests: XCTestCase {
         expect(banner.exists) == true
         app.buttons["new-document"].tap()
         let starter = app.buttons["universe.builtin.blank"]
-        waitForStableControl(starter, in: app)
-        starter.tap()
+        selectTemplate(starter, in: app)
         expect(form.waitForExistence(timeout: 30)) == true
         expect(app.buttons["universe.builtin.blank"].exists) == false
         app.buttons["Done"].tap()
