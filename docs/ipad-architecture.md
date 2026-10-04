@@ -130,7 +130,8 @@ Development signing does not validate production signing or Apple review.
 | Input/accessibility | Native UIKit editor, Dynamic Type font scaling, touch targets, keyboard commands and IME guards | Chinese IME, VoiceOver and full hardware-keyboard workflows need manual verification |
 
 Each window owns its editor, engine connection and export directory. Restored scenes
-reuse their recovery identity. External changes merge only when the shared merge
+reuse their recovery identity. Windows share the history actor to serialize snapshot
+updates. Close other windows before switching the library between local and iCloud storage. External changes merge only when the shared merge
 algorithm can preserve both edits. Overlapping edits retain the unsaved buffer
 and recovery snapshot and block destructive saves.
 

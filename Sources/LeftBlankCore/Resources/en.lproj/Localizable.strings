@@ -808,3 +808,5 @@
 "Writing Assistance" = "Writing Assistance";
 
 "The iCloud account changed. Your writing is preserved. Check iCloud settings before continuing sync." = "The iCloud account changed. Your writing is preserved. Check iCloud settings before continuing sync.";
+
+"Close other windows before changing iCloud Sync." = "Close other windows before changing iCloud Sync.";

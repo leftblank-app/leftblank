@@ -808,3 +808,5 @@
 "Writing Assistance" = "编辑辅助";
 
 "The iCloud account changed. Your writing is preserved. Check iCloud settings before continuing sync." = "iCloud 账户已更改。你的文稿已保留。请检查 iCloud 设置后再继续同步。";
+
+"Close other windows before changing iCloud Sync." = "请先关闭其他窗口，再更改 iCloud 同步设置。";

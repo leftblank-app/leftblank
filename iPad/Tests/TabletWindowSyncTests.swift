@@ -72,6 +72,8 @@ struct TabletWindowSyncTests {
         first.persistRecovery()
         second.persistRecovery()
         #expect(first.recoveryURL != second.recoveryURL)
+        #expect(first.history === second.history)
+        #expect(first.exportDirectory != second.exportDirectory)
         let reopened = TabletWorkspace(sessionID: sessionID, stateDirectory: root)
         #expect(reopened.recoveryURL == first.recoveryURL)
         let decoder = JSONDecoder()

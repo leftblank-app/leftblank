@@ -106,10 +106,12 @@ final class TabletWorkspace: ObservableObject {
     ) {
         self.stateDirectory = stateDirectory
         library = DocumentLibrary(rootURL: stateDirectory.appendingPathComponent("Library"))
-        history = DocumentHistory(root: stateDirectory.appendingPathComponent("History"))
+        history = TabletWindowRegistry.windows(in: stateDirectory).first?.history
+            ?? DocumentHistory(root: stateDirectory.appendingPathComponent("History"))
         recoveryURL = stateDirectory.appendingPathComponent("iPadRecovery-\(sessionID).json")
         exportDirectory = stateDirectory.appendingPathComponent("Exports").appendingPathComponent(sessionID.uuidString)
         self.subscription = subscription
+        TabletWindowRegistry.register(self)
         subscriptionObserver = subscription.$access.sink { [weak self] access in
             guard let self else {
                 return
@@ -594,6 +596,10 @@ final class TabletWorkspace: ObservableObject {
     }
 
     func setCloud(_ enabled: Bool) async {
+        guard TabletWindowRegistry.windows(in: stateDirectory).count == 1 else {
+            message = L10n.text("Close other windows before changing iCloud Sync.")
+            return
+        }
         guard !busy, await save() else {
             return
         }
