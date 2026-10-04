@@ -6,7 +6,10 @@ import UIKit
 @MainActor
 final class TabletWorkspace: ObservableObject {
     enum Layout: String, CaseIterable { case writing, split, preview }
-    enum Panel: String, Identifiable { case commands, outline, checks, history, settings, universe, trash, subscription
+    enum Panel: String,
+        Identifiable
+    { case commands, outline, checks, history, settings, universe, trash, subscription, files,
+           projectEntry, assistance
         var id: String {
             rawValue
         }
@@ -15,6 +18,40 @@ final class TabletWorkspace: ObservableObject {
     @Published var trashedDocuments: [LibraryDocument] = []
     @Published var documents: [LibraryDocument] = []
     @Published var document: LibraryDocument?
+    @Published var activeSourceURL: URL?
+    @Published var projectSources: [URL] = []
+    @Published var importSources: [URL] = []
+    private var pendingProjectURL: URL?
+    private var pendingProjectAccess = false
+    var sourceURL: URL? {
+        activeSourceURL ?? document?.sourceURL
+    }
+
+    var entryURL: URL? {
+        document?.sourceURL
+    }
+
+    var resourceRoot: URL? {
+        document?.folderURL
+    }
+
+    var historyKey: String? {
+        guard let document, let sourceURL else {
+            return nil
+        }
+        return try? ProjectSources.historyKey(
+            documentID: document.id, source: sourceURL, entry: document.sourceURL, root: document.folderURL,
+        )
+    }
+
+    var navigationHistory: [(URL, TextPosition)] = []
+    let assistance = TabletAssistance()
+    @Published var historyInterval = HistoryInterval(
+        rawValue: UserDefaults.standard.string(forKey: "iPadHistoryInterval") ?? "hourly",
+    ) ?? .hourly {
+        didSet { UserDefaults.standard.set(historyInterval.rawValue, forKey: "iPadHistoryInterval") }
+    }
+
     @Published var text = "" {
         didSet { metrics = DocumentMetrics(text) }
     }
@@ -46,22 +83,32 @@ final class TabletWorkspace: ObservableObject {
     private var subscriptionObserver: AnyCancellable?
     @Published var cloudEnabled = false
     weak var editor: UITextView?
-    private let library = DocumentLibrary(rootURL: AppDistribution.defaultStateDirectory
-        .appendingPathComponent("Library"))
-    private let history = DocumentHistory(root: AppDistribution.defaultStateDirectory.appendingPathComponent("History"))
-    private let client = TinymistClient(makeTransport: { EmbeddedTinymist() })
-    private var baseline: DiskBaseline?
-    private var savedText = ""
-    private var version = 1
-    private var generation = UUID()
+    let stateDirectory: URL
+    let library: DocumentLibrary
+    let history: DocumentHistory
+    let client = TinymistClient(makeTransport: { EmbeddedTinymist() })
+    var baseline: DiskBaseline?
+    var savedText = ""
+    var version = 1
+    var generation = UUID()
     private var debounce: Task<Void, Never>?
     private var saveTask: Task<Bool, Never>?
     private var backgroundTask = UIBackgroundTaskIdentifier.invalid
     private var started = false
-    private var changing = false
-    private let recoveryURL = AppDistribution.defaultStateDirectory.appendingPathComponent("iPadRecovery.json")
+    var changing = false
+    let exportDirectory: URL
+    let recoveryURL: URL
 
-    init(subscription: TabletSubscription = TabletSubscription()) {
+    init(
+        subscription: TabletSubscription = TabletSubscription(),
+        sessionID: UUID = UUID(),
+        stateDirectory: URL = AppDistribution.defaultStateDirectory,
+    ) {
+        self.stateDirectory = stateDirectory
+        library = DocumentLibrary(rootURL: stateDirectory.appendingPathComponent("Library"))
+        history = DocumentHistory(root: stateDirectory.appendingPathComponent("History"))
+        recoveryURL = stateDirectory.appendingPathComponent("iPadRecovery-\(sessionID).json")
+        exportDirectory = stateDirectory.appendingPathComponent("Exports").appendingPathComponent(sessionID.uuidString)
         self.subscription = subscription
         subscriptionObserver = subscription.$access.sink { [weak self] access in
             guard let self else {
@@ -77,7 +124,7 @@ final class TabletWorkspace: ObservableObject {
     }
 
     @discardableResult
-    private func requireWriting() -> Bool {
+    func requireWriting() -> Bool {
         guard subscription.canWrite else {
             panel = .subscription
             return false
@@ -92,9 +139,15 @@ final class TabletWorkspace: ObservableObject {
         started = true
         do {
             try FileManager.default.createDirectory(
-                at: AppDistribution.defaultStateDirectory,
+                at: stateDirectory,
                 withIntermediateDirectories: true,
             )
+            let legacy = stateDirectory.appendingPathComponent("iPadRecovery.json")
+            if !FileManager.default.fileExists(atPath: recoveryURL.path),
+               FileManager.default.fileExists(atPath: legacy.path)
+            {
+                try FileManager.default.moveItem(at: legacy, to: recoveryURL)
+            }
             if UserDefaults.standard.object(forKey: "iPadCloudEnabled") == nil || UserDefaults.standard
                 .bool(forKey: "iPadCloudEnabled")
             {
@@ -113,16 +166,29 @@ final class TabletWorkspace: ObservableObject {
             }
             if let data = try? Data(contentsOf: recoveryURL),
                let snapshot = try? JSONDecoder().decode(RecoverySnapshot.self, from: data),
-               snapshot.text != snapshot.savedText,
-               let item = documents.first(where: { $0.sourceURL == snapshot.fileURL })
+               let file = snapshot.fileURL,
+               let item = documents.first(where: {
+                   $0.sourceURL == (snapshot.mainFileURL ?? file)
+               })
             {
-                await open(item)
-                if text != snapshot.text {
-                    // Preserve the recovery as a separate document if disk changed.
-                    let recovered = try await library.create(title: L10n.text("Recovered Draft"), text: snapshot.text)
+                if snapshot.text != snapshot.savedText {
+                    // Copy the complete project so recovered chapters retain their assets.
+                    let relative = try ProjectSources.relativePath(of: file, in: item.folderURL)
+                    let recovered = try await library.importProject(
+                        at: item.folderURL, mainFile: item.sourceURL, title: L10n.text("Recovered Draft"),
+                    )
+                    let recoveredSource = recovered.folderURL.appendingPathComponent("Project")
+                        .appendingPathComponent(relative)
+                    let disk = try DocumentStorage.read(recoveredSource).1
+                    _ = try DocumentStorage.write(snapshot.text, to: recoveredSource, baseline: disk)
                     try await reloadLibrary()
                     await open(recovered)
+                    await openSource(recoveredSource)
+                } else {
+                    await open(item)
+                    await openSource(file)
                 }
+                jump(metrics.position(at: min(snapshot.selection, text.utf16.count)))
             }
         } catch { message = error.localizedDescription }
     }
@@ -152,16 +218,24 @@ final class TabletWorkspace: ObservableObject {
             {
                 try WelcomeDocument.prepareAssets(in: result.document.folderURL)
             }
+            let sources = try ProjectSources.list(in: result.document.folderURL)
             generation = UUID()
             debounce?.cancel()
             client.stop()
             document = result.document
+            activeSourceURL = result.document.sourceURL
+            projectSources = sources
+            navigationHistory = []
+            assistance.invalidate()
+            (editor as? TabletTextView)?.clearSnippet()
             text = result.text
             savedText = text
             baseline = result.baseline
             selection = NSRange(location: 0, length: 0)
             version = 1
             tokens = []
+            highlightedText = ""
+            revisions = []
             outline = []
             diagnostics = []
             previewURL = nil
@@ -170,37 +244,38 @@ final class TabletWorkspace: ObservableObject {
             serviceReady = false
             saveStatus = "Saved"
             editor?.undoManager?.removeAllActions()
+            editor?.text = text
+            editor?.selectedRange = selection
+            persistRecovery()
             await connect()
         } catch { message = error.localizedDescription }
     }
 
     func connect() async {
-        guard let document else {
+        guard let document, let sourceURL else {
             return
         }
         let session = generation
         serviceStatus = "Connecting"
         client.onShowDocument = { [weak self] params in
-            guard let self, let target = SourceLocation(params) else {
+            guard let self, generation == session, let target = SourceLocation(params) else {
                 return
             }
-            guard target.url.resolvingSymlinksInPath() == self.document?.sourceURL.resolvingSymlinksInPath() else {
-                message = L10n
-                    .text("This location is in an included file. Included-file editing is not available on iPad yet.")
-                return
-            }
-            jump(target.position)
+            Task { await self.jump(to: target) }
         }
         client.onDisconnect = { [weak self] error in
-            self?.serviceReady = false
-            self?.message = error
+            guard let self, generation == session else {
+                return
+            }
+            serviceReady = false
+            message = error
         }
         client.onNotification = { [weak self] method, params in
-            guard let self else {
+            guard let self, generation == session else {
                 return
             }
             if method == "textDocument/publishDiagnostics",
-               params["uri"].string == self.document?.sourceURL.absoluteString
+               params["uri"].string == self.sourceURL?.absoluteString
             {
                 diagnostics = params["diagnostics"].array
             }
@@ -208,13 +283,14 @@ final class TabletWorkspace: ObservableObject {
                 switch params["status"].string {
                 case "compiling": serviceStatus = "Typesetting"
                 case "compileSuccess": serviceStatus = "Preview Updated"
+                    sendPendingPreviewNavigation()
                 case "compileError": serviceStatus = "Document Needs Attention"
                 default: break
                 }
             }
         }
         do {
-            let exports = AppDistribution.defaultStateDirectory.appendingPathComponent("Exports")
+            let exports = exportDirectory
             try FileManager.default.createDirectory(at: exports, withIntermediateDirectories: true)
             try await client.start(
                 root: document.folderURL,
@@ -224,7 +300,11 @@ final class TabletWorkspace: ObservableObject {
             guard generation == session else {
                 return
             }
-            try client.open(document.sourceURL, text: text, version: version)
+            try client.open(sourceURL, text: text, version: version)
+            if sourceURL != document.sourceURL {
+                let entryText = try DocumentStorage.read(document.sourceURL).0
+                try client.open(document.sourceURL, text: entryText, version: 1)
+            }
             serviceReady = true
             serviceStatus = "Ready"
             previewURL = try await client.startPreview(document.sourceURL)
@@ -253,27 +333,32 @@ final class TabletWorkspace: ObservableObject {
         let previous = text
         text = source
         version += 1
+        assistance.invalidate()
         saveStatus = "Saving"
         persistRecovery()
-        if let document {
+        if let sourceURL, let historyKey {
+            let interval = historyInterval
             Task {
                 do { try await history.recordEdit(
-                    key: document.id.uuidString,
+                    key: historyKey,
                     previous: previous,
                     current: source,
                     at: Date(),
-                    interval: .hourly,
+                    interval: interval,
                 ) } catch { message = error.localizedDescription }
             }
             if serviceReady {
-                do { try client.change(document.sourceURL, text: source, version: version) }
-                catch { message = error.localizedDescription }
+                do {
+                    serviceStatus = "Typesetting"
+                    try client.change(sourceURL, text: source, version: version)
+                } catch { message = error.localizedDescription }
             }
         }
         debounce?.cancel()
+        let session = generation
         debounce = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
-            guard let self else {
+            guard let self, generation == session else {
                 return
             }
             await save()
@@ -281,7 +366,7 @@ final class TabletWorkspace: ObservableObject {
         }
     }
 
-    private func commitComposition() {
+    func commitComposition() {
         guard let editor, editor.markedTextRange != nil else {
             return
         }
@@ -289,12 +374,13 @@ final class TabletWorkspace: ObservableObject {
         edited(editor.text, selection: editor.selectedRange)
     }
 
-    private func persistRecovery() {
+    func persistRecovery() {
         let snapshot = RecoverySnapshot(
-            fileURL: document?.sourceURL,
+            fileURL: sourceURL,
             text: text,
             savedText: savedText,
             selection: selection.location,
+            mainFileURL: entryURL,
         )
         do { try JSONEncoder().encode(snapshot).write(to: recoveryURL, options: .atomic) }
         catch { message = error.localizedDescription }
@@ -302,22 +388,28 @@ final class TabletWorkspace: ObservableObject {
 
     @discardableResult
     func save() async -> Bool {
-        guard let document else {
+        guard let document, let sourceURL else {
             return true
         }
+        let session = generation
         let previousTask = saveTask
         let source = text
         let task = Task { [self] in
             _ = await previousTask?.value
-            guard self.document?.id == document.id else {
+            guard self.document?.id == document.id, generation == session, self.sourceURL == sourceURL else {
                 return true
             }
             guard savedText != source else {
                 return true
             }
             do {
-                let result = try await library.save(document.id, text: source, baseline: baseline)
-                baseline = result.baseline
+                if sourceURL == document.sourceURL {
+                    let result = try await library.save(document.id, text: source, baseline: baseline)
+                    baseline = result.baseline
+                } else {
+                    _ = try ProjectSources.relativePath(of: sourceURL, in: document.folderURL)
+                    baseline = try DocumentStorage.write(source, to: sourceURL, baseline: baseline)
+                }
                 savedText = source
                 saveStatus = text == source ? "Saved" : "Saving"
                 persistRecovery()
@@ -333,19 +425,19 @@ final class TabletWorkspace: ObservableObject {
         return await task.value
     }
 
-    private func refresh() async {
-        guard let document, serviceReady else {
+    func refresh() async {
+        guard let sourceURL, serviceReady else {
             return
         }
         let session = generation, revision = version, source = text
         do {
             async let symbols = client.request(
                 "textDocument/documentSymbol",
-                ["textDocument": ["uri": document.sourceURL.absoluteString]],
+                ["textDocument": ["uri": sourceURL.absoluteString]],
             )
             let response = try await client.request(
                 "textDocument/semanticTokens/full",
-                ["textDocument": ["uri": document.sourceURL.absoluteString]],
+                ["textDocument": ["uri": sourceURL.absoluteString]],
             )
             let result = SemanticHighlighting.decode(
                 response["data"].array.compactMap(\.int),
@@ -407,28 +499,37 @@ final class TabletWorkspace: ObservableObject {
         } catch { message = error.localizedDescription }
     }
 
+    func compiledPDF() async throws -> URL {
+        guard let document, let sourceURL, serviceReady else {
+            throw ServiceError.remote(L10n.text("Waiting for Typesetting"))
+        }
+        let session = generation, revision = version
+        try client.change(sourceURL, text: text, version: version)
+        let response = try await client.command("tinymist.exportPdf", arguments: [document.sourceURL.path])
+        guard session == generation, revision == version else {
+            throw CancellationError()
+        }
+        guard let path = response["path"].string else {
+            throw ServiceError.remote(
+                L10n.text("The document cannot be compiled. Resolve the errors before exporting."),
+            )
+        }
+        let url = URL(fileURLWithPath: path)
+        guard try Data(contentsOf: url).starts(with: Data("%PDF".utf8)) else {
+            throw ServiceError.remote("Invalid PDF")
+        }
+        return url
+    }
+
     func exportPDF() async {
         commitComposition()
-        guard let document, serviceReady, !busy else {
+        guard serviceReady, !busy else {
             return
         }
         busy = true
         defer { busy = false }
-        do {
-            try client.change(document.sourceURL, text: text, version: version)
-            let response = try await client.command("tinymist.exportPdf", arguments: [document.sourceURL.path])
-            guard let path = response["path"].string
-            else {
-                throw ServiceError
-                    .remote(L10n.text("The document cannot be compiled. Resolve the errors before exporting."))
-            }
-            let url = URL(fileURLWithPath: path)
-            guard try Data(contentsOf: url).starts(with: Data("%PDF".utf8))
-            else {
-                throw ServiceError.remote("Invalid PDF")
-            }
-            shareURL = url
-        } catch { message = error.localizedDescription }
+        do { shareURL = try await compiledPDF() }
+        catch { message = error.localizedDescription }
     }
 
     func exportProject() async {
@@ -438,7 +539,7 @@ final class TabletWorkspace: ObservableObject {
         }
         busy = true
         defer { busy = false }
-        let directory = AppDistribution.defaultStateDirectory.appendingPathComponent("Exports")
+        let directory = stateDirectory.appendingPathComponent("Exports")
             .appendingPathComponent(UUID().uuidString)
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -461,21 +562,31 @@ final class TabletWorkspace: ObservableObject {
     }
 
     func showHistory() async {
-        guard let document else {
+        guard let historyKey else {
             return
         }
-        do { revisions = try await history.revisions(for: document.id.uuidString)
+        let session = generation
+        do { let result = try await history.revisions(for: historyKey)
+            guard session == generation else {
+                return
+            }
+            revisions = result
             panel = .history
         } catch { message = error.localizedDescription }
     }
 
     func restore(_ revision: DocumentRevision) async {
-        guard requireWriting(), let document, !busy else {
+        guard requireWriting(), let historyKey, !busy else {
             return
         }
+        commitComposition()
+        let session = generation, currentVersion = version, previous = text
         do {
-            let source = try await history.source(for: revision, key: document.id.uuidString)
-            try await history.preserveBeforeRestore(text, key: document.id.uuidString, at: Date())
+            let source = try await history.source(for: revision, key: historyKey)
+            try await history.preserveBeforeRestore(previous, key: historyKey, at: Date())
+            guard session == generation, currentVersion == version else {
+                return
+            }
             replace(source)
             panel = nil
             await save()
@@ -488,6 +599,10 @@ final class TabletWorkspace: ObservableObject {
         }
         busy = true
         defer { busy = false }
+        let previousSelection = selection
+        let relative = sourceURL.flatMap { source in
+            resourceRoot.flatMap { try? ProjectSources.relativePath(of: source, in: $0) }
+        }
         do {
             let report = try await library.setICloudEnabled(enabled)
             cloudEnabled = report.isICloud
@@ -496,6 +611,11 @@ final class TabletWorkspace: ObservableObject {
             let oldID = document?.id
             if let id = oldID.map({ report.idMappings[$0] ?? $0 }), let item = documents.first(where: { $0.id == id }) {
                 await open(item)
+                busy = false
+                if let relative {
+                    await openSource(item.folderURL.appendingPathComponent(relative))
+                    jump(metrics.position(at: min(previousSelection.location, text.utf16.count)))
+                }
             }
         } catch { message = error.localizedDescription }
     }
@@ -518,10 +638,10 @@ final class TabletWorkspace: ObservableObject {
     }
 
     func revisionSource(_ revision: DocumentRevision) async throws -> String {
-        guard let document else {
+        guard let historyKey else {
             throw HistoryError.unavailable
         }
-        return try await history.source(for: revision, key: document.id.uuidString)
+        return try await history.source(for: revision, key: historyKey)
     }
 }
 
@@ -535,12 +655,7 @@ extension TabletWorkspace {
             let snippet = try TypstInsertion.make(command.id, values: values, selection: selected)
             let plan = InsertionPlan(command: command, snippet: snippet, text: text, selection: selection)
             apply(TextReplacement(range: plan.range, text: plan.snippet.text))
-            if let placeholder = plan.snippet.selections.first {
-                editor.selectedRange = NSRange(
-                    location: plan.range.location + placeholder.location,
-                    length: placeholder.length,
-                )
-            }
+            (editor as? TabletTextView)?.setSnippet(plan.snippet, at: plan.range.location)
             panel = nil
             editor.becomeFirstResponder()
         } catch { message = error.localizedDescription }
@@ -550,14 +665,15 @@ extension TabletWorkspace {
         apply(TextEditing.lines(action, text: text, selection: selection))
     }
 
-    private func apply(_ edit: TextReplacement, restoringSelection: NSRange? = nil) {
-        guard requireWriting(), let editor, editor.markedTextRange == nil,
+    func apply(_ edit: TextReplacement, restoringSelection: NSRange? = nil) {
+        guard requireWriting(), !busy, let editor, editor.markedTextRange == nil,
               edit.range.location >= 0, edit.range.length >= 0,
               edit.range.location <= editor.textStorage.length,
               edit.range.length <= editor.textStorage.length - edit.range.location
         else {
             return
         }
+        (editor as? TabletTextView)?.clearSnippet()
         let previousSelection = editor.selectedRange
         let inverse = TextReplacement(
             range: NSRange(location: edit.range.location, length: edit.text.utf16.count),
@@ -577,13 +693,13 @@ extension TabletWorkspace {
     }
 
     func format() async {
-        guard requireWriting(), let document, serviceReady, editor?.markedTextRange == nil else {
+        guard requireWriting(), let sourceURL, serviceReady, editor?.markedTextRange == nil else {
             return
         }
         let revision = version, session = generation, original = text
         do {
             let response = try await client.request("textDocument/formatting", [
-                "textDocument": ["uri": document.sourceURL.absoluteString],
+                "textDocument": ["uri": sourceURL.absoluteString],
                 "options": ["tabSize": 2, "insertSpaces": true],
             ])
             guard revision == version, session == generation else {
@@ -637,7 +753,7 @@ extension TabletWorkspace {
             return
         }
         busy = true
-        let staging = AppDistribution.defaultStateDirectory.appendingPathComponent("TemplateStaging")
+        let staging = stateDirectory.appendingPathComponent("TemplateStaging")
         do {
             let installer = TinymistClient(makeTransport: { EmbeddedTinymist() })
             defer { installer.stop() }
@@ -664,11 +780,11 @@ extension TabletWorkspace {
             return
         }
         busy = true
-        let store = SampleBookStore(cacheURL: AppDistribution.defaultStateDirectory.appendingPathComponent("BookCache"))
+        let store = SampleBookStore(cacheURL: stateDirectory.appendingPathComponent("BookCache"))
         do {
             let project = try await store.materialize(
                 .sicp,
-                in: AppDistribution.defaultStateDirectory.appendingPathComponent("BookStaging"),
+                in: stateDirectory.appendingPathComponent("BookStaging"),
             )
             defer { try? FileManager.default.removeItem(at: project.directoryURL) }
             let item = try await library.importProject(
@@ -686,21 +802,60 @@ extension TabletWorkspace {
     }
 
     func importProject(_ url: URL) async {
-        guard requireWriting() else {
+        guard requireWriting(), !busy else {
             return
         }
-        let access = url.startAccessingSecurityScopedResource()
-        defer {
-            if access {
-                url.stopAccessingSecurityScopedResource()
+        cancelProjectImport()
+        pendingProjectAccess = url.startAccessingSecurityScopedResource()
+        pendingProjectURL = url
+        do {
+            importSources = try ProjectSources.list(in: url)
+            guard !importSources.isEmpty else {
+                throw LibraryError.invalidProject
             }
+            if importSources.count == 1, let source = importSources.first {
+                await finishProjectImport(source)
+            } else {
+                panel = .projectEntry
+            }
+        } catch {
+            cancelProjectImport()
+            message = error.localizedDescription
+        }
+    }
+
+    func finishProjectImport(_ source: URL) async {
+        guard requireWriting(), !busy, let directory = pendingProjectURL else {
+            return
+        }
+        busy = true
+        defer { busy = false
+            cancelProjectImport()
         }
         do {
-            let main = url.appendingPathComponent("main.typ")
-            let item = try await library.importProject(at: url, mainFile: main)
+            _ = try ProjectSources.relativePath(of: source, in: directory)
+            let item = try await library.importProject(at: directory, mainFile: source)
             try await reloadLibrary()
+            panel = nil
+            busy = false
             await open(item)
         } catch { message = error.localizedDescription }
+    }
+
+    func importSourceLabel(_ source: URL) -> String {
+        guard let pendingProjectURL else {
+            return source.lastPathComponent
+        }
+        return (try? ProjectSources.relativePath(of: source, in: pendingProjectURL)) ?? source.lastPathComponent
+    }
+
+    func cancelProjectImport() {
+        if pendingProjectAccess {
+            pendingProjectURL?.stopAccessingSecurityScopedResource()
+        }
+        pendingProjectAccess = false
+        pendingProjectURL = nil
+        importSources = []
     }
 
     func trash(_ item: LibraryDocument) async {
@@ -716,6 +871,8 @@ extension TabletWorkspace {
                 generation = UUID()
                 client.stop()
                 document = nil
+                activeSourceURL = nil
+                projectSources = []
                 previewURL = nil
                 previewReady = false
                 previewIssue = nil
@@ -769,5 +926,85 @@ extension TabletWorkspace {
         }
         UIApplication.shared.endBackgroundTask(backgroundTask)
         backgroundTask = .invalid
+    }
+}
+
+extension TabletWorkspace {
+    func showProjectFiles() {
+        guard let document else {
+            return
+        }
+        do {
+            projectSources = try ProjectSources.list(in: document.folderURL)
+            panel = .files
+        } catch { message = error.localizedDescription }
+    }
+
+    func sourceLabel(_ source: URL) -> String {
+        guard let resourceRoot else {
+            return source.lastPathComponent
+        }
+        return (try? ProjectSources.relativePath(of: source, in: resourceRoot)) ?? source.lastPathComponent
+    }
+
+    @discardableResult
+    func openSource(_ url: URL) async -> Bool {
+        guard let document, !changing, !busy else {
+            return false
+        }
+        do {
+            _ = try ProjectSources.relativePath(of: url, in: document.folderURL)
+            let target = url.standardizedFileURL.resolvingSymlinksInPath()
+            if target == sourceURL?.standardizedFileURL.resolvingSymlinksInPath() {
+                return true
+            }
+            commitComposition()
+            changing = true
+            busy = true
+            defer { changing = false
+                busy = false
+            }
+            guard await save() else {
+                return false
+            }
+            let (source, disk) = try DocumentStorage.read(target)
+            debounce?.cancel()
+            generation = UUID()
+            client.stop()
+            activeSourceURL = target
+            text = source
+            savedText = source
+            baseline = disk
+            version = 1
+            selection = NSRange(location: 0, length: 0)
+            tokens = []
+            highlightedText = ""
+            outline = []
+            diagnostics = []
+            revisions = []
+            assistance.invalidate()
+            (editor as? TabletTextView)?.clearSnippet()
+            editor?.undoManager?.removeAllActions()
+            editor?.text = source
+            editor?.selectedRange = selection
+            previewURL = nil
+            previewReady = false
+            previewIssue = nil
+            serviceReady = false
+            saveStatus = "Saved"
+            persistRecovery()
+            await connect()
+            return true
+        } catch {
+            message = error.localizedDescription
+            return false
+        }
+    }
+
+    func jump(to location: SourceLocation) async {
+        guard await openSource(location.url) else {
+            return
+        }
+        jump(location.position)
     }
 }

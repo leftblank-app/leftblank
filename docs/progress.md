@@ -43,7 +43,7 @@ Deleting the active document previously created a new Untitled as a safe landing
 - An explicit Code Notes template bundles pinned Codly packages for styled code blocks. It compiles without a first-use package download. Executing code blocks is documented as a separate future feature, not enabled by the template.
 - **69 Swift tests passed**, plus **3 provisioning-profile checks**. Production source-line coverage was **87.33% (3907/4474)** with an 80% gate. Tests include real Tinymist compilation, native editing/undo and PDF/page content.
 - Native app acceptance checked document creation, Code Notes rendering, language/menu changes and outline placement. The final release-configuration development build is 0.4.0 (6).
-- Research records cover [three-way merge and Forked](merge-evaluation.md) and [optional local intelligence](local-intelligence.md). A synthetic on-device Foundation Models probe classified four bilingual requests correctly (first request about 1.5 seconds, later requests about 0.4 seconds); this is feasibility evidence, not a quality or responsiveness benchmark. Model suggestions are not part of the shipped editor yet.
+- Research records cover [three-way merge and Forked](merge-evaluation.md).
 
 ### 0.4 acceptance follow-up
 

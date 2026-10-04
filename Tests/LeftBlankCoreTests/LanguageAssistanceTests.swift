@@ -244,6 +244,17 @@ private func assistanceAction(_ edits: [[String: Any]], uri: String = assistance
         #expect(try TextEditing.applying(block.edits, to: source).contains("$ alpha+beta $"))
         let multiline = try #require(equationActions.first { $0.title == "Convert to multiple-line block equation" })
         #expect(try TextEditing.applying(multiline.edits, to: source).contains("$\nalpha+beta\n$"))
+        try client.change(file, text: "#rec", version: 2)
+        let completed = try await client.request("textDocument/completion", [
+            "textDocument": document, "position": ["line": 0, "character": 4],
+            "context": ["triggerKind": 1],
+        ])
+        let choices = LanguageAssistance.completions(
+            completed,
+            source: "#rec",
+            selection: NSRange(location: 4, length: 0),
+        )
+        #expect(choices.contains { $0.label.hasPrefix("rect") })
         #expect(try String(contentsOf: file, encoding: .utf8) == "Disk sentinel\n")
     }
 

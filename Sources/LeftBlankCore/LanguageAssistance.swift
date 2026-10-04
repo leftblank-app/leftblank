@@ -22,7 +22,87 @@ public struct SourceCodeAction: Equatable, Sendable {
     public let sourceVersion: Int
 }
 
+public struct SourceCompletion: Equatable, Sendable {
+    public let label: String
+    public let detail: String
+    public let edits: [TextReplacement]
+    public let insertionEnd: Int
+}
+
 public enum LanguageAssistance {
+    /// Completion edits remain local and inert. The client advertises no snippet support.
+    public static func completions(
+        _ response: JSONValue,
+        source: String,
+        selection: NSRange,
+    ) -> [SourceCompletion] {
+        let positions = SourcePositions(source)
+        guard selection.location >= 0, selection.length >= 0,
+              selection.location <= positions.units.count,
+              selection.length <= positions.units.count - selection.location,
+              scalarBoundary(selection.location, in: positions.units),
+              scalarBoundary(NSMaxRange(selection), in: positions.units)
+        else {
+            return []
+        }
+        let defaults = response["itemDefaults"]
+        let items = response.array.isEmpty ? response["items"].array : response.array
+        return items.prefix(100).compactMap { item in
+            let format = item["insertTextFormat"].int ?? defaults["insertTextFormat"].int ?? 1
+            guard let label = item["label"].string, !label.isEmpty,
+                  format == 1, item["command"].isNull
+            else {
+                return nil
+            }
+            let edit = item["textEdit"]
+            let content = edit["newText"].string ?? item["textEditText"].string
+                ?? item["insertText"].string ?? label
+            guard content.utf16.count <= 1_000_000 else {
+                return nil
+            }
+            var range = selection
+            let declaredRange = edit.isNull ? defaults["editRange"]
+                : (edit["range"].isNull ? edit["replace"] : edit["range"])
+            if !declaredRange.isNull {
+                let value = declaredRange["replace"].isNull ? declaredRange : declaredRange["replace"]
+                guard let start = positions.offset(value["start"]),
+                      let end = positions.offset(value["end"]), end >= start
+                else {
+                    return nil
+                }
+                range = NSRange(location: start, length: end - start)
+            } else if !edit.isNull {
+                return nil
+            }
+            var edits = [TextReplacement(range: range, text: content)]
+            if !item["additionalTextEdits"].isNull {
+                guard case let .array(additional) = item["additionalTextEdits"] else {
+                    return nil
+                }
+                if !additional.isEmpty {
+                    guard let extra = decodeEdits(item["additionalTextEdits"], positions: positions) else {
+                        return nil
+                    }
+                    edits += extra
+                }
+            }
+            edits.sort { $0.range.location < $1.range.location }
+            for (first, next) in zip(edits, edits.dropFirst()) {
+                guard next.range.location >= NSMaxRange(first.range),
+                      next.range.location != first.range.location
+                else {
+                    return nil
+                }
+            }
+            let deltaBefore = edits.filter { $0.range.location < range.location }
+                .reduce(0) { $0 + $1.text.utf16.count - $1.range.length }
+            return SourceCompletion(
+                label: String(label.prefix(240)), detail: documentation(item["detail"]),
+                edits: edits, insertionEnd: range.location + content.utf16.count + deltaBefore,
+            )
+        }
+    }
+
     public static func hover(_ response: JSONValue) -> LanguageHover? {
         let text = documentation(response["contents"])
         return text.isEmpty ? nil : LanguageHover(text: text)

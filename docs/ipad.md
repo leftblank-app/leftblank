@@ -200,6 +200,10 @@ after suspension, and iCloud synchronization with a Mac. Compare PDF pagination
 using matching fonts. Signed installation and UI tests do not establish all of
 these behaviors.
 
-The current project importer expects `main.typ` in the chosen folder. The iPad
-editor exposes one active entry file; Mac's included-file navigation, multiwindow workflows and full completion UI are not yet ported.
-This is the initial iPad implementation, not a claim of complete feature parity.
+The project importer now offers an entry-file picker when a folder contains
+multiple Typst sources. Project Files opens included files while preview and PDF
+export stay attached to the selected entry. Completion, contextual help, history
+comparison, resource import, independent windows and printing are now implemented.
+See [the current parity table](ipad-architecture.md#current-parity-and-remaining-validation)
+for supported workflows and remaining device checks. Historical validation above
+predates these additions.

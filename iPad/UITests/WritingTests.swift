@@ -402,6 +402,46 @@ final class WritingTests: XCTestCase {
         expectShareSheet(in: app)
     }
 
+    func testAssistanceHistoryAndProjectNavigation() {
+        let app = startWriting()
+        let editor = app.textViews["manuscript"]
+        editor.tap()
+        editor.typeText("\n#rec")
+        let ready = NSPredicate { _, _ in
+            ["Ready", "Preview Updated", "Document Needs Attention"].contains(app.staticTexts["engine-status"].label)
+        }
+        waitForState(ready, in: app, name: "Typesetting ready for completion")
+        app.buttons["document-actions"].tap()
+        app.buttons["Writing Assistance"].tap()
+        app.buttons["Complete at Cursor"].tap()
+        let completion = app.buttons["completion-item-0"]
+        expect(completion.waitForExistence(timeout: 30)) == true
+        capture("Native completion suggestions")
+        let before = editor.value as? String
+        completion.tap()
+        waitForState(NSPredicate { _, _ in
+            editor.exists && editor.value as? String != before
+        }, in: app, name: "Completion inserted")
+        app.buttons["commands"].tap()
+        app.buttons["Undo"].tap()
+        expect(editor.value as? String) == before
+        app.buttons["document-actions"].tap()
+        app.buttons["Document History…"].tap()
+        let revision = app.buttons["history-revision"].firstMatch
+        expect(revision.waitForExistence(timeout: 15)) == true
+        revision.tap()
+        expect(app.buttons["history-restore"].waitForExistence(timeout: 15)) == true
+        expect(app.staticTexts["Current writing"].exists) == true
+        capture("History comparison")
+        app.buttons["Done"].tap()
+        app.buttons["document-actions"].tap()
+        app.buttons["project-files"].tap()
+        let entry = app.buttons["project-source-main.typ"]
+        expect(entry.waitForExistence(timeout: 10)) == true
+        entry.tap()
+        expect(editor.waitForExistence(timeout: 10)) == true
+    }
+
     func testCommandInsertionAndPDFExport() {
         let app = startWriting()
         let original = app.textViews["manuscript"].value as? String

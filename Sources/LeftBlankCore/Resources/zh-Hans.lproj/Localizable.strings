@@ -784,3 +784,27 @@
 "You can also drop images here or paste a screenshot with ⌘V." = "也可以将图片拖入编辑区，或用 ⌘V 粘贴截图。";
 "Module" = "模块";
 "Document" = "文稿";
+
+"Choose Main File" = "选择主文件";
+
+"Choose the file that compiles the complete project." = "选择用于编译整个项目的文件。";
+
+"Complete at Cursor" = "在光标处补全";
+
+"Export Source…" = "导出源码…";
+
+"Latest 7 snapshots · This iPad · Current source only" = "最近 7 个快照 · 此 iPad · 仅当前源文件";
+
+"New Window" = "新建窗口";
+
+"Preview entry" = "预览入口";
+
+"Project Files" = "项目文件";
+
+"Selected" = "已选择";
+
+"The document could not be prepared for printing." = "无法准备文稿以进行打印。";
+
+"Writing Assistance" = "编辑辅助";
+
+"The iCloud account changed. Your writing is preserved. Check iCloud settings before continuing sync." = "iCloud 账户已更改。你的文稿已保留。请检查 iCloud 设置后再继续同步。";
