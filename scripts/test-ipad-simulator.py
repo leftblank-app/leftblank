@@ -154,6 +154,7 @@ class SimulatorContracts(unittest.TestCase):
                 self.assertEqual(active, {device})
                 self.assertIn('test-without-building', args)
                 self.assertNotIn('-project', args)
+                self.assertEqual(_options['startup_timeout'], 600)
                 result_paths.append(args[args.index('-resultBundlePath') + 1])
             else:
                 operation, device = args[2:4]
@@ -362,6 +363,40 @@ class SimulatorContracts(unittest.TestCase):
         with self.assertRaises(subprocess.TimeoutExpired):
             runner.run([sys.executable, '-c', program], 0.5, capture=True)
         self.assertLess(time.monotonic() - started, 3)
+
+    def test_cold_launch_does_not_consume_execution_budget(self):
+        # The command exceeds its execution allowance overall, but its actual
+        # test phase fits. Split the marker across writes, like a real pipe.
+        program = ("import time; time.sleep(0.7); "
+                   "print(\"Test Suite 'All tests' sta\", end='', flush=True); "
+                   "time.sleep(0.1); print('rted at now', flush=True); time.sleep(0.7)")
+        result = runner.run([sys.executable, '-c', program], 1.2, startup_timeout=3)
+        self.assertEqual(result.returncode, 0)
+
+    def test_startup_chatter_cannot_extend_deadline(self):
+        program = "import time\nwhile True:\n print('Still launching', flush=True)\n time.sleep(0.02)"
+        with self.assertRaisesRegex(RuntimeError, 'startup timed out'):
+            runner.run([sys.executable, '-c', program], 3, startup_timeout=0.3)
+
+    def test_later_suites_cannot_extend_execution_deadline(self):
+        program = ("import time\nwhile True:\n"
+                   " print(\"Test Suite 'Another suite' started at now\", flush=True)\n time.sleep(0.02)")
+        with self.assertRaisesRegex(RuntimeError, 'execution timed out'):
+            runner.run([sys.executable, '-c', program], 0.3, startup_timeout=3)
+
+    def test_phased_timeout_kills_descendants_holding_output_open(self):
+        program = ("import subprocess, sys, time; "
+                   "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+                   "print(\"Test Suite 'All tests' started at now\", flush=True); time.sleep(30)")
+        started = time.monotonic()
+        with self.assertRaisesRegex(RuntimeError, 'execution timed out'):
+            runner.run([sys.executable, '-c', program], 0.3, startup_timeout=3)
+        self.assertLess(time.monotonic() - started, 4)
+
+    def test_phased_command_failure_is_not_success(self):
+        with self.assertRaises(subprocess.CalledProcessError) as failure:
+            runner.run([sys.executable, '-c', 'raise SystemExit(65)'], 3, startup_timeout=3)
+        self.assertEqual(failure.exception.returncode, 65)
 
 
 if __name__ == '__main__':

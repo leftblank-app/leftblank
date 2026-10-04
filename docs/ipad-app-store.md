@@ -124,6 +124,16 @@ SpringBoard crashed during first-boot setup; after its restart both LeftBlank an
 Apple Settings stayed in portrait despite delivered landscape events. The full
 boot separates that setup from testing; it is not an application-test retry.
 Both device/appearance configurations require real rotation and passing tests.
+The full suite gives Xcode at most ten minutes to start the first test, then
+eighteen minutes to execute and finalize results. Only the first XCTest/Swift
+Testing start marker changes the deadline; log chatter and later suites cannot
+extend it. Startup duration is printed, and timeout failures identify the phase.
+Run 37165225912 spent 8m39s before the first test and hit the previous combined
+18-minute limit during its last UI case, after 95 tests had passed. Its session
+log places 7m15s in test-host launch after installation; the precise underlying
+Xcode/CoreSimulator delay is not established. The separate budgets prevent slow
+host startup from consuming test execution time, while per-test timeouts,
+failure propagation, process cleanup and result/coverage validation still apply.
 The template cover and subscription sheet must hand off through `onDismiss`;
 changing both presentation bindings at once can leave XCTest waiting for an
 animation to finish. Purchase and expired-export scenarios run independently,
