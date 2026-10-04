@@ -165,6 +165,9 @@ final class TabletWorkspace: ObservableObject {
                 )
                 try await reloadLibrary()
                 await open(item)
+                // Opening Welcome creates this scene's recovery file. It is not
+                // a previous session to reopen and start a second engine for.
+                return
             }
             if let data = try? Data(contentsOf: recoveryURL),
                let snapshot = try? JSONDecoder().decode(RecoverySnapshot.self, from: data),

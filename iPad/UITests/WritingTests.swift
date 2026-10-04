@@ -36,15 +36,6 @@ final class WritingTests: XCTestCase {
         launchInLandscape(app)
         let create = app.buttons["new-document"]
         let actions = app.buttons["document-actions"]
-        let loading = app.progressIndicators["document-loading"]
-        // First launch opens Welcome asynchronously; later launches show the library.
-        // Wait for either entry point before opening the template gallery.
-        let launched = NSPredicate { _, _ in
-            !loading.exists && ((create.exists && create.isEnabled && create.isHittable) ||
-                (actions.exists && actions.isHittable))
-        }
-        expectation(for: launched, evaluatedWith: app)
-        waitForExpectations(timeout: 60)
         if actions.exists, actions.isHittable {
             // Fresh libraries open Welcome. Use its menu without waiting for
             // NavigationSplitView to reveal the sidebar after startup.
@@ -89,11 +80,27 @@ final class WritingTests: XCTestCase {
         // A cold accessibility session can become ready after app.launch returns.
         // Establish the window before measuring either rotation.
         expect(app.windows.firstMatch.waitForExistence(timeout: 60)) == true
-        // Prelaunch device orientation does not ensure the app's window orientation.
-        // Deliver a real rotation after launch, including when the last test was landscape.
-        XCUIDevice.shared.orientation = .portrait
-        waitForOrientation(in: app, landscape: false)
-        XCUIDevice.shared.orientation = .landscapeLeft
+        // Scene restoration opens the engine and restores the caret asynchronously.
+        // Finish that transition before rotating the editor and software keyboard.
+        let loading = app.progressIndicators["document-loading"]
+        let create = app.buttons["new-document"]
+        let actions = app.buttons["document-actions"]
+        let launched = NSPredicate { _, _ in
+            !loading.exists && ((create.exists && create.isEnabled && create.isHittable) ||
+                (actions.exists && actions.isHittable))
+        }
+        expectation(for: launched, evaluatedWith: app)
+        waitForExpectations(timeout: 60)
+        // Most launches already inherit landscape. Rotate only when needed;
+        // the dedicated rotation scenarios still exercise both orientations.
+        let frame = app.windows.firstMatch.frame
+        if frame.width <= frame.height {
+            // Toggle the device even if it already reports landscape while the
+            // restored window remains portrait.
+            XCUIDevice.shared.orientation = .portrait
+            waitForOrientation(in: app, landscape: false)
+            XCUIDevice.shared.orientation = .landscapeLeft
+        }
         waitForOrientation(in: app, landscape: true)
     }
 
