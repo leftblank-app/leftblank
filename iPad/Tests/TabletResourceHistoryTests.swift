@@ -267,9 +267,6 @@ struct TabletResourceHistoryTests {
     }
 
     @Test func imagePasteAndDropCreatePortableReferencesAndRejectUnsupportedDrops() async throws {
-        func trace(_ stage: String) {
-            FileHandle.standardError.write(Data(("LEFTBLANK DROP: " + stage + "\n").utf8))
-        }
         let (workspace, _, _, root) = try await fixture()
         let clipboard = UIPasteboard.general.items
         defer {
@@ -288,34 +285,24 @@ struct TabletResourceHistoryTests {
         }
         UIPasteboard.general.image = image
         #expect(editor.canPerformAction(NSSelectorFromString("paste:"), withSender: nil))
-        trace("paste")
         editor.paste(nil)
         for _ in 0 ..< 250 where !workspace.text.contains("image(") {
             try await Task.sleep(for: .milliseconds(20))
         }
         #expect(workspace.text.contains("image("))
-        trace("paste completed")
         let pasted = workspace.text
         let data = try #require(image.pngData())
         let provider = NSItemProvider(item: data as NSData, typeIdentifier: UTType.png.identifier)
-        trace("provider created")
         let session = ImageDropSession([provider])
-        trace("session created")
         let interaction = UIDropInteraction(delegate: editor)
-        trace("interaction created")
         #expect(editor.dropInteraction(interaction, canHandle: session))
-        trace("canHandle accepted")
         #expect(editor.dropInteraction(interaction, sessionDidUpdate: session).operation == .copy)
-        trace("proposal created")
         let unsupported = ImageDropSession([NSItemProvider(object: "plain text" as NSString)])
         #expect(!editor.dropInteraction(interaction, canHandle: unsupported))
-        trace("perform drop")
         editor.dropInteraction(interaction, performDrop: session)
-        trace("drop scheduled")
         for _ in 0 ..< 250 where workspace.text == pasted {
             try await Task.sleep(for: .milliseconds(20))
         }
-        trace("drop completed")
         #expect(workspace.text != pasted)
         let source = try #require(workspace.sourceURL), project = try #require(workspace.resourceRoot)
         let assets = try await DocumentResourceStore().list(kind: .image, in: project, relativeTo: source)
@@ -326,11 +313,8 @@ struct TabletResourceHistoryTests {
         let before = workspace.text
         #expect(!editor.dropInteraction(interaction, canHandle: session))
         #expect(editor.dropInteraction(interaction, sessionDidUpdate: session).operation == .cancel)
-        trace("paste")
         editor.paste(nil)
-        trace("perform drop")
         editor.dropInteraction(interaction, performDrop: session)
-        trace("drop scheduled")
         #expect(workspace.text == before)
     }
 

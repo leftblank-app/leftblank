@@ -196,15 +196,7 @@ struct TabletEditor: UIViewRepresentable {
                         continue
                     }
                     let data: Data = try await withCheckedThrowingContinuation { continuation in
-                        provider.loadDataRepresentation(forTypeIdentifier: type) { @Sendable data, error in
-                            if let error {
-                                continuation.resume(throwing: error)
-                            } else if let data {
-                                continuation.resume(returning: data)
-                            } else {
-                                continuation.resume(throwing: DocumentResourceError.invalidImage)
-                            }
-                        }
+                        Self.loadImageData(from: provider, type: type, continuation: continuation)
                     }
                     inputs.append(.image(data))
                 }
@@ -219,6 +211,24 @@ struct TabletEditor: UIViewRepresentable {
                 if workspace.generation == generation {
                     workspace.message = error.localizedDescription
                 }
+            }
+        }
+    }
+
+    /// Foundation invokes the callback on its own queue. Construct it outside the
+    /// main actor so strict concurrency checks cannot inherit the editor's isolation.
+    private nonisolated static func loadImageData(
+        from provider: NSItemProvider,
+        type: String,
+        continuation: CheckedContinuation<Data, any Error>,
+    ) {
+        provider.loadDataRepresentation(forTypeIdentifier: type) { @Sendable data, error in
+            if let error {
+                continuation.resume(throwing: error)
+            } else if let data {
+                continuation.resume(returning: data)
+            } else {
+                continuation.resume(throwing: DocumentResourceError.invalidImage)
             }
         }
     }
