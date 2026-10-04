@@ -1,3 +1,4 @@
+import Combine
 import LeftBlankCore
 import SwiftUI
 
@@ -34,9 +35,10 @@ private struct TabletSession: View {
             }
             .task { await state.workspace.subscription.start() }
             .onOpenURL { url in Task { await state.workspace.importDocument(url) } }
-            .onChange(of: state.workspace.cloudEnabled) { _, _ in
+            .onReceive(state.workspace.$cloudEnabled.dropFirst().removeDuplicates()) { _ in
                 Task { await state.observer.start() }
             }
+            .onDisappear { state.workspace.saveInBackground() }
             .onChange(of: phase) { _, phase in
                 if phase == .active {
                     Task {

@@ -917,10 +917,8 @@ extension TabletWorkspace {
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Save writing") { [weak self] in
             Task { @MainActor [weak self] in self?.finishBackgroundSave() }
         }
-        Task { [weak self] in
-            guard let self else {
-                return
-            }
+        // A closing scene must retain its workspace until the last save completes.
+        Task { [self] in
             await save()
             finishBackgroundSave()
         }
