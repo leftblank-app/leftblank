@@ -238,6 +238,7 @@ final class WritingTests: XCTestCase {
         launchInLandscape(app)
         let banner = app.buttons["subscription-banner"]
         if !banner.waitForExistence(timeout: 3) || !banner.isHittable {
+            waitForStableControl(app.buttons["sidebar-toggle"], in: app)
             app.buttons["sidebar-toggle"].tap()
         }
         expect(banner.waitForExistence(timeout: 30)) == true
@@ -303,6 +304,7 @@ final class WritingTests: XCTestCase {
         // Scene recovery can reopen the document. Reveal the library before opening settings.
         let libraryActions = app.buttons["library-actions"]
         if !libraryActions.waitForExistence(timeout: 3) || !libraryActions.isHittable {
+            waitForStableControl(app.buttons["sidebar-toggle"], in: app)
             app.buttons["sidebar-toggle"].tap()
         }
         expect(libraryActions.waitForExistence(timeout: 30)) == true
@@ -559,6 +561,7 @@ final class WritingTests: XCTestCase {
     func testTemplateDiscoveryAndPackageImport() {
         let app = startWriting()
         let original = app.textViews["manuscript"].value as? String
+        waitForStableControl(app.buttons["sidebar-toggle"], in: app)
         app.buttons["sidebar-toggle"].tap()
         expect(app.staticTexts["library-title"].waitForExistence(timeout: 10)) == true
         expect(app.staticTexts["library-title"].label) == "Your writing"
