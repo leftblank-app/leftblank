@@ -196,7 +196,7 @@ struct TabletEditor: UIViewRepresentable {
                         continue
                     }
                     let data: Data = try await withCheckedThrowingContinuation { continuation in
-                        Self.loadImageData(from: provider, type: type, continuation: continuation)
+                        TabletImageLoader.load(from: provider, type: type, continuation: continuation)
                     }
                     inputs.append(.image(data))
                 }
@@ -211,24 +211,6 @@ struct TabletEditor: UIViewRepresentable {
                 if workspace.generation == generation {
                     workspace.message = error.localizedDescription
                 }
-            }
-        }
-    }
-
-    /// Foundation invokes the callback on its own queue. Construct it outside the
-    /// main actor so strict concurrency checks cannot inherit the editor's isolation.
-    private nonisolated static func loadImageData(
-        from provider: NSItemProvider,
-        type: String,
-        continuation: CheckedContinuation<Data, any Error>,
-    ) {
-        provider.loadDataRepresentation(forTypeIdentifier: type) { @Sendable data, error in
-            if let error {
-                continuation.resume(throwing: error)
-            } else if let data {
-                continuation.resume(returning: data)
-            } else {
-                continuation.resume(throwing: DocumentResourceError.invalidImage)
             }
         }
     }
@@ -466,4 +448,25 @@ struct TabletShare: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
+/// Foundation calls this handler on its own queue. Keep its lexical context
+/// outside the main-actor editor, including when compiled by Swift 6.2.
+private nonisolated enum TabletImageLoader {
+    static func load(
+        from provider: NSItemProvider,
+        type: String,
+        continuation: CheckedContinuation<Data, any Error>,
+    ) {
+        let completion: @Sendable (Data?, (any Error)?) -> Void = { data, error in
+            if let error {
+                continuation.resume(throwing: error)
+            } else if let data {
+                continuation.resume(returning: data)
+            } else {
+                continuation.resume(throwing: DocumentResourceError.invalidImage)
+            }
+        }
+        provider.loadDataRepresentation(forTypeIdentifier: type, completionHandler: completion)
+    }
 }
