@@ -2,10 +2,13 @@
 """Run the full native UI suite on one requested iPad size."""
 
 import argparse
+import codecs
 import json
 import os
 from pathlib import Path
 import plistlib
+import re
+import selectors
 import shlex
 import signal
 import subprocess
@@ -14,13 +17,54 @@ import time
 import uuid
 
 
-def run(command, timeout, *, capture=False, check=True):
-    print(f"+ {shlex.join(map(str, command))} (limit {timeout}s)", flush=True)
+def wait_for_tests(process, startup_timeout, execution_timeout):
+    """Budget cold Xcode launch separately; only the first test start resets time."""
+    started = time.monotonic()
+    deadline = started + startup_timeout
+    phase = 'startup'
+    pending = ''
+    decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+    marker = re.compile(r"^(Test Suite '.+' started at |Test Case '.+' started\.|◇ Test run started\.)", re.MULTILINE)
+    with selectors.DefaultSelector() as output:
+        output.register(process.stdout, selectors.EVENT_READ)
+        while output.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(f'Xcode test {phase} timed out; startup limit {startup_timeout}s, '
+                                   f'execution limit {execution_timeout}s')
+            for key, _ in output.select(remaining):
+                chunk = os.read(key.fd, 65536)
+                if not chunk:
+                    output.unregister(key.fileobj)
+                    continue
+                text = decoder.decode(chunk)
+                sys.stdout.write(text)
+                sys.stdout.flush()
+                if phase == 'startup':
+                    pending += text
+                    if marker.search(pending):
+                        now = time.monotonic()
+                        print(f'Xcode test startup completed in {now - started:.1f}s; '
+                              f'execution budget {execution_timeout}s', flush=True)
+                        phase = 'execution'
+                        deadline = now + execution_timeout
+                    # Retain an unfinished line, not the entire test log.
+                    pending = pending.rsplit('\n', 1)[-1][-65536:]
+    process.wait(timeout=max(0, deadline - time.monotonic()))
+
+
+def run(command, timeout, *, capture=False, check=True, startup_timeout=None):
+    limit = f'limit {timeout}s' if startup_timeout is None else f'startup {startup_timeout}s, execution {timeout}s'
+    print(f"+ {shlex.join(map(str, command))} ({limit})", flush=True)
     process = subprocess.Popen(command, start_new_session=True,
-                               stdout=subprocess.PIPE if capture else None,
-                               stderr=subprocess.STDOUT if capture else None, text=True)
+                               stdout=subprocess.PIPE if capture or startup_timeout else None,
+                               stderr=subprocess.STDOUT if capture or startup_timeout else None, text=True)
     try:
-        output, _ = process.communicate(timeout=timeout)
+        if startup_timeout is None:
+            output, _ = process.communicate(timeout=timeout)
+        else:
+            wait_for_tests(process, startup_timeout, timeout)
+            output = None
     except BaseException:
         # xcodebuild can leave test workers behind if only its parent is killed.
         try:
@@ -29,6 +73,9 @@ def run(command, timeout, *, capture=False, check=True):
             pass
         process.communicate()
         raise
+    finally:
+        if process.stdout is not None:
+            process.stdout.close()
     if check and process.returncode:
         raise subprocess.CalledProcessError(process.returncode, command, output=output)
     return subprocess.CompletedProcess(command, process.returncode, stdout=output)
@@ -208,7 +255,8 @@ def test_device(size, device, bundle, results, *, suite='all', memory=False, cov
              '-collect-test-diagnostics', 'never',
              '-enableCodeCoverage', 'YES' if coverage else 'NO',
              '-resultBundlePath', str(results / f'{size}.xcresult'),
-             *selection, 'test-without-building'], 1080)
+             *selection, 'test-without-building'], 1080,
+            startup_timeout=600 if suite == 'all' else None)
         verify_result(results / f'{size}.xcresult', results, memory=memory)
         if coverage:
             export_coverage(bundle, device, results, size, started)
