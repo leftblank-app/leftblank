@@ -148,9 +148,10 @@ struct TabletResourceHistoryTests {
         let (workspace, editor, _, root) = try await fixture()
         defer { try? FileManager.default.removeItem(at: root) }
         let key = try #require(workspace.historyKey)
-        let revision = try await #require(workspace.history.recordEdit(
+        let recorded = try await workspace.history.recordEdit(
             key: key, previous: "Original", current: "Body", at: Date(), interval: .hourly,
-        ))
+        )
+        let revision = try #require(recorded)
         let comparison = try await HistoryComparison(before: workspace.revisionSource(revision), after: workspace.text)
         #expect(!comparison.identical)
         #expect(!comparison.addedRanges.isEmpty)
@@ -159,7 +160,8 @@ struct TabletResourceHistoryTests {
         await workspace.restore(revision)
         editor.history.endUndoGrouping()
         #expect(workspace.text == "Original")
-        let preserved = try await #require(workspace.history.revisions(for: key).first)
+        let revisions = try await workspace.history.revisions(for: key)
+        let preserved = try #require(revisions.first)
         #expect(preserved.reason == .beforeRestore)
         #expect(try await workspace.history.source(for: preserved, key: key) == "Body")
         editor.history.undo()

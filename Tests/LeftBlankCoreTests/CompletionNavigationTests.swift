@@ -31,7 +31,7 @@ private func completionRange(_ start: Int, _ end: Int, line: Int = 0) -> [String
     let response = try completionJSON([
         ["label": "half scalar", "textEdit": ["range": completionRange(1, 2), "newText": "x"]],
         ["label": "invalid line", "textEdit": ["range": completionRange(0, 1, line: 4), "newText": "x"]],
-        ["label": "snippet", "insertTextFormat": 2, "insertText": "${1:word}"],
+        ["label": "snippet", "insertTextFormat": 2, "insertText": "${TM_FILENAME}"],
         ["label": "command", "command": ["command": "run"]],
         ["label": "overlap", "textEdit": ["range": completionRange(2, 7), "newText": "x"],
          "additionalTextEdits": [["range": completionRange(3, 4), "newText": "y"]]],
@@ -80,4 +80,18 @@ private func completionRange(_ start: Int, _ end: Int, line: Int = 0) -> [String
     var navigation = SnippetNavigation(Snippet(text: "one", selections: [NSRange(location: 0, length: 3)]), at: 2)
     navigation.edit(NSRange(location: 0, length: 0), replacement: "x")
     #expect(navigation.current == nil)
+}
+
+@Test func completionSnippetsDecodeTabStopsAndRejectUnsupportedSyntax() throws {
+    let snippet = try #require(CompletionSnippet.decode("rect(width: ${1:20pt})[${2:中文😀}]$0"))
+    #expect(snippet.text == "rect(width: 20pt)[中文😀]")
+    #expect(snippet.selections.count == 3)
+    #expect((snippet.text as NSString).substring(with: snippet.selections[1]) == "中文😀")
+    #expect(CompletionSnippet.decode("${TM_FILENAME}") == nil)
+    #expect(CompletionSnippet.decode("${1|a,b|}") == nil)
+    #expect(CompletionSnippet.decode("${1:a}$1") == nil)
+    #expect(CompletionSnippet.decode("${1:${2:x}}") == nil)
+    #expect(CompletionSnippet.decode("$0$1") == nil)
+    #expect(CompletionSnippet.decode("${1:unclosed") == nil)
+    #expect(CompletionSnippet.decode("\\$x\\$")?.text == "$x$")
 }

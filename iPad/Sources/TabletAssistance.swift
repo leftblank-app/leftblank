@@ -136,7 +136,13 @@ extension TabletWorkspace {
         else {
             return
         }
-        applyAssistanceEdits(completion.edits, selection: NSRange(location: completion.insertionEnd, length: 0))
+        applyAssistanceEdits(
+            completion.edits,
+            selection: completion.selections.first ?? NSRange(location: completion.insertionEnd, length: 0),
+        )
+        if !completion.selections.isEmpty {
+            (editor as? TabletTextView)?.setSnippet(Snippet(text: "", selections: completion.selections), at: 0)
+        }
     }
 
     func applyContextAction(_ action: SourceCodeAction) {

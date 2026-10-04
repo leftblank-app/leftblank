@@ -27,10 +27,11 @@ public struct SourceCompletion: Equatable, Sendable {
     public let detail: String
     public let edits: [TextReplacement]
     public let insertionEnd: Int
+    public let selections: [NSRange]
 }
 
 public enum LanguageAssistance {
-    /// Completion edits remain local and inert. The client advertises no snippet support.
+    /// Completion edits remain local; numbered placeholders use the native snippet navigation.
     public static func completions(
         _ response: JSONValue,
         source: String,
@@ -50,16 +51,19 @@ public enum LanguageAssistance {
         return items.prefix(100).compactMap { item in
             let format = item["insertTextFormat"].int ?? defaults["insertTextFormat"].int ?? 1
             guard let label = item["label"].string, !label.isEmpty,
-                  format == 1, item["command"].isNull
+                  [1, 2].contains(format), item["command"].isNull
             else {
                 return nil
             }
             let edit = item["textEdit"]
-            let content = edit["newText"].string ?? item["textEditText"].string
+            let rawContent = edit["newText"].string ?? item["textEditText"].string
                 ?? item["insertText"].string ?? label
-            guard content.utf16.count <= 1_000_000 else {
+            guard rawContent.utf16.count <= 1_000_000,
+                  let snippet = format == 2 ? CompletionSnippet.decode(rawContent) : Snippet(text: rawContent)
+            else {
                 return nil
             }
+            let content = snippet.text
             var range = selection
             let declaredRange = edit.isNull ? defaults["editRange"]
                 : (edit["range"].isNull ? edit["replace"] : edit["range"])
@@ -99,6 +103,10 @@ public enum LanguageAssistance {
             return SourceCompletion(
                 label: String(label.prefix(240)), detail: documentation(item["detail"]),
                 edits: edits, insertionEnd: range.location + content.utf16.count + deltaBefore,
+                selections: snippet.selections.map { NSRange(
+                    location: range.location + deltaBefore + $0.location,
+                    length: $0.length,
+                ) },
             )
         }
     }
