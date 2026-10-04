@@ -86,6 +86,9 @@ final class WritingTests: XCTestCase {
 
     private func launchInLandscape(_ app: XCUIApplication) {
         app.launch()
+        // A cold accessibility session can become ready after app.launch returns.
+        // Establish the window before measuring either rotation.
+        expect(app.windows.firstMatch.waitForExistence(timeout: 60)) == true
         // Prelaunch device orientation does not ensure the app's window orientation.
         // Deliver a real rotation after launch, including when the last test was landscape.
         XCUIDevice.shared.orientation = .portrait
@@ -106,16 +109,20 @@ final class WritingTests: XCTestCase {
         var previous = CGRect.zero
         var changed = Date()
         let settled = NSPredicate { _, _ in
-            guard control.exists, control.isEnabled, control.isHittable else {
+            // Read enabled state and geometry from one accessibility snapshot.
+            // Separate queries can each block on a cold hosted simulator.
+            guard let snapshot = try? control.snapshot(), snapshot.isEnabled,
+                  snapshot.frame.width > 0, snapshot.frame.height > 0
+            else {
                 changed = Date()
                 return false
             }
-            let frame = control.frame
+            let frame = snapshot.frame
             if frame != previous {
                 previous = frame
                 changed = Date()
             }
-            return Date().timeIntervalSince(changed) >= 1
+            return Date().timeIntervalSince(changed) >= 1 && control.isHittable
         }
         waitForState(settled, in: app, name: "Template control position")
     }
