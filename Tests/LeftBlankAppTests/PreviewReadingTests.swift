@@ -310,6 +310,22 @@ extension WritingFlowTests {
                 .infinity) <
             820)
         #expect(editor.string == source)
+        app.workspace.previewReading.followsWriting = true
+        editor.setSelectedRange(NSRange(location: (source as NSString).range(of: "Chapter 4").location, length: 0))
+        try await waitForJavaScript(
+            web,
+            condition: "(() => { const page = document.querySelector('g.typst-page[data-page-number=\"3\"]'); return page && page.getBoundingClientRect().top > 0 && page.getBoundingClientRect().bottom < innerHeight; })()",
+        )
+        let captured = try #require(await web.evaluateJavaScript("window.leftblankCaptureReading()"))
+        let readingPosition = try #require(PreviewReadingAnchor(message: captured))
+        try await app.wait { app.workspace.previewReading.anchor == readingPosition }
+        app.workspace.previewReading.rememberReturnPosition()
+        #expect(!app.workspace.previewReading.followsWriting)
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        try await Task.sleep(for: .milliseconds(350))
+        #expect(app.workspace.previewReading.returnAnchor == readingPosition)
+        #expect(try await web.evaluateJavaScript("window.leftblankCaptureReading()?.page") as? Int == readingPosition
+            .page)
     }
 
     @Test func realPreviewRetainsPagesOnErrorThenRecoversAndTogglesDark() async throws {

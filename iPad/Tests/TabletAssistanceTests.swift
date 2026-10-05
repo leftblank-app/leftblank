@@ -263,6 +263,19 @@ struct TabletAssistanceTests {
         workspace.selection = NSRange(location: 0, length: 0)
         await workspace.assistance.task?.value
         #expect(workspace.assistance.snapshot == nil)
+        workspace.layout = .split
+        workspace.previewReady = false
+        workspace.previewReading.followsWriting = true
+        workspace.selection = NSRange(location: 2, length: 0)
+        await workspace.previewFollowTask?.value
+        #expect(workspace.assistance.pendingPreview?.selection == workspace.selection)
+        #expect(workspace.followingPreviewNavigation)
+        TabletPreview.Coordinator(workspace).receiveReading(["kind": "manualScroll"])
+        workspace.previewReady = true
+        workspace.serviceStatus = "Ready"
+        workspace.sendPendingPreviewNavigation()
+        #expect(!workspace.previewReading.followsWriting)
+        #expect(workspace.assistance.pendingPreview == nil)
     }
 
     @Test func projectImportRequiresAnEntryAndRejectsPathsOutsideTheProject() async throws {

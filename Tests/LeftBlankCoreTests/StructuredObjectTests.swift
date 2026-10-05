@@ -59,12 +59,23 @@ struct StructuredObjectTests {
         let source = "#table(columns: 1, [A])"
         var object = try #require(StructuredObject.at(NSRange(location: 2, length: 0), in: source))
         try object.pasteTable("Name\tValue\r\n#read(\"secret\")\t[abc]\r\n")
-        #expect(object.rows == [["Name", "Value"], ["\\#read(\"secret\")", "\\[abc\\]"]])
+        #expect(object.rows == [["Name", "Value"], ["\\#read(\\\"secret\\\")", "\\[abc\\]"]])
         let rendered = try object.replacement(in: source).text
         #expect(StructuredObject.at(NSRange(location: 2, length: 0), in: rendered)?.rows == object.rows)
         #expect(throws: ObjectEditError.self) { try object.pasteTable("a\tb\nc") }
         object.rows[0][0] = "] #read(\"secret\") ["
         #expect(throws: ObjectEditError.self) { try object.replacement(in: source) }
+    }
+
+    @Test func pastedMarkupRemainsLiteralAndCanBeReopened() throws {
+        let source = "#table(columns: 1, [A])"
+        var object = try #require(StructuredObject.at(NSRange(location: 2, length: 0), in: source))
+        try object.pasteTable("= Heading\n- Item\n// comment\nAn unmatched \"quote")
+        #expect(object.rows[0][0] == "\\= Heading")
+        #expect(object.rows[1][0] == "\\- Item")
+        #expect(object.rows[2][0] == "\\/\\/ comment")
+        let updated = try object.replacement(in: source).text
+        #expect(StructuredObject.at(NSRange(location: 2, length: 0), in: updated)?.rows == object.rows)
     }
 
     @Test func staleObjectAndInvalidWidthCannotOverwriteSource() throws {

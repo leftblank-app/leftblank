@@ -210,7 +210,7 @@ public struct StructuredObject: Equatable, Sendable {
         }
         rows = cells.map { $0.map { value in
             value.reduce(into: "") { output, character in
-                if "\\[]#*$@<>_`".contains(character) {
+                if "\\[]#*$@<>_`=+-/~.\"".contains(character) {
                     output.append("\\")
                 }
                 output.append(character)

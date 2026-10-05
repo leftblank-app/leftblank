@@ -7,6 +7,9 @@ public extension PreviewScripts {
         #"""
         ;(() => {
             const scroll = () => document.getElementById('typst-container-main');
+            // Native scroll anchoring can follow a recycled SVG glyph after a jump.
+            // The shared page anchor owns this container's position instead.
+            if (scroll()) scroll().style.overflowAnchor = 'none';
             const pages = () => {
                 const rects = [...document.querySelectorAll('.typst-doc > .typst-page-inner')];
                 return rects.length ? rects : [...document.querySelectorAll('.typst-doc > g.typst-page')];
@@ -16,7 +19,7 @@ public extension PreviewScripts {
             const pageBounds = page => {
                 const width = Number(page?.getAttribute('data-page-width'));
                 const height = Number(page?.getAttribute('data-page-height'));
-                const matrix = page?.getScreenCTM?.();
+                const matrix = page?.matches('g.typst-page') ? page.getScreenCTM() : null;
                 if (width > 0 && height > 0 && matrix) {
                     const start = new DOMPoint(0, 0).matrixTransform(matrix);
                     const end = new DOMPoint(width, height).matrixTransform(matrix);

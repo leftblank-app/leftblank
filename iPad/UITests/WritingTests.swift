@@ -512,6 +512,10 @@ final class WritingTests: XCTestCase {
     func testEditExistingTableAndUndo() {
         let app = startWriting()
         app.buttons["commands"].tap()
+        let search = app.searchFields["Search Commands"]
+        expect(search.waitForExistence(timeout: 10)) == true
+        search.tap()
+        search.typeText("table\n")
         let table = app.buttons["command-table"]
         expect(table.waitForExistence(timeout: 10)) == true
         table.tap()
