@@ -580,7 +580,15 @@
 
 "Discover changes available for this heading, equation or selection." = "发现当前标题、公式或选区可用的操作。";
 
-"Find the source of a variable, function or reference." = "找到变量、函数或引用的定义位置。";
+"Find the source of a variable, function, reference or imported module." = "找到变量、函数、引用或导入模块的定义位置。";
+"⌘-click source to go to definition" = "⌘ 点击源码，跳转到定义";
+"Help for %@" = "%@ 的帮助";
+"View Typst documentation" = "查看 Typst 官方文档";
+"Explanation" = "说明";
+"Example" = "示例";
+"Rendered example" = "示例排版效果";
+"Rendering example…" = "正在渲染示例…";
+"This example cannot be previewed on its own. See its documentation." = "暂时无法单独预览此示例，可查看文档说明。";
 
 "Return to your previous writing position." = "回到之前的写作位置。";
 
@@ -870,3 +878,8 @@
 "The document changed. Open the object editor again." = "文稿已变更。请重新打开表格或图片编辑器。";
 
 "Use a rectangular table, balanced cell content, and a numeric image width such as 80%." = "各行的列数必须一致，单元格内的括号必须配对。图片宽度请使用 80% 等数值。";
+"Read-only Package" = "扩展包源码（只读）";
+"Close Document" = "关闭当前文件";
+"Package source is read-only. Save a copy outside the package folder to edit it." = "扩展包源码为只读。如需编辑，请将副本保存到扩展包目录之外。";
+"Read-only" = "只读";
+"You can view and copy package source. Save a copy to edit it." = "可查看和复制扩展包源码。另存副本后可编辑。";

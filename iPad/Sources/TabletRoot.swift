@@ -278,14 +278,14 @@ struct TabletRoot: View {
                                         ? .split : .preview
                                 }
                                 Button { workspace.previewZoom = max(0.5, workspace.previewZoom - 0.1) } label: {
-                                    Image(systemName: "minus.magnifyingglass")
+                                    TabletIcon(name: "magnifying-glass-minus")
                                         .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                                 }.accessibilityLabel(L10n.text("Zoom Out")).accessibilityIdentifier("preview-zoom-out")
                                     .disabled(workspace.previewZoom <= 0.5)
                                 Text("\(Int((workspace.previewZoom * 100).rounded()))%")
                                     .font(.caption.monospacedDigit())
                                 Button { workspace.previewZoom = min(2, workspace.previewZoom + 0.1) } label: {
-                                    Image(systemName: "plus.magnifyingglass")
+                                    TabletIcon(name: "magnifying-glass-plus")
                                         .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                                 }.accessibilityLabel(L10n.text("Zoom In")).accessibilityIdentifier("preview-zoom-in")
                                     .disabled(workspace.previewZoom >= 2)
@@ -368,6 +368,12 @@ struct TabletRoot: View {
                 VStack(spacing: 2) {
                     Text(workspace.document?.title ?? L10n.text("Untitled")).font(.system(size: 15, weight: .medium))
                         .lineLimit(1)
+                    if workspace.isPackageSource {
+                        HStack(spacing: 4) {
+                            TabletIcon(name: "lock-simple").frame(width: 12, height: 12)
+                            Text(L10n.text("Read-only Package")).font(.caption)
+                        }.foregroundStyle(.secondary).accessibilityIdentifier("readonly-package")
+                    }
                     if let source = workspace.sourceURL, source != workspace.entryURL {
                         Text(workspace.sourceLabel(source)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             .accessibilityIdentifier("active-source")

@@ -23,8 +23,8 @@ struct TabletProjectFiles: View {
                     }
                     Spacer()
                     if source.resolvingSymlinksInPath() == workspace.sourceURL?.resolvingSymlinksInPath() {
-                        Image(systemName: "checkmark").foregroundStyle(TabletTheme.accent)
-                            .accessibilityLabel(L10n.text("Selected"))
+                        TabletIcon.menuImage("check", title: L10n.text("Selected"))
+                            .foregroundStyle(TabletTheme.accent)
                     }
                 }
             }.disabled(workspace.busy).accessibilityIdentifier("project-source-" + source.lastPathComponent)

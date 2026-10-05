@@ -32,8 +32,12 @@ struct TabletResourcePicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let selection {
-                Label(selection.name, systemImage: "doc")
-                    .font(.subheadline).lineLimit(2)
+                Label {
+                    Text(selection.name)
+                } icon: {
+                    TabletIcon(name: "file", size: 16)
+                }
+                .font(.subheadline).lineLimit(2)
             }
             Button(L10n.text("Import into Document")) {
                 importerSource = workspace.sourceURL
@@ -49,7 +53,11 @@ struct TabletResourcePicker: View {
                         Button(resource.relativePath) { selection = .existing(resource) }
                     }
                 } label: {
-                    Label(L10n.text("Document Resources"), systemImage: "folder")
+                    Label {
+                        Text(L10n.text("Document Resources"))
+                    } icon: {
+                        TabletIcon.menuImage("folder-simple", title: L10n.text("Document Resources"))
+                    }
                 }
                 .accessibilityIdentifier("resource-existing")
             }

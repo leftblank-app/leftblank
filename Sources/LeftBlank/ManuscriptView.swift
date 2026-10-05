@@ -31,7 +31,7 @@ struct ManuscriptView: NSViewRepresentable {
         storage.delegate = context.coordinator
         editor.isRichText = false
         editor.registerForDraggedTypes(ResourcePasteboard.types)
-        editor.isEditable = true
+        editor.isEditable = workspace.editorIsEditable
         editor.isSelectable = true
         editor.allowsUndo = true
         editor.isAutomaticQuoteSubstitutionEnabled = false
@@ -68,6 +68,7 @@ struct ManuscriptView: NSViewRepresentable {
             return
         }
         workspace.editor = editor
+        editor.isEditable = workspace.editorIsEditable
         editor.setAccessibilityLabel(L10n.text("Document Editor"))
         if editor.workspaceRevision != workspace.revision, !editor.hasMarkedText() {
             editor.load(
@@ -206,6 +207,8 @@ final class ManuscriptTextView: NSTextView {
 
     weak var workspace: Workspace?
     var assistancePopover: NSPopover?
+    lazy var sourceHover = SourceHoverController(editor: self)
+    private var sourceTrackingArea: NSTrackingArea?
     private var selectingWithMouse = false
     private var highlightTask: Task<Void, Never>?
     private var placeholders: [NSRange] = []
@@ -228,8 +231,10 @@ final class ManuscriptTextView: NSTextView {
     private var characterEdit: TextReplacement?
 
     private var viewportTask: Task<Void, Never>?
+    private var hoverViewportBounds: NSRect?
 
     func observeViewport(_ clip: NSClipView) {
+        hoverViewportBounds = clip.bounds
         clip.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(
             self,
@@ -240,6 +245,16 @@ final class ManuscriptTextView: NSTextView {
     }
 
     @objc private func viewportChanged(_ notification: Notification) {
+        if let clip = notification.object as? NSClipView, hoverViewportBounds != clip.bounds {
+            if sourceHover.panel != nil {
+                workspace?.recordOperation("hover.viewportChanged", [
+                    "previous": hoverViewportBounds.map(NSStringFromRect) ?? "none",
+                    "current": NSStringFromRect(clip.bounds),
+                ])
+            }
+            hoverViewportBounds = clip.bounds
+            sourceHover.dismiss()
+        }
         guard viewportTask == nil else {
             return
         }
@@ -296,6 +311,7 @@ final class ManuscriptTextView: NSTextView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        sourceHover.observeWindow()
         observeUndoManager()
         window?.invalidateCursorRects(for: self)
     }
@@ -361,6 +377,37 @@ final class ManuscriptTextView: NSTextView {
         }
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let sourceTrackingArea {
+            removeTrackingArea(sourceTrackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+        )
+        addTrackingArea(area)
+        sourceTrackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        // Global button state can belong to another window or the test host.
+        // AppKit sends drags separately; track only selection in this editor.
+        guard !hasMarkedText(), !selectingWithMouse else {
+            sourceHover.dismiss()
+            return
+        }
+        prepareForPointerInteraction()
+        sourceHover.move(to: sourceOffset(at: event))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        sourceHover.scheduleDismissal()
+    }
+
     override func cursorUpdate(with event: NSEvent) {
         if isEditable {
             NSCursor.iBeam.set()
@@ -382,11 +429,38 @@ final class ManuscriptTextView: NSTextView {
     override func mouseDown(with event: NSEvent) {
         workspace?.dismissAssistance()
         prepareForPointerInteraction()
+        if event.modifierFlags.intersection([.command, .control, .option, .shift]) == [.command],
+           !hasMarkedText(), workspace?.canNavigateSource == true,
+           let offset = sourceOffset(at: event)
+        {
+            setSelectedRange(NSRange(location: offset, length: 0))
+            window?.makeFirstResponder(self)
+            workspace?.goToDefinition()
+            return
+        }
         selectingWithMouse = true
         defer { selectingWithMouse = false
             scheduleHighlight()
         }
         super.mouseDown(with: event)
+    }
+
+    /// Hit the character itself, not the nearest insertion position in the margin.
+    func sourceOffset(at event: NSEvent) -> Int? {
+        guard let manager = layoutManager, let container = textContainer else {
+            return nil
+        }
+        let point = convert(event.locationInWindow, from: nil)
+        let location = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        let index = manager.characterIndex(for: location, in: container, fractionOfDistanceBetweenInsertionPoints: nil)
+        guard index < string.utf16.count else {
+            return nil
+        }
+        let glyphs = manager.glyphRange(
+            forCharacterRange: NSRange(location: index, length: 1),
+            actualCharacterRange: nil,
+        )
+        return manager.boundingRect(forGlyphRange: glyphs, in: container).contains(location) ? index : nil
     }
 
     func load(_ content: String, selection: NSRange) {
@@ -476,7 +550,7 @@ final class ManuscriptTextView: NSTextView {
     }
 
     func insertSnippet(_ snippet: Snippet, replacing range: NSRange, focus: Bool = true) {
-        guard range.location >= 0, range.location <= string.utf16.count,
+        guard workspace?.canEditSource != false, range.location >= 0, range.location <= string.utf16.count,
               range.length >= 0, range.length <= string.utf16.count - range.location
         else {
             return
@@ -503,6 +577,9 @@ final class ManuscriptTextView: NSTextView {
     }
 
     override func shouldChangeText(in affectedCharRange: NSRange, replacementString: String?) -> Bool {
+        guard workspace?.canEditSource != false else {
+            return false
+        }
         let accepted = super.shouldChangeText(in: affectedCharRange, replacementString: replacementString)
         if accepted {
             observeUndoManager()
@@ -525,7 +602,18 @@ final class ManuscriptTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
+        let hadHover = sourceHover.panel != nil
+        sourceHover.dismiss()
+        if hadHover, event.keyCode == 53, !hasMarkedText() {
+            return
+        }
         if handleTypingKey(event) {
+            return
+        }
+        if event.keyCode == 111, event.modifierFlags.isDisjoint(with: [.command, .control, .option, .shift]),
+           !hasMarkedText(), workspace?.canNavigateSource == true
+        {
+            workspace?.goToDefinition()
             return
         }
         if !hasMarkedText(), event.keyCode == 48, !placeholders.isEmpty {

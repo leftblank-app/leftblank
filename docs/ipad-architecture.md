@@ -120,9 +120,9 @@ Development signing does not validate production signing or Apple review.
 | Area | Current iPad behavior | Remaining work or evidence |
 | --- | --- | --- |
 | Local typesetting and PDF | Live preview, native PDF sharing, source/project export and AirPrint | Matching fonts/assets required for equal pagination; large-book performance needs device measurement |
-| Project navigation | Browse project sources, choose any `.typ` import entry, edit included files, follow definitions and return | Navigation stays inside the current project; cross-library chapter references are not exposed |
+| Project navigation | Browse project sources, choose any `.typ` import entry, edit included files, follow local/module/package definitions and return with Go Back or ⌘W; package sources are locked read-only | Cross-library chapter references are not exposed |
 | Source/preview navigation | Preview taps open the corresponding project source; explicit caret-to-preview reveal waits for compilation | Source positions use UTF-16; preview protocol columns use UTF-8 |
-| Editor assistance | Explicit completion, hover/signature help, context actions, formatting, snippets and hardware keyboard shortcuts | Completion supports plain text and simple numbered placeholders; variable/transform snippets and file-creating code actions remain unsupported |
+| Editor assistance | Inline completion, pointer hover and explicit signature/documentation help, rendered examples, context actions, formatting, snippets and hardware keyboard shortcuts | Completion supports plain text and simple numbered placeholders; variable/transform snippets and file-creating code actions remain unsupported |
 | Resources | Import or reuse project images, bibliography and local Typst files; paste screenshots and drop images | Resource imports copy files; dependencies of a standalone `.typ` file require project import |
 | History and recovery | Per-source history, highlighted before/after comparison, undoable restore, hourly/daily snapshots, asset-preserving recovery | History stays on this device; background/relaunch recovery still needs prolonged physical-device testing |
 | Native workflows | Independent windows and recovery files, content search, print, appearance settings, recoverable trash and confirmed Empty Trash | AirPrint output and Stage Manager need manual device verification |
@@ -138,3 +138,5 @@ and recovery snapshot and block destructive saves.
 AI probes and planning files have been removed. No model runs in either app.
 Hosted validation and physical-device checks establish different boundaries;
 compilation alone does not establish editing quality or cross-device reliability.
+
+Pointer help uses the shared hover parser and symbol boundaries. Example previews use a separate embedded Tinymist session and temporary root, retain the manuscript session, cache up to 16 images, and stop the session after five seconds or cancellation. Unlike the Mac subprocess, an embedded worker cannot be forcibly terminated; pathological example compute still needs device profiling. Native simulator tests exercise rendered pixels, embedded images, isolated file access, package read-only navigation, return positions, and hover focus/scroll behavior. Hardware pointer and keyboard behavior still needs physical-device verification.

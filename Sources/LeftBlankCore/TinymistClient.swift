@@ -24,6 +24,10 @@ public enum ServiceError: LocalizedError {
 
 @MainActor
 public final class TinymistClient {
+    public static var bundledFontURL: URL? {
+        L10n.resourceBundle.url(forResource: "NotoSansSC", withExtension: "ttf")
+    }
+
     private let makeTransport: @MainActor () throws -> any TinymistTransport
 
     public init(makeTransport: (@MainActor () throws -> any TinymistTransport)? = nil) {
@@ -58,7 +62,7 @@ public final class TinymistClient {
         }
     #endif
 
-    public func start(root: URL, outputDirectory: URL, fontPaths: [URL] = []) async throws {
+    public func start(root: URL, outputDirectory: URL, fontPaths: [URL] = [], packageCache: URL? = nil) async throws {
         stop()
         let transport = try makeTransport()
         let session = generation
@@ -103,11 +107,12 @@ public final class TinymistClient {
         output = transport.output
         errorOutput = transport.errorOutput
         try transport.start(root: root)
-        let packageCache = outputDirectory.deletingLastPathComponent().appendingPathComponent("PackageCache")
+        let packageCache = packageCache ?? outputDirectory.deletingLastPathComponent()
+            .appendingPathComponent("PackageCache")
         try BundledPackages.prepare(in: packageCache)
         // iPad's PingFang UI collection uses Apple-specific glyph tables that
         // Typst cannot parse. Supply the same portable CJK fallback on both platforms.
-        let bundledFont = L10n.resourceBundle.url(forResource: "NotoSansSC", withExtension: "ttf")
+        let bundledFont = Self.bundledFontURL
         let response = try await request("initialize", [
             "processId": ProcessInfo.processInfo.processIdentifier,
             "rootUri": root.absoluteString,
@@ -118,6 +123,7 @@ public final class TinymistClient {
                     "publishDiagnostics": ["versionSupport": true],
                     "completion": ["completionItem": ["snippetSupport": false]],
                     "hover": ["contentFormat": ["plaintext"]],
+                    "definition": ["linkSupport": true],
                     "signatureHelp": ["signatureInformation": [
                         "documentationFormat": ["plaintext"],
                         "parameterInformation": ["labelOffsetSupport": true],

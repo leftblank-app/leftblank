@@ -124,6 +124,7 @@ extension ManuscriptTextView {
     }
 
     func dismissAssistance() {
+        sourceHover.dismiss()
         assistancePopover?.close()
         assistancePopover = nil
     }

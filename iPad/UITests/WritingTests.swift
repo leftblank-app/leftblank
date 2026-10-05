@@ -539,6 +539,35 @@ final class WritingTests: XCTestCase {
         expectShareSheet(in: app)
     }
 
+    func testRenderedFunctionHelpKeepsTheManuscript() {
+        let app = startWriting()
+        let editor = app.textViews["manuscript"].firstMatch
+        editor.tap()
+        editor.typeKey("a", modifierFlags: .command)
+        editor.typeText("#align(center)[Hi]")
+        editor.typeKey(.leftArrow, modifierFlags: .command)
+        for _ in 0 ..< 3 {
+            editor.typeKey(.rightArrow, modifierFlags: [])
+        }
+        let original = editor.value as? String
+        expect(original) == "#align(center)[Hi]"
+        app.buttons["document-actions"].firstMatch.tap()
+        let assistance = app.buttons["Writing Assistance"]
+        waitForStableControl(assistance, in: app)
+        assistance.tap()
+        let explain = app.buttons["Explain at Cursor"]
+        expect(appears(explain, timeout: 10)) == true
+        explain.tap()
+        let preview = app.images["help-example-preview"].firstMatch
+        expect(appears(preview, timeout: 30)) == true
+        expect(preview.frame.width) > 0
+        capture("Rendered function help on iPad")
+        app.buttons["Explanation"].tap()
+        expect(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Aligns")).firstMatch.exists) == true
+        app.buttons["Done"].tap()
+        expect(editor.value as? String) == original
+    }
+
     func testAssistanceHistoryAndProjectNavigation() {
         executionTimeAllowance = 180
         let app = startWriting()
