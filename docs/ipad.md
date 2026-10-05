@@ -166,10 +166,10 @@ boots only its requested size on the newest available iOS runtime, then shuts it
 down after testing. The two sizes cannot compete for resources on the same
 machine. A disposable simulator boots, receives its appearance, shuts down and
 boots again before testing: an iOS 26 first boot can leave rotation broken and
-ran tests measurably slower. With `--build`, that cold start runs in the
-background while the tests compile; the helper still verifies readiness and
-appearance afterwards, and a failed build shuts the device down before the
-disposable simulator is deleted.
+ran tests measurably slower. With `--build`, `scripts/build-ipad.sh simulator`
+starts first and compiles in the background (15-minute limit) during device
+discovery, creation and the cold start; tests begin once both finish. A failed
+build fails the run, shuts the device down and deletes the disposable simulator.
 Each UI runner selects Xcode 26.3 system-wide as well as through `DEVELOPER_DIR`
 before contacting CoreSimulator. Its first device query has a three-minute
 limit for service initialization and runtime mounting; later inventory checks

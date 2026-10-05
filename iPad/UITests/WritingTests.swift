@@ -2,6 +2,25 @@ import Nimble
 import StoreKitTest
 import XCTest
 
+/// Polls five times per second. XCTest's predicate expectations, including
+/// waitForExistence, sample about once per second and first wait a full
+/// interval, even when the state is already reached. File-scope helpers keep
+/// Nimble's autoclosures free of implicit self captures.
+@MainActor private func poll(timeout: TimeInterval, until condition: () -> Bool) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !condition() {
+        guard Date() < deadline else {
+            return false
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+    }
+    return true
+}
+
+@MainActor private func appears(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+    poll(timeout: timeout) { element.exists }
+}
+
 @MainActor
 final class WritingTests: XCTestCase {
     private var storeSession: SKTestSession?
@@ -169,24 +188,6 @@ final class WritingTests: XCTestCase {
         let bottom = keyboard.map { min(frame.maxY, $0.frame.minY) } ?? frame.maxY
         editor.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: frame.width / 2, dy: bottom - frame.minY - 20)).tap()
-    }
-
-    /// Polls five times per second. XCTest's predicate expectations, including
-    /// waitForExistence, sample about once per second and first wait a full
-    /// interval, even when the state is already reached.
-    private func poll(timeout: TimeInterval, until condition: () -> Bool) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() {
-            guard Date() < deadline else {
-                return false
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        }
-        return true
-    }
-
-    private func appears(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
-        poll(timeout: timeout) { element.exists }
     }
 
     private func waitForState(
