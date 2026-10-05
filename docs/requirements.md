@@ -18,6 +18,7 @@ The initial acceptance document is an article containing headings, lists, images
 6. Preserve source access, with restrained highlighting and structural assistance. The writing surface need not look exactly like the paginated output.
 7. Keep ordinary `.typ` source and relative assets compatible with external tools. A managed library may simplify how documents are presented without locking away their source.
 8. Use Phosphor Regular consistently for app actions, while retaining native system window controls.
+   CI enforces this with the `phosphor_icons_only` SwiftLint rule: use `PhosphorIcon` on macOS and `TabletIcon` on iPad. SF Symbols initializers (`systemName`, `systemImage`, `systemSymbolName`) are rejected in application sources. `scripts/test-icon-policy.py` verifies both rejected calls and allowed comments, strings and shared components using the pinned linter.
 
 ## Main workflow
 
