@@ -5,6 +5,7 @@ import WebKit
 struct PreviewView: NSViewRepresentable {
     let url: URL
     let zoom: CGFloat
+    var maxPageWidth: CGFloat?
     var dark = false
     var onLoading: () -> Void = {}
     var onReady: () -> Void = {}
@@ -41,6 +42,7 @@ struct PreviewView: NSViewRepresentable {
         context.coordinator.onReady = onReady
         view.setAccessibilityLabel(L10n.text("Document Preview"))
         context.coordinator.zoom = zoom
+        context.coordinator.maxPageWidth = maxPageWidth
         context.coordinator.dark = dark
         if context.coordinator.loadedURL != url {
             context.coordinator.loadedURL = url
@@ -59,8 +61,10 @@ struct PreviewView: NSViewRepresentable {
         }
 
         var zoom: CGFloat = 1
+        var maxPageWidth: CGFloat?
         var dark = false
         private var appliedZoom: CGFloat?
+        private var appliedMaxPageWidth: CGFloat?
         private var appliedDark: Bool?
         private var recoveredTermination = false
         let onError: (String) -> Void
@@ -88,25 +92,32 @@ struct PreviewView: NSViewRepresentable {
         }
 
         func applyZoom(to view: WKWebView) {
-            guard !view.isLoading, appliedZoom != zoom || appliedDark != dark else {
+            guard !view.isLoading,
+                  appliedZoom != zoom || appliedMaxPageWidth != maxPageWidth || appliedDark != dark
+            else {
                 return
             }
             // Tinymist fits pages to this container; browser pageZoom is cancelled by that fit.
+            // Limit the default reading width, while allowing explicit zoom to enlarge it.
             let script = """
             (() => {
                 const container = document.getElementById('typst-container');
                 if (!container) return false;
                 container.style.width = '\(zoom * 100)%';
+                container.style.maxWidth = '\(maxPageWidth.map { "\($0 * zoom)px" } ?? "none")';
+                container.style.marginInline = 'auto';
                 if (window.leftblankSetDark) window.leftblankSetDark(\(dark ? "true" : "false"));
                 window.dispatchEvent(new Event('resize'));
                 return true;
             })()
             """
             let requestedZoom = zoom
+            let requestedMaxPageWidth = maxPageWidth
             let requestedDark = dark
             view.evaluateJavaScript(script) { [weak self] result, _ in
                 if result as? Bool == true {
                     self?.appliedZoom = requestedZoom
+                    self?.appliedMaxPageWidth = requestedMaxPageWidth
                     self?.appliedDark = requestedDark
                 }
             }

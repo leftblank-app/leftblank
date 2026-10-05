@@ -35,6 +35,7 @@ struct ContentView: View {
                         280,
                         min(width - 280, width * splitFraction),
                     ))
+                    let previewWidth = max(0, width - editorWidth - (workspace.layout == .split ? 1 : 0))
                     HStack(spacing: 0) {
                         manuscript.frame(width: editorWidth).clipped()
                             .overlay(alignment: .topLeading) {
@@ -56,7 +57,7 @@ struct ContentView: View {
                                         max(0.25, value.location.x / width),
                                     )
                                 }))
-                        preview.frame(width: max(0, width - editorWidth - (workspace.layout == .split ? 1 : 0)))
+                        preview(paneWidth: previewWidth).frame(width: previewWidth)
                             .clipped()
                             .opacity(workspace.layout == .writing ? 0 : 1)
                             .accessibilityHidden(workspace.layout == .writing)
@@ -93,12 +94,14 @@ struct ContentView: View {
         ManuscriptView(workspace: workspace).clipped().background(Theme.editor)
     }
 
-    private var preview: some View {
+    private func preview(paneWidth: CGFloat) -> some View {
         Group {
             if let url = workspace.previewURL {
                 PreviewView(
                     url: url,
                     zoom: workspace.previewZoom,
+                    maxPageWidth: workspace.layout == .preview
+                        ? max(0, paneWidth - 2 * ManuscriptLayout.horizontalInset(for: paneWidth)) : nil,
                     dark: workspace.previewDark,
                     onLoading: { workspace.previewWillLoad(at: url) },
                     onReady: { workspace.previewDidBecomeReady(at: url) },
