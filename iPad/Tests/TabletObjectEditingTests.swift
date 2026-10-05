@@ -65,14 +65,12 @@ struct TabletObjectEditingTests {
         }
         let source = "#table(columns: 2, [A], [B])\n#image(\"mark.svg\", width: 20%)"
         workspace.activeSourceURL = nil
-        let document = try await workspace.library.create(text: source)
-        await workspace.open(document)
-        let root = try #require(workspace.sourceURL).deletingLastPathComponent()
-        try Data(
+        let asset = Data(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\"><rect width=\"20\" height=\"20\"/></svg>"
                 .utf8,
         )
-        .write(to: root.appendingPathComponent("mark.svg"))
+        let document = try await workspace.library.create(text: source, assets: ["mark.svg": asset])
+        await workspace.open(document)
         editor.text = workspace.text
         editor.selectedRange = NSRange(location: 3, length: 0)
         workspace.selection = editor.selectedRange
