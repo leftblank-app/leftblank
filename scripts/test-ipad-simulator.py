@@ -93,6 +93,7 @@ class SimulatorContracts(unittest.TestCase):
                     tests.return_value = outcome
                     self.assertEqual(runner.main(['--size', '13-inch', '--fresh-device']), 0 if outcome else 1)
                 created = tests.call_args.args[1]
+                self.assertTrue(tests.call_args.kwargs['cold_start'])
                 self.assertEqual(created['udid'], identifier)
                 self.assertNotEqual(created['udid'], existing['udid'])
                 create = next(call.args[0] for call in run.call_args_list if call.args[0][1:3] == ['simctl', 'create'])
@@ -112,7 +113,11 @@ class SimulatorContracts(unittest.TestCase):
             boot.wait.side_effect = lambda timeout: events.append('booted')
 
             def start_boot(args, **_options):
-                self.assertEqual(args, ['xcrun', 'simctl', 'bootstatus', identifier, '-b'])
+                # The background setup mirrors test_device's cold start.
+                self.assertEqual(args[:2], ['/bin/sh', '-c'])
+                self.assertEqual(args[2], ' && '.join([
+                    f'xcrun simctl bootstatus {identifier} -b', f'xcrun simctl ui {identifier} appearance dark',
+                    f'xcrun simctl shutdown {identifier}', f'xcrun simctl bootstatus {identifier} -b']))
                 events.append('boot')
                 return boot
 
@@ -351,7 +356,36 @@ class SimulatorContracts(unittest.TestCase):
             self.assertFalse(any(call.args[0][0] == 'xcodebuild' for call in run.call_args_list))
             self.assertEqual(run.call_args.args[0][:3], ['xcrun', 'simctl', 'shutdown'])
 
-    def test_setup_boots_once_before_appearance_verification_and_tests(self):
+    def test_cold_setup_reboots_before_appearance_verification_and_tests(self):
+        for failure in (None, 'second boot', 'appearance'):
+            events = []
+
+            def command(args, timeout, **_options):
+                operation = args[2] if args[0] == 'xcrun' else 'test'
+                if operation == 'shutdown':
+                    self.assertEqual(timeout, 120)
+                if operation == 'bootstatus':
+                    operation = 'second boot' if 'first boot' in events else 'first boot'
+                if operation == 'ui':
+                    operation = 'set appearance' if len(args) == 6 else 'appearance'
+                events.append(operation)
+                if operation == failure:
+                    raise subprocess.TimeoutExpired(args, timeout)
+                return subprocess.CompletedProcess(args, 0, stdout='Dark\n')
+
+            with self.subTest(failure=failure), patch.object(runner, 'run', side_effect=command), \
+                 patch.object(runner, 'configure_coverage'), patch.object(runner, 'export_coverage'), \
+                 patch.object(runner, 'verify_result'), patch.object(runner, 'diagnostics'):
+                passed = runner.test_device('11-inch', DEVICES[0][1], self.root / 'tests.xctestrun',
+                                            self.root, appearance='dark', cold_start=True)
+            self.assertEqual(passed, failure is None)
+            self.assertEqual(events[:4], ['first boot', 'set appearance', 'shutdown', 'second boot'])
+            self.assertEqual(events[-1], 'shutdown')
+            self.assertEqual(events.count('test'), 1 if failure is None else 0)
+            if failure is None:
+                self.assertEqual(events[4:], ['appearance', 'test', 'shutdown'])
+
+    def test_warm_setup_boots_once_before_appearance_verification_and_tests(self):
         for failure in (None, 'boot', 'appearance'):
             events = []
 

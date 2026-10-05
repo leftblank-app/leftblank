@@ -243,7 +243,8 @@ def configure_coverage(bundle):
     bundle.write_bytes(plistlib.dumps(parameters))
 
 
-def test_device(size, device, bundle, results, *, suite='all', memory=False, coverage=True, appearance=None):
+def test_device(size, device, bundle, results, *, suite='all', memory=False, coverage=True, appearance=None,
+                cold_start=False):
     print(f"::group::{size}: boot, native {suite} tests, shutdown", flush=True)
     try:
         if coverage:
@@ -255,6 +256,14 @@ def test_device(size, device, bundle, results, *, suite='all', memory=False, cov
             # bootstatus completes. Keep a bounded startup allowance and confirm
             # the actual appearance before measuring the test run.
             run(['xcrun', 'simctl', 'ui', device['udid'], 'appearance', appearance], 120)
+        if cold_start:
+            # iOS 26 can crash/respring SpringBoard during first-boot setup and
+            # then acknowledge orientation events without rotating even Settings.
+            # A first-boot device also runs tests measurably slower and failed
+            # timing-sensitive WebKit tests. Finish migration/preferences before a
+            # full boot of the initialized device. This is setup, not a retry.
+            shutdown(device)
+            run(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b', '-d'], 240)
         if appearance:
             actual = run(['xcrun', 'simctl', 'ui', device['udid'], 'appearance'], 120, capture=True).stdout
             if actual.strip().lower() != appearance:
@@ -302,28 +311,34 @@ def find_bundle(products):
     return bundles[0]
 
 
-def build_while_booting(root, device, products, log):
-    """Compile the test products while CoreSimulator boots the device.
+def build_while_booting(root, device, products, log, appearance=None):
+    """Compile the test products while the device completes its cold start.
 
-    The boot keeps its usual four-minute limit from its own start. test_device
-    still verifies boot readiness; a failure shuts the device down for cleanup.
+    The background setup mirrors test_device's cold_start (boot, appearance,
+    shutdown, boot) within one ten-minute limit from its own start. test_device
+    still verifies readiness and appearance; a failure shuts the device down.
     """
+    udid = device['udid']
+    steps = [['xcrun', 'simctl', 'bootstatus', udid, '-b']]
+    if appearance:
+        steps.append(['xcrun', 'simctl', 'ui', udid, 'appearance', appearance])
+    steps += [['xcrun', 'simctl', 'shutdown', udid], ['xcrun', 'simctl', 'bootstatus', udid, '-b']]
     started = time.monotonic()
     with log.open('w') as output:
-        boot = subprocess.Popen(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b'], stdout=output,
-                                stderr=subprocess.STDOUT, start_new_session=True)
+        setup = subprocess.Popen(['/bin/sh', '-c', ' && '.join(map(shlex.join, steps))], stdout=output,
+                                 stderr=subprocess.STDOUT, start_new_session=True)
         try:
             run([str(root / 'scripts/build-ipad.sh'), 'simulator'], 900)
             compiled = time.monotonic()
             print(f'Simulator tests compiled in {compiled - started:.1f}s', flush=True)
-            boot.wait(timeout=max(1, 240 - (compiled - started)))
-            print(f'Background boot exited with {boot.returncode}; waited '
+            setup.wait(timeout=max(1, 600 - (compiled - started)))
+            print(f'Background cold start exited with {setup.returncode}; waited '
                   f'{time.monotonic() - compiled:.1f}s after compilation', flush=True)
             return find_bundle(products)
         except BaseException:
-            if boot.poll() is None:
-                os.killpg(boot.pid, signal.SIGKILL)
-                boot.wait()
+            if setup.poll() is None:
+                os.killpg(setup.pid, signal.SIGKILL)
+                setup.wait()
             shutdown(device)
             raise
 
@@ -334,7 +349,7 @@ def main(argv=None):
     parser.add_argument('--suite', choices=('all', 'smoke', 'unit'), default='all',
                         help='smoke runs the native unit tests and the curated SMOKE_TESTS UI scenarios')
     parser.add_argument('--build', action='store_true',
-                        help='Run scripts/build-ipad.sh simulator while the device boots')
+                        help='Run scripts/build-ipad.sh simulator during the device cold start')
     parser.add_argument('--derived-data', type=Path, default=Path('build/iPad'))
     parser.add_argument('--results', type=Path, default=Path('build/iPad-writing'))
     parser.add_argument('--memory', action='store_true')
@@ -375,6 +390,8 @@ def main(argv=None):
     finally:
         print('::endgroup::', flush=True)
     options = {}
+    if args.fresh_device and not args.build:
+        options['cold_start'] = True
     if args.appearance:
         options['appearance'] = args.appearance
     if args.suite != 'all':
@@ -387,7 +404,8 @@ def main(argv=None):
         if args.build:
             print(f'::group::{args.size}: compile tests while the simulator boots', flush=True)
             try:
-                bundle = build_while_booting(root, device, products, results / f'{args.size}-boot.log')
+                bundle = build_while_booting(root, device, products, results / f'{args.size}-boot.log',
+                                             args.appearance)
             finally:
                 print('::endgroup::', flush=True)
         return 0 if test_device(args.size, device, bundle, results, **options) else 1
