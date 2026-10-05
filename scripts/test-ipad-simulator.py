@@ -11,7 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import ipad_simulator as runner
 
@@ -93,67 +93,79 @@ class SimulatorContracts(unittest.TestCase):
                     tests.return_value = outcome
                     self.assertEqual(runner.main(['--size', '13-inch', '--fresh-device']), 0 if outcome else 1)
                 created = tests.call_args.args[1]
-                self.assertTrue(tests.call_args.kwargs['cold_start'])
                 self.assertEqual(created['udid'], identifier)
                 self.assertNotEqual(created['udid'], existing['udid'])
                 create = next(call.args[0] for call in run.call_args_list if call.args[0][1:3] == ['simctl', 'create'])
                 self.assertEqual(create[-2:], ['iPad-Air-13-inch', 'com.apple.CoreSimulator.SimRuntime.iOS-26-2'])
                 self.assertEqual(run.call_args.args[0], ['xcrun', 'simctl', 'delete', identifier])
 
-    def test_sanitizer_reuses_owned_device_and_cleans_up_after_each_failure_stage(self):
-        original = self.prepare_bundle()
+    def test_build_overlaps_boot_and_cleans_up_after_each_failure_stage(self):
+        products = self.root / 'build/iPad/Build/Products'
         device = dict(DEVICES[0][1], deviceTypeIdentifier='iPad-Air-11-inch')
         inventory = {'com.apple.CoreSimulator.SimRuntime.iOS-26-2': [device]}
         identifier = '12345678-1234-1234-1234-123456789abc'
-        for sanitizer in ('address', 'thread'):
-            sanitized = self.root / 'build/iPad-memory' / sanitizer / 'Build/Products/tests.xctestrun'
-            sanitized.parent.mkdir(parents=True)
-            sanitized.touch()
-            for failure in (None, 'ui', 'build', 'sanitizer'):
-                events = []
+        for failure in (None, 'build', 'tests', 'crash'):
+            events = []
 
-                def command(args, _timeout, **_options):
-                    if args[0].endswith('build-ipad.sh'):
-                        events.append('build')
-                        self.assertEqual(args[1:], ['simulator', sanitizer])
-                        if failure == 'build':
-                            raise subprocess.CalledProcessError(65, args)
-                    if args[:3] == ['xcrun', 'simctl', 'delete']:
-                        events.append('delete')
-                        self.assertEqual(args[3], identifier)
-                    return subprocess.CompletedProcess(args, 0, stdout=identifier)
+            boot = MagicMock(returncode=0)
+            boot.poll.return_value = 0
+            boot.wait.side_effect = lambda timeout: events.append('booted')
 
-                def tests(_size, owned, bundle, _results, **options):
-                    self.assertEqual(owned['udid'], identifier)
-                    if bundle == original:
-                        events.append('ui')
-                        self.assertTrue(options['cold_start'])
-                        self.assertTrue(options['memory'])
-                        return failure != 'ui'
-                    events.append('sanitizer')
-                    self.assertEqual(bundle, sanitized)
-                    self.assertEqual(options, {'suite': 'unit', 'coverage': False, 'appearance': 'light'})
-                    return failure != 'sanitizer'
+            def start_boot(args, **_options):
+                self.assertEqual(args, ['xcrun', 'simctl', 'bootstatus', identifier, '-b'])
+                events.append('boot')
+                return boot
 
-                with self.subTest(sanitizer=sanitizer, failure=failure), \
-                     patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'}), \
-                     patch.object(runner, '__file__', str(self.root / 'scripts/ipad_simulator.py')), \
-                     patch.object(runner, 'inventory', return_value=inventory), \
-                     patch.object(runner, 'run', side_effect=command), \
-                     patch.object(runner, 'test_device', side_effect=tests):
-                    arguments = ['--size', '11-inch', '--fresh-device', '--memory',
-                                 '--appearance', 'light', '--sanitizer', sanitizer]
+            def command(args, _timeout, **_options):
+                if args[0].endswith('build-ipad.sh'):
+                    events.append('build')
+                    self.assertEqual(args[1:], ['simulator'])
                     if failure == 'build':
-                        with self.assertRaises(subprocess.CalledProcessError):
-                            runner.main(arguments)
-                    else:
-                        self.assertEqual(runner.main(arguments), 1 if failure else 0)
-                expected = ['ui']
-                if failure != 'ui':
-                    expected.append('build')
-                    if failure != 'build':
-                        expected.append('sanitizer')
-                self.assertEqual(events, expected + ['delete'])
+                        raise subprocess.CalledProcessError(65, args)
+                    products.mkdir(parents=True, exist_ok=True)
+                    (products / 'tests.xctestrun').touch()
+                if args[:3] == ['xcrun', 'simctl', 'shutdown']:
+                    events.append('shutdown')
+                if args[:3] == ['xcrun', 'simctl', 'delete']:
+                    events.append('delete')
+                    self.assertEqual(args[3], identifier)
+                return subprocess.CompletedProcess(args, 0, stdout=identifier)
+
+            def tests(_size, owned, bundle, _results, **options):
+                self.assertEqual(owned['udid'], identifier)
+                self.assertEqual(bundle, products / 'tests.xctestrun')
+                self.assertEqual(options, {'suite': 'smoke', 'coverage': False, 'appearance': 'dark'})
+                events.append('tests')
+                if failure == 'crash':
+                    raise RuntimeError('test process failed')
+                return failure != 'tests'
+
+            with self.subTest(failure=failure), \
+                 patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'}), \
+                 patch.object(runner, '__file__', str(self.root / 'scripts/ipad_simulator.py')), \
+                 patch.object(runner, 'inventory', return_value=inventory), \
+                 patch.object(runner.subprocess, 'Popen', side_effect=start_boot), \
+                 patch.object(runner, 'run', side_effect=command), \
+                 patch.object(runner, 'test_device', side_effect=tests):
+                arguments = ['--size', '11-inch', '--fresh-device', '--build', '--suite', 'smoke',
+                             '--no-coverage', '--appearance', 'dark']
+                if failure in ('build', 'crash'):
+                    with self.assertRaises((subprocess.CalledProcessError, RuntimeError)):
+                        runner.main(arguments)
+                else:
+                    self.assertEqual(runner.main(arguments), 1 if failure else 0)
+            if failure == 'build':
+                self.assertEqual(events, ['boot', 'build', 'shutdown', 'delete'])
+            else:
+                self.assertEqual(events, ['boot', 'build', 'booted', 'tests', 'delete'])
+            for bundle in products.glob('*.xctestrun'):
+                bundle.unlink()
+
+    def test_build_rejects_unrelated_products(self):
+        with patch.object(runner, 'inventory') as inventory, contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                runner.main(['--size', '11-inch', '--build', '--derived-data', 'build/iPad-memory/address'])
+            inventory.assert_not_called()
 
     def test_fresh_device_rejects_local_default_device_storage(self):
         with patch.dict(os.environ, {'GITHUB_ACTIONS': 'false'}), \
@@ -339,16 +351,14 @@ class SimulatorContracts(unittest.TestCase):
             self.assertFalse(any(call.args[0][0] == 'xcodebuild' for call in run.call_args_list))
             self.assertEqual(run.call_args.args[0][:3], ['xcrun', 'simctl', 'shutdown'])
 
-    def test_cold_setup_reboots_before_appearance_verification_and_tests(self):
-        for failure in (None, 'second boot', 'appearance'):
+    def test_setup_boots_once_before_appearance_verification_and_tests(self):
+        for failure in (None, 'boot', 'appearance'):
             events = []
 
             def command(args, timeout, **_options):
                 operation = args[2] if args[0] == 'xcrun' else 'test'
-                if operation == 'shutdown':
-                    self.assertEqual(timeout, 120)
                 if operation == 'bootstatus':
-                    operation = 'second boot' if 'first boot' in events else 'first boot'
+                    operation = 'boot'
                 if operation == 'ui':
                     operation = 'set appearance' if len(args) == 6 else 'appearance'
                 events.append(operation)
@@ -360,13 +370,35 @@ class SimulatorContracts(unittest.TestCase):
                  patch.object(runner, 'configure_coverage'), patch.object(runner, 'export_coverage'), \
                  patch.object(runner, 'verify_result'), patch.object(runner, 'diagnostics'):
                 passed = runner.test_device('11-inch', DEVICES[0][1], self.root / 'tests.xctestrun',
-                                            self.root, appearance='dark', cold_start=True)
+                                            self.root, appearance='dark')
             self.assertEqual(passed, failure is None)
-            self.assertEqual(events[:4], ['first boot', 'set appearance', 'shutdown', 'second boot'])
+            self.assertEqual(events.count('boot'), 1)
             self.assertEqual(events[-1], 'shutdown')
-            self.assertEqual(events.count('test'), 1 if failure is None else 0)
+            self.assertEqual(events.count('shutdown'), 1)
             if failure is None:
-                self.assertEqual(events[4:], ['appearance', 'test', 'shutdown'])
+                self.assertEqual(events, ['boot', 'set appearance', 'appearance', 'test', 'shutdown'])
+
+    def test_smoke_suite_selects_native_tests_and_curated_ui_scenarios(self):
+        with patch.object(runner, 'run', return_value=subprocess.CompletedProcess([], 0)) as run, \
+             patch.object(runner, 'verify_result'), patch.object(runner, 'export_coverage') as coverage, \
+             patch.object(runner, 'configure_coverage') as configure:
+            self.assertTrue(runner.test_device('13-inch', DEVICES[1][1], self.root / 'test.xctestrun',
+                                             self.root, suite='smoke', coverage=False))
+        call = next(call for call in run.call_args_list if call.args[0][0] == 'xcodebuild')
+        command = call.args[0]
+        selected = [arg.split(':', 1)[1] for arg in command if arg.startswith('-only-testing:')]
+        self.assertEqual(selected, ['LeftBlankTabletTests', *runner.SMOKE_TESTS])
+        self.assertTrue(2 <= len(runner.SMOKE_TESTS) <= 3)
+        scenarios = (Path(__file__).resolve().parent.parent / 'iPad/UITests/WritingTests.swift').read_text()
+        for test in runner.SMOKE_TESTS:
+            target, case, name = test.split('/')
+            self.assertEqual((target, case), ('LeftBlankUITests', 'WritingTests'))
+            self.assertIn(f'func {name}()', scenarios)
+        self.assertEqual(command[command.index('-enableCodeCoverage') + 1], 'NO')
+        self.assertEqual(call.args[1], 600)
+        self.assertEqual(call.kwargs['startup_timeout'], 600)
+        coverage.assert_not_called()
+        configure.assert_not_called()
 
     def test_memory_validation_rejects_missing_workload_metrics(self):
         summary = {'result': 'Passed', 'passedTests': 2, 'failedTests': 0}

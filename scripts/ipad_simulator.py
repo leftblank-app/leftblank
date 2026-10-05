@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run native/UI tests and optional sanitizer validation on one iPad."""
+"""Run native and UI tests on one iPad simulator."""
 
 import argparse
 import codecs
@@ -16,6 +16,13 @@ import subprocess
 import sys
 import time
 import uuid
+
+
+# Pull requests run every native unit test plus these UI scenarios: writing,
+# split view, autosave, preview, rotation, rendering and PDF sharing. Main and
+# full dispatches run the complete UI suite.
+SMOKE_TESTS = ('LeftBlankUITests/WritingTests/testEditingPersistsAcrossPreviewAndRotation',
+               'LeftBlankUITests/WritingTests/testWelcomePreviewAndPDFExport')
 
 
 def wait_for_tests(process, startup_timeout, execution_timeout):
@@ -236,8 +243,7 @@ def configure_coverage(bundle):
     bundle.write_bytes(plistlib.dumps(parameters))
 
 
-def test_device(size, device, bundle, results, *, suite='all', memory=False, coverage=True, appearance=None,
-                cold_start=False):
+def test_device(size, device, bundle, results, *, suite='all', memory=False, coverage=True, appearance=None):
     print(f"::group::{size}: boot, native {suite} tests, shutdown", flush=True)
     try:
         if coverage:
@@ -249,20 +255,16 @@ def test_device(size, device, bundle, results, *, suite='all', memory=False, cov
             # bootstatus completes. Keep a bounded startup allowance and confirm
             # the actual appearance before measuring the test run.
             run(['xcrun', 'simctl', 'ui', device['udid'], 'appearance', appearance], 120)
-        if cold_start:
-            # iOS 26 can crash/respring SpringBoard during first-boot setup and
-            # then acknowledge orientation events without rotating even Settings.
-            # Finish migration/preferences before a full boot of the initialized
-            # device. This is setup, not a retry of failed application tests.
-            shutdown(device)
-            run(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b', '-d'], 240)
         if appearance:
             actual = run(['xcrun', 'simctl', 'ui', device['udid'], 'appearance'], 120, capture=True).stdout
             if actual.strip().lower() != appearance:
                 raise RuntimeError('Simulator appearance differs from the requested ' + appearance)
         # Xcode's verbose sysdiagnose can spend ten minutes after a test failure.
         # Keep the test report and attachments, then collect our bounded diagnostics.
-        selection = ['-only-testing:LeftBlankTabletTests'] if suite == 'unit' else []
+        selection = []
+        if suite != 'all':
+            selection = ['-only-testing:' + test for test in
+                         ('LeftBlankTabletTests', *(SMOKE_TESTS if suite == 'smoke' else ()))]
         started = time.time()
         run(['xcodebuild', '-xctestrun', str(bundle),
              '-derivedDataPath', str(bundle.parent.parent.parent),
@@ -274,8 +276,8 @@ def test_device(size, device, bundle, results, *, suite='all', memory=False, cov
              '-collect-test-diagnostics', 'never',
              '-enableCodeCoverage', 'YES' if coverage else 'NO',
              '-resultBundlePath', str(results / f'{size}.xcresult'),
-             *selection, 'test-without-building'], 1500 if suite == 'all' else 1080,
-            startup_timeout=600 if suite == 'all' else None)
+             *selection, 'test-without-building'], {'all': 1500, 'smoke': 600}.get(suite, 1080),
+            startup_timeout=None if suite == 'unit' else 600)
         verify_result(results / f'{size}.xcresult', results, memory=memory)
         if coverage:
             export_coverage(bundle, device, results, size, started)
@@ -293,12 +295,46 @@ def test_device(size, device, bundle, results, *, suite='all', memory=False, cov
             print('::endgroup::', flush=True)
 
 
+def find_bundle(products):
+    bundles = list(products.glob('*.xctestrun'))
+    if len(bundles) != 1:
+        raise RuntimeError('Expected one .xctestrun bundle; run scripts/build-ipad.sh simulator first')
+    return bundles[0]
+
+
+def build_while_booting(root, device, products, log):
+    """Compile the test products while CoreSimulator boots the device.
+
+    The boot keeps its usual four-minute limit from its own start. test_device
+    still verifies boot readiness; a failure shuts the device down for cleanup.
+    """
+    started = time.monotonic()
+    with log.open('w') as output:
+        boot = subprocess.Popen(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b'], stdout=output,
+                                stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            run([str(root / 'scripts/build-ipad.sh'), 'simulator'], 900)
+            compiled = time.monotonic()
+            print(f'Simulator tests compiled in {compiled - started:.1f}s', flush=True)
+            boot.wait(timeout=max(1, 240 - (compiled - started)))
+            print(f'Background boot exited with {boot.returncode}; waited '
+                  f'{time.monotonic() - compiled:.1f}s after compilation', flush=True)
+            return find_bundle(products)
+        except BaseException:
+            if boot.poll() is None:
+                os.killpg(boot.pid, signal.SIGKILL)
+                boot.wait()
+            shutdown(device)
+            raise
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--size', choices=('11-inch', '13-inch'), required=True)
-    parser.add_argument('--suite', choices=('all', 'unit'), default='all')
-    parser.add_argument('--sanitizer', choices=('address', 'thread'),
-                        help='Build and run native sanitizer tests on the same device after the full suite')
+    parser.add_argument('--suite', choices=('all', 'smoke', 'unit'), default='all',
+                        help='smoke runs the native unit tests and the curated SMOKE_TESTS UI scenarios')
+    parser.add_argument('--build', action='store_true',
+                        help='Run scripts/build-ipad.sh simulator while the device boots')
     parser.add_argument('--derived-data', type=Path, default=Path('build/iPad'))
     parser.add_argument('--results', type=Path, default=Path('build/iPad-writing'))
     parser.add_argument('--memory', action='store_true')
@@ -307,14 +343,13 @@ def main(argv=None):
     parser.add_argument('--fresh-device', action='store_true',
                         help='Create a disposable simulator on a hosted CI runner')
     args = parser.parse_args(argv)
-    if args.sanitizer and args.suite != 'all':
-        parser.error('--sanitizer follows the full suite; use --suite all')
+    if args.build and args.derived_data != Path('build/iPad'):
+        parser.error('--build produces build/iPad; omit --derived-data')
     if args.fresh_device and os.environ.get('GITHUB_ACTIONS') != 'true':
         parser.error('--fresh-device is restricted to disposable hosted CI runners')
     root = Path(__file__).resolve().parent.parent
-    bundles = list((root / args.derived_data / 'Build/Products').glob('*.xctestrun'))
-    if len(bundles) != 1:
-        raise RuntimeError('Expected one .xctestrun bundle; run scripts/build-ipad.sh simulator first')
+    products = root / args.derived_data / 'Build/Products'
+    bundle = None if args.build else find_bundle(products)
     results = root / args.results
     results.mkdir(parents=True, exist_ok=True)
     run(['sysctl', 'hw.memsize', 'hw.ncpu'], 10)
@@ -340,8 +375,6 @@ def main(argv=None):
     finally:
         print('::endgroup::', flush=True)
     options = {}
-    if args.fresh_device and args.suite == 'all':
-        options['cold_start'] = True
     if args.appearance:
         options['appearance'] = args.appearance
     if args.suite != 'all':
@@ -351,22 +384,13 @@ def main(argv=None):
     if args.no_coverage:
         options['coverage'] = False
     try:
-        if not test_device(args.size, device, bundles[0], results, **options):
-            return 1
-        if args.sanitizer:
-            # Reinstall instrumented products on the initialized device instead
-            # of paying for another simulator migration and first boot.
-            run([str(root / 'scripts/build-ipad.sh'), 'simulator', args.sanitizer], 900)
-            directory = root / 'build/iPad-memory' / args.sanitizer
-            sanitized = list((directory / 'Build/Products').glob('*.xctestrun'))
-            if len(sanitized) != 1:
-                raise RuntimeError('Expected one separate sanitizer .xctestrun bundle')
-            reports = directory.with_name(args.sanitizer + '-results')
-            reports.mkdir(parents=True, exist_ok=True)
-            if not test_device(args.size, device, sanitized[0], reports, suite='unit',
-                               coverage=False, appearance=args.appearance):
-                return 1
-        return 0
+        if args.build:
+            print(f'::group::{args.size}: compile tests while the simulator boots', flush=True)
+            try:
+                bundle = build_while_booting(root, device, products, results / f'{args.size}-boot.log')
+            finally:
+                print('::endgroup::', flush=True)
+        return 0 if test_device(args.size, device, bundle, results, **options) else 1
     finally:
         if args.fresh_device:
             run(['xcrun', 'simctl', 'delete', device['udid']], 60)

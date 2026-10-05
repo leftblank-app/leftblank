@@ -29,31 +29,42 @@ final class WritingTests: XCTestCase {
         try await super.tearDown()
     }
 
-    private func startWriting(template: String = "blank", language: String = "en") -> XCUIApplication {
+    /// Opens a fresh built-in document. Only gallery scenarios pay for New
+    /// Document, catalog loading and template selection; the rest launch with it.
+    private func startWriting(
+        template: String = "blank",
+        language: String = "en",
+        gallery: Bool = false,
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-appLanguage", language,
                                "-iPadCloudEnabled", "NO"]
-        launchInLandscape(app)
-        let create = app.buttons["new-document"]
-        let actions = app.buttons["document-actions"]
-        if actions.exists, actions.isHittable {
-            // Fresh libraries open Welcome. Use its menu without waiting for
-            // NavigationSplitView to reveal the sidebar after startup.
-            actions.tap()
-            let command = app.buttons[language == "zh-Hans" ? "新建文稿" : "New Document"]
-            expect(command.waitForExistence(timeout: 60)) == true
-            command.tap()
-        } else {
-            let enabled = NSPredicate { _, _ in create.exists && create.isEnabled && create.isHittable }
-            expectation(for: enabled, evaluatedWith: app)
-            waitForExpectations(timeout: 60)
-            create.tap()
+        if !gallery {
+            app.launchArguments += ["-iPadOpenTemplate", template]
         }
-        let starter = app.buttons["universe.builtin." + template]
-        selectTemplate(starter, in: app)
-        // An old manuscript remains in the hierarchy behind the gallery.
-        // Require the creation flow to close it before accepting the editor.
-        waitForState(NSPredicate { _, _ in !starter.exists }, in: app, name: "Template creation")
+        launchInLandscape(app)
+        if gallery {
+            let create = app.buttons["new-document"]
+            let actions = app.buttons["document-actions"]
+            if actions.exists, actions.isHittable {
+                // Fresh libraries open Welcome. Use its menu without waiting for
+                // NavigationSplitView to reveal the sidebar after startup.
+                actions.tap()
+                let command = app.buttons[language == "zh-Hans" ? "新建文稿" : "New Document"]
+                expect(command.waitForExistence(timeout: 60)) == true
+                command.tap()
+            } else {
+                let enabled = NSPredicate { _, _ in create.exists && create.isEnabled && create.isHittable }
+                expectation(for: enabled, evaluatedWith: app)
+                waitForExpectations(timeout: 60)
+                create.tap()
+            }
+            let starter = app.buttons["universe.builtin." + template]
+            selectTemplate(starter, in: app)
+            // An old manuscript remains in the hierarchy behind the gallery.
+            // Require the creation flow to close it before accepting the editor.
+            waitForState(NSPredicate { _, _ in !starter.exists }, in: app, name: "Template creation")
+        }
         expect(app.textViews["manuscript"].waitForExistence(timeout: 60)) == true
         let settled = NSPredicate { _, _ in !app.progressIndicators["document-loading"].exists }
         expectation(for: settled, evaluatedWith: app)
@@ -357,6 +368,10 @@ final class WritingTests: XCTestCase {
         let manuscript = app.textViews["manuscript"].value as? String
         try session.expireSubscription(productIdentifier: "app.leftblank.writer.ipad.monthly")
         app.terminate()
+        // Relaunch the existing library instead of seeding another document.
+        if let seed = app.launchArguments.firstIndex(of: "-iPadOpenTemplate") {
+            app.launchArguments.removeSubrange(seed ... seed + 1)
+        }
         launchInLandscape(app)
         // Scene recovery can reopen the document. Reveal the library before opening settings.
         let libraryActions = app.buttons["library-actions"]
@@ -695,7 +710,7 @@ final class WritingTests: XCTestCase {
     }
 
     func testTemplateDiscoveryAndPackageImport() {
-        let app = startWriting()
+        let app = startWriting(gallery: true)
         let original = app.textViews["manuscript"].value as? String
         waitForStableControl(app.buttons["sidebar-toggle"], in: app)
         app.buttons["sidebar-toggle"].tap()

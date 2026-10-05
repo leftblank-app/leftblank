@@ -5,9 +5,22 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      ipad_suite:
+        description: iPad validation depth
+        type: choice
+        options: [full, smoke]
+        default: full
 
 permissions:
   contents: read
+
+# Pull requests run the iPad smoke suite: native unit tests plus a few curated
+# UI scenarios. Main and full dispatches add every UI scenario on both sizes,
+# coverage, memory metrics and sanitizers. Job conditions repeat this test
+# because workflow env is unavailable there.
+env:
+  IPAD_SUITE: ${{ (github.event_name == 'pull_request' || inputs.ipad_suite == 'smoke') && 'smoke' || 'full' }}
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -224,19 +237,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/publish-preview.py
   ipad-build:
-    name: iPad ${{ matrix.name }}
+    name: iPad ${{ matrix.platform }}
     runs-on: macos-15
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: engine
-            name: engine
-          - platform: simulator
-            name: simulator build
-          - platform: device
-            name: device
+        platform: [engine, device]
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       LEFTBLANK_DISTRIBUTION: appstore
@@ -285,8 +292,8 @@ jobs:
       - name: Build native iPad app
         if: matrix.platform != 'engine'
         run: scripts/build-ipad.sh "${{ matrix.platform }}"
-      # Save successful compilation before UI tests: a failing test must not
-      # discard a 15-minute Rust build and force another cold build on retry.
+      # Save successful compilation even when a later check fails, so a retry
+      # does not repeat a 15-minute cold Rust build.
       - name: Save compiled engine
         if: steps.engine-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -306,16 +313,65 @@ jobs:
         with:
           path: .build/xcode-packages
           key: ${{ steps.swift-cache.outputs.cache-primary-key }}
+  ipad-simulator-build:
+    name: iPad simulator build
+    if: github.event_name != 'pull_request' && inputs.ipad_suite != 'smoke'
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      LEFTBLANK_DISTRIBUTION: appstore
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Cache engine sources and simulator build
+        id: engine-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .tools/cargo-ipad
+            .tools/tinymist-ipad-source
+            Engine/TinymistBridge/target
+          key: ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/prepare-ipad-engine.sh') }}
+          restore-keys: |
+            ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-
+      - name: Cache Swift package sources
+        id: swift-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build/xcode-packages
+          key: ipad-swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-26.3-${{ hashFiles('Sources/Package.swift', 'iPad/**/Package.resolved') }}
+      - name: Build simulator tests
+        run: scripts/build-ipad.sh simulator
+      # Save successful compilation before UI tests: a failing test must not
+      # discard a 15-minute Rust build and force another cold build on retry.
+      - name: Save compiled engine
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        timeout-minutes: 5
+        with:
+          path: |
+            .tools/cargo-ipad
+            .tools/tinymist-ipad-source
+            Engine/TinymistBridge/target
+          key: ${{ steps.engine-cache.outputs.cache-primary-key }}
+      - name: Save resolved Swift packages
+        if: steps.swift-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          path: .build/xcode-packages
+          key: ${{ steps.swift-cache.outputs.cache-primary-key }}
       # Keep executable permissions and symlinks inside an archive. Both UI
       # runners consume this one build, including its relocatable .xctestrun.
       - name: Archive compiled simulator tests
-        if: matrix.platform == 'simulator'
         timeout-minutes: 3
         run: |
           source scripts/environment.sh
           COPYFILE_DISABLE=1 tar -C build/iPad/Build -czf build/iPad-ui-tests.tar.gz Products
       - name: Upload compiled simulator tests
-        if: matrix.platform == 'simulator'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         timeout-minutes: 5
         with:
@@ -326,19 +382,20 @@ jobs:
           retention-days: 1
   ipad-ui:
     name: iPad (${{ matrix.size }}, ${{ matrix.appearance }})
-    needs: ipad-build
+    # Full mode tests the shared simulator build. Smoke mode skips that job and
+    # compiles here while the simulator boots, so it starts immediately.
+    needs: ipad-simulator-build
+    if: ${{ !cancelled() && needs.ipad-simulator-build.result != 'failure' }}
     runs-on: macos-15
-    timeout-minutes: 75
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
           - size: 11-inch
             appearance: light
-            sanitizer: address
           - size: 13-inch
             appearance: dark
-            sanitizer: thread
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       LEFTBLANK_DISTRIBUTION: appstore
@@ -351,17 +408,87 @@ jobs:
           sudo xcode-select --switch "$DEVELOPER_DIR"
           xcodebuild -version
       - name: Download compiled simulator tests
+        if: env.IPAD_SUITE == 'full'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         timeout-minutes: 3
         with:
           name: ipad-ui-tests
           path: build
       - name: Restore compiled simulator tests
+        if: env.IPAD_SUITE == 'full'
         timeout-minutes: 2
         run: |
           source scripts/environment.sh
           mkdir -p build/iPad/Build
           tar -xzf build/iPad-ui-tests.tar.gz -C build/iPad/Build
+      - name: Reuse compiled Rust engine
+        id: engine-cache
+        if: env.IPAD_SUITE == 'smoke'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .tools/cargo-ipad
+            .tools/tinymist-ipad-source
+            Engine/TinymistBridge/target
+          key: ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/prepare-ipad-engine.sh') }}
+          restore-keys: |
+            ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-
+      - name: Reuse resolved Swift packages
+        if: env.IPAD_SUITE == 'smoke'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build/xcode-packages
+          key: ipad-swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-26.3-${{ hashFiles('Sources/Package.swift', 'iPad/**/Package.resolved') }}
+      - name: Native tests and ${{ env.IPAD_SUITE }} UI suite
+        timeout-minutes: ${{ env.IPAD_SUITE == 'smoke' && 20 || 50 }}
+        run: |
+          source scripts/environment.sh
+          if [ "$IPAD_SUITE" = smoke ]; then
+            suite=(--suite smoke --no-coverage --build)
+          else
+            suite=(--memory)
+          fi
+          python3 scripts/ipad_simulator.py --fresh-device --size "${{ matrix.size }}" \
+            --appearance "${{ matrix.appearance }}" "${suite[@]}"
+      - name: Save compiled engine
+        if: env.IPAD_SUITE == 'smoke' && steps.engine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        timeout-minutes: 5
+        with:
+          path: |
+            .tools/cargo-ipad
+            .tools/tinymist-ipad-source
+            Engine/TinymistBridge/target
+          key: ${{ steps.engine-cache.outputs.cache-primary-key }}
+      - name: Upload native iPad test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        timeout-minutes: 3
+        with:
+          name: ipad-writing-${{ matrix.size }}-${{ matrix.appearance }}
+          path: build/iPad-writing
+          if-no-files-found: warn
+          retention-days: 14
+  ipad-memory:
+    name: iPad memory safety (${{ matrix.check }})
+    # Reuse the Rust engine cached by the simulator build, off the UI path.
+    needs: ipad-simulator-build
+    runs-on: macos-15
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [address, thread]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      LEFTBLANK_DISTRIBUTION: appstore
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select Xcode for simulator services
+        timeout-minutes: 1
+        run: sudo xcode-select --switch "$DEVELOPER_DIR"
       - name: Reuse compiled Rust engine
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -377,33 +504,28 @@ jobs:
         with:
           path: .build/xcode-packages
           key: ipad-swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-26.3-${{ hashFiles('Sources/Package.swift', 'iPad/**/Package.resolved') }}
-      - name: Native tests, UI, memory metrics and ${{ matrix.sanitizer }} sanitizer
-        # One owned simulator for the full suite and the separate sanitizer build/run.
-        timeout-minutes: 70
+      - name: Build separate sanitizer test products
+        timeout-minutes: 15
+        run: scripts/build-ipad.sh simulator "${{ matrix.check }}"
+      - name: Check Swift memory corruption and data races separately
+        timeout-minutes: 25
         run: |
           source scripts/environment.sh
-          python3 scripts/ipad_simulator.py --fresh-device --size "${{ matrix.size }}" \
-            --appearance "${{ matrix.appearance }}" --memory --sanitizer "${{ matrix.sanitizer }}"
-      - name: Upload native iPad test results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        timeout-minutes: 3
-        with:
-          name: ipad-writing-${{ matrix.size }}-${{ matrix.appearance }}
-          path: build/iPad-writing
-          if-no-files-found: warn
-          retention-days: 14
+          python3 scripts/ipad_simulator.py --fresh-device --size 11-inch --suite unit --no-coverage \
+            --derived-data "build/iPad-memory/${{ matrix.check }}" \
+            --results "build/iPad-memory/${{ matrix.check }}-results"
       - name: Upload iPad sanitizer diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ipad-memory-${{ matrix.sanitizer }}
+          name: ipad-memory-${{ matrix.check }}
           path: build/iPad-memory/*-results
           if-no-files-found: warn
           retention-days: 14
   ipad-coverage:
     name: iPad 80% application coverage
     needs: ipad-ui
+    if: github.event_name != 'pull_request' && inputs.ipad_suite != 'smoke'
     runs-on: macos-15
     timeout-minutes: 10
     permissions:
@@ -443,7 +565,7 @@ jobs:
           retention-days: 14
   gate:
     name: build and test
-    needs: [integration, appstore, ipad-build, ipad-ui, ipad-coverage]
+    needs: [integration, appstore, ipad-build, ipad-simulator-build, ipad-ui, ipad-coverage, ipad-memory]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 1
@@ -455,7 +577,10 @@ jobs:
           APPSTORE_REQUIRED: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
           IPAD_BUILD_RESULT: ${{ needs.ipad-build.result }}
           IPAD_UI_RESULT: ${{ needs.ipad-ui.result }}
-          IPAD_COVERAGE_RESULT: ${{ needs.ipad-coverage.result }}
+          IPAD_FULL_RESULTS: >-
+            ${{ needs.ipad-simulator-build.result }}
+            ${{ needs.ipad-coverage.result }}
+            ${{ needs.ipad-memory.result }}
         run: |
           test "$MAC_RESULT" = success
           if [ "$APPSTORE_REQUIRED" = true ]; then
@@ -465,4 +590,12 @@ jobs:
           fi
           test "$IPAD_BUILD_RESULT" = success
           test "$IPAD_UI_RESULT" = success
-          test "$IPAD_COVERAGE_RESULT" = success
+          # Smoke mode must skip, never fail or cancel, the full-only jobs.
+          if [ "$IPAD_SUITE" = full ]; then
+            expected=success
+          else
+            expected=skipped
+          fi
+          for result in $IPAD_FULL_RESULTS; do
+            test "$result" = "$expected"
+          done

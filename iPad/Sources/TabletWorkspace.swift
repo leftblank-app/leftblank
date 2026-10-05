@@ -195,11 +195,16 @@ final class TabletWorkspace: ObservableObject {
             }
             cloudEnabled = await library.isICloud
             try await reloadLibrary()
-            if documents.isEmpty {
+            // UI tests pass `-iPadOpenTemplate <name>` to start from a fresh
+            // built-in document instead of navigating the template gallery.
+            let seeded = UserDefaults.standard.string(forKey: "iPadOpenTemplate")
+                .flatMap(BuiltInTemplate.init(rawValue:))
+            if documents.isEmpty || seeded != nil {
+                let template = seeded ?? .welcome
                 let item = try await library.create(
-                    title: BuiltInTemplate.welcome.title,
-                    text: BuiltInTemplate.welcome.source,
-                    assets: WelcomeDocument.assets(),
+                    title: template.title,
+                    text: template.source,
+                    assets: template == .welcome ? WelcomeDocument.assets() : [:],
                 )
                 try await reloadLibrary()
                 await open(item)
