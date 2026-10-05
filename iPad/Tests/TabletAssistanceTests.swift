@@ -266,6 +266,32 @@ struct TabletAssistanceTests {
         keyboard.unmarkText()
     }
 
+    @Test func escapeIsBoundOnlyWhileSuggestionsAreVisible() async throws {
+        let (workspace, _, _, completion) = try await fixture()
+        defer { try? FileManager.default.removeItem(at: workspace.stateDirectory) }
+        let keyboard = TabletTextView()
+        keyboard.workspace = workspace
+        keyboard.text = workspace.text
+        keyboard.selectedRange = workspace.selection
+        func escapeBound() -> Bool {
+            keyboard.keyCommands?
+                .contains { $0.action.map(NSStringFromSelector) == "dismissTypingFromKeyboard" } == true
+        }
+        keyboard.scheduleTypingAssistance()
+        workspace.assistance.kind = .completion
+        workspace.assistance.loading = true
+        #expect(keyboard.typingTask != nil)
+        #expect(!escapeBound())
+        #expect(!keyboard.canPerformAction(NSSelectorFromString("dismissTypingFromKeyboard"), withSender: nil))
+        keyboard.cancelPendingTypingAssistance()
+        #expect(keyboard.typingTask == nil)
+        #expect(!workspace.assistance.loading)
+        keyboard.presentTypingAssistance([completion], signature: nil, prefix: "rec")
+        #expect(escapeBound())
+        keyboard.dismissTypingFromKeyboard()
+        #expect(!escapeBound())
+    }
+
     @Test func embeddedTypingCompletionAndMultilineParameterHelpStayInline() async throws {
         let (workspace, _, _, _) = try await fixture()
         defer {

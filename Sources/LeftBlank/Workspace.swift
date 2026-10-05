@@ -1525,6 +1525,12 @@ final class Workspace: ObservableObject {
             guard let self, let editor else {
                 return
             }
+            defer {
+                // A finished request must not keep Escape bound to invisible assistance.
+                if requestID == editor.typingRequestID {
+                    editor.typingTask = nil
+                }
+            }
             let context = await TypingContext.resolve(source: source, selection: caret)
             guard !Task.isCancelled, !automatic || context != nil else {
                 return

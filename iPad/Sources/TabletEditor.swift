@@ -144,6 +144,13 @@ struct TabletEditor: UIViewRepresentable {
         positionTypingAssistance()
     }
 
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if presses.contains(where: { $0.key?.keyCode == .keyboardEscape }) {
+            cancelPendingTypingAssistance()
+        }
+        super.pressesBegan(presses, with: event)
+    }
+
     func clearSnippet() {
         snippet = nil
     }
@@ -253,7 +260,8 @@ struct TabletEditor: UIViewRepresentable {
             command.discoverabilityTitle = L10n.text(title)
             return command
         }
-        if typingOverlay != nil || typingTask != nil || workspace?.assistance.loading == true, markedTextRange == nil {
+        // Only visible suggestions take Escape. Pending requests are cancelled in pressesBegan.
+        if typingOverlay != nil, markedTextRange == nil {
             let bindings: [(String, Selector)] = [
                 (UIKeyCommand.inputEscape, #selector(dismissTypingFromKeyboard)),
                 (UIKeyCommand.inputDownArrow, #selector(nextTypingCompletion)),
@@ -282,8 +290,7 @@ struct TabletEditor: UIViewRepresentable {
         if [#selector(dismissTypingFromKeyboard), #selector(nextTypingCompletion),
             #selector(previousTypingCompletion), #selector(acceptTypingFromKeyboard)].contains(action)
         {
-            return markedTextRange == nil && isEditable
-                && (typingOverlay != nil || typingTask != nil || workspace?.assistance.loading == true)
+            return markedTextRange == nil && isEditable && typingOverlay != nil
         }
         if [#selector(completeSource), #selector(explainSource), #selector(sourceActions), #selector(definition)]
             .contains(action)

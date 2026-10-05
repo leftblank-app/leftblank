@@ -10,11 +10,13 @@ extension ManuscriptTextView {
         let request = typingRequestID
         typingTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(180))
-            guard let self, !Task.isCancelled, request == typingRequestID, !hasMarkedText() else {
+            guard let self, !Task.isCancelled, request == typingRequestID else {
                 return
             }
             typingTask = nil
-            workspace?.requestCompletion(automatic: true)
+            if !hasMarkedText() {
+                workspace?.requestCompletion(automatic: true)
+            }
         }
     }
 
@@ -135,8 +137,11 @@ extension ManuscriptTextView {
             return false
         }
         if event.keyCode == 53, typingPanel != nil || typingTask != nil {
+            // Only visible assistance consumes Escape. A pending request is cancelled silently,
+            // so the key still reaches placeholders and the rest of the editor.
+            let visible = typingPanel != nil
             dismissTypingAssistance()
-            return true
+            return visible
         }
         guard typingList.selected != nil else {
             return false

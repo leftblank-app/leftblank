@@ -83,11 +83,13 @@ extension TabletTextView {
         let request = typingRequestID
         typingTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(180))
-            guard let self, !Task.isCancelled, request == typingRequestID, markedTextRange == nil else {
+            guard let self, !Task.isCancelled, request == typingRequestID else {
                 return
             }
             typingTask = nil
-            workspace?.requestTypingAssistance(automatic: true)
+            if markedTextRange == nil {
+                workspace?.requestTypingAssistance(automatic: true)
+            }
         }
     }
 
@@ -212,6 +214,20 @@ extension TabletTextView {
             width: width,
             height: size.height,
         )
+    }
+
+    /// Escape reaches the editor without visible suggestions. Cancel a debounce or an
+    /// automatic request silently so it cannot appear after the key was handled elsewhere.
+    func cancelPendingTypingAssistance() {
+        guard typingOverlay == nil, markedTextRange == nil else {
+            return
+        }
+        if let assistance = workspace?.assistance, assistance.kind == .completion, assistance.loading {
+            assistance.invalidate()
+        }
+        if typingTask != nil {
+            dismissTypingAssistance()
+        }
     }
 
     @objc func dismissTypingFromKeyboard() {
