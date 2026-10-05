@@ -1900,31 +1900,37 @@ extension Workspace {
         } catch { showMessage(error.localizedDescription) }
     }
 
+    var canNavigateSource: Bool {
+        serviceReady && client.supports("definitionProvider") && !paletteOpen && !isLibraryHome &&
+            !documentTransitionInProgress && !applyingCommand && editor?.hasMarkedText() != true
+    }
+
     func goToDefinition() {
-        guard serviceReady, client.supports("definitionProvider"), !paletteOpen,
-              editor?.hasMarkedText() != true
-        else {
+        guard canNavigateSource else {
             return
         }
         dismissAssistance()
+        let requestID = assistanceRequest
         let version = documentVersion, generation = serviceGeneration, url = documentURL, caret = selection,
             origin = position
-        Task {
+        assistanceTask = Task {
             do {
                 try flushChanges()
                 let response = try await client.request(
                     "textDocument/definition",
                     ["textDocument": ["uri": url.absoluteString], "position": origin.json],
                 )
-                guard generation == serviceGeneration, version == documentVersion, caret == selection,
-                      !paletteOpen, editor?.hasMarkedText() != true
+                guard !Task.isCancelled, requestID == assistanceRequest, url == documentURL,
+                      generation == serviceGeneration, version == documentVersion, caret == selection,
+                      canNavigateSource
                 else {
                     return
                 }
                 let destination = response.array.first ?? response
                 guard let uri = destination["uri"].string ?? destination["targetUri"].string,
                       let target = URL(string: uri), target.isFileURL,
-                      target.host == nil || target.host?.isEmpty == true || target.host == "localhost"
+                      target.host == nil || target.host?.isEmpty == true || target.host == "localhost",
+                      target.query == nil, target.fragment == nil
                 else {
                     requestAssistance(.help)
                     return
@@ -1944,7 +1950,7 @@ extension Workspace {
                 jump(to: TextPosition(line: line, character: column).offset(in: text))
                 recordOperation("navigation.definition")
             } catch {
-                if generation == serviceGeneration {
+                if !Task.isCancelled, requestID == assistanceRequest, generation == serviceGeneration {
                     showMessage(error.localizedDescription)
                 }
             }
@@ -1952,6 +1958,10 @@ extension Workspace {
     }
 
     func navigateBack() {
+        guard !documentTransitionInProgress, !applyingCommand, editor?.hasMarkedText() != true else {
+            return
+        }
+        dismissAssistance()
         guard let index = navigationHistory.indices.last else {
             return
         }

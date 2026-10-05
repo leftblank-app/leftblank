@@ -580,7 +580,7 @@
 
 "Discover changes available for this heading, equation or selection." = "Discover changes available for this heading, equation or selection.";
 
-"Find the source of a variable, function or reference." = "Find the source of a variable, function or reference.";
+"Find the source of a variable, function, reference or imported module." = "Find the source of a variable, function, reference or imported module.";
 
 "Return to your previous writing position." = "Return to your previous writing position.";
 

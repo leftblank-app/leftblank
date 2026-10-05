@@ -118,6 +118,7 @@ public final class TinymistClient {
                     "publishDiagnostics": ["versionSupport": true],
                     "completion": ["completionItem": ["snippetSupport": false]],
                     "hover": ["contentFormat": ["plaintext"]],
+                    "definition": ["linkSupport": true],
                     "signatureHelp": ["signatureInformation": [
                         "documentationFormat": ["plaintext"],
                         "parameterInformation": ["labelOffsetSupport": true],

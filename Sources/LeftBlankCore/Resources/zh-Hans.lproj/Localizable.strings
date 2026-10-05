@@ -580,7 +580,7 @@
 
 "Discover changes available for this heading, equation or selection." = "发现当前标题、公式或选区可用的操作。";
 
-"Find the source of a variable, function or reference." = "找到变量、函数或引用的定义位置。";
+"Find the source of a variable, function, reference or imported module." = "找到变量、函数、引用或导入模块的定义位置。";
 
 "Return to your previous writing position." = "回到之前的写作位置。";
 
