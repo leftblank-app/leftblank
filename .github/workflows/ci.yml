@@ -45,20 +45,7 @@ jobs:
           swift --version
       - name: Functional integration tests and 80% coverage gate
         run: scripts/test.sh
-      - name: Upload application coverage to Codecov
-        # Temporarily disabled: Codecov CLI downloads fail TLS handshakes.
-        if: ${{ false }}
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          # Fork PRs use Codecov's public-repository tokenless upload support.
-          use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-          files: build/coverage/codecov.lcov
-          disable_search: true
-          disable_file_fixes: true
-          plugins: noop
-          fail_ci_if_error: true
-          name: macos-apple-silicon
-          flags: macos
+      # Codecov uploads are temporarily disabled while CLI downloads fail TLS handshakes.
       - name: Real book editing and navigation benchmarks
         run: scripts/benchmark-books.sh
       - name: Upload book performance reports
@@ -416,19 +403,7 @@ jobs:
             build/iPad-results/ipad-writing-11-inch-light-2/11-inch.xcresult \
             build/iPad-results/ipad-writing-13-inch-dark-1/13-inch.xcresult \
             build/iPad-results/ipad-writing-13-inch-dark-2/13-inch.xcresult
-      - name: Upload iPad application coverage to Codecov
-        # Temporarily disabled: Codecov CLI downloads fail TLS handshakes.
-        if: ${{ false }}
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-          files: build/iPad-coverage/codecov.lcov
-          flags: ipad
-          name: ipad-swift-application
-          disable_search: true
-          disable_file_fixes: true
-          plugins: noop
-          fail_ci_if_error: true
+      # Codecov uploads are temporarily disabled while CLI downloads fail TLS handshakes.
       - name: Coverage summary
         if: always()
         run: |
