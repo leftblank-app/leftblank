@@ -413,8 +413,16 @@ final class WritingTests: XCTestCase {
         editor.typeKey("a", modifierFlags: .command)
         editor.typeText("= iPad writing\nA shared local document.\n")
         expect(editor.value as? String) == "= iPad writing\nA shared local document.\n"
+        // Finish the edit before resizing the text view and its selection UI.
+        waitForState(NSPredicate { _, _ in
+            app.staticTexts["save-status"].label == "Saved" &&
+                app.staticTexts["engine-status"].label == "Preview Updated"
+        }, in: app, name: "Writing saved and rendered")
         app.buttons["layout-split"].tap()
+        waitForStableControl(editor, in: app)
         editor.tap()
+        // Showing the keyboard changes the split editor's height again.
+        waitForStableControl(editor, in: app)
         editor.typeKey("a", modifierFlags: .command)
         editor.typeText("= iPad writing\nA shared local document.\n")
         expect(editor.value as? String) == "= iPad writing\nA shared local document.\n"

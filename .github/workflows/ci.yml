@@ -325,22 +325,24 @@ jobs:
           compression-level: 0
           retention-days: 1
   ipad-ui:
-    name: iPad UI (${{ matrix.size }}, ${{ matrix.appearance }}, shard ${{ matrix.shard }})
+    name: iPad (${{ matrix.size }}, ${{ matrix.appearance }})
     needs: ipad-build
     runs-on: macos-15
-    timeout-minutes: 50
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
-        size: [11-inch, 13-inch]
-        shard: [1, 2]
         include:
           - size: 11-inch
             appearance: light
+            sanitizer: address
           - size: 13-inch
             appearance: dark
+            sanitizer: thread
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      LEFTBLANK_DISTRIBUTION: appstore
+      CARGO_BUILD_JOBS: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode for simulator services
@@ -361,19 +363,53 @@ jobs:
           mkdir -p build/iPad/Build
           tar -xzf build/iPad-ui-tests.tar.gz -C build/iPad/Build
       - name: Native unit tests, writing, preview navigation, catalog and PDF sharing
-        # Cold boot + up to 10m test-host launch + 18m execution + diagnostics.
-        timeout-minutes: 40
+        # Cold boot + up to 10m test-host launch + 25m full-suite execution + diagnostics.
+        timeout-minutes: 45
         run: |
           source scripts/environment.sh
           python3 scripts/ipad_simulator.py --fresh-device --size "${{ matrix.size }}" \
-            --appearance "${{ matrix.appearance }}" --ui-shard "${{ matrix.shard }}"
+            --appearance "${{ matrix.appearance }}" --memory
       - name: Upload native iPad test results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         timeout-minutes: 3
         with:
-          name: ipad-writing-${{ matrix.size }}-${{ matrix.appearance }}-${{ matrix.shard }}
+          name: ipad-writing-${{ matrix.size }}-${{ matrix.appearance }}
           path: build/iPad-writing
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Reuse compiled Rust engine
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .tools/cargo-ipad
+            .tools/tinymist-ipad-source
+            Engine/TinymistBridge/target
+          key: ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/prepare-ipad-engine.sh') }}
+          restore-keys: |
+            ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-
+      - name: Reuse resolved Swift packages
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build/xcode-packages
+          key: ipad-swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-26.3-${{ hashFiles('Sources/Package.swift', 'iPad/**/Package.resolved') }}
+      - name: Build ${{ matrix.sanitizer }} sanitizer tests
+        timeout-minutes: 15
+        run: scripts/build-ipad.sh simulator "${{ matrix.sanitizer }}"
+      - name: Run ${{ matrix.sanitizer }} sanitizer tests
+        timeout-minutes: 25
+        run: |
+          source scripts/environment.sh
+          python3 scripts/ipad_simulator.py --size "${{ matrix.size }}" --suite unit --no-coverage \
+            --appearance "${{ matrix.appearance }}" \
+            --derived-data "build/iPad-memory/${{ matrix.sanitizer }}" \
+            --results "build/iPad-memory/${{ matrix.sanitizer }}-results"
+      - name: Upload iPad sanitizer diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ipad-memory-${{ matrix.sanitizer }}
+          path: build/iPad-memory/*-results
           if-no-files-found: warn
           retention-days: 14
   ipad-coverage:
@@ -399,10 +435,8 @@ jobs:
         run: |
           source scripts/environment.sh
           python3 scripts/ipad_coverage.py --minimum 80 --result \
-            build/iPad-results/ipad-writing-11-inch-light-1/11-inch.xcresult \
-            build/iPad-results/ipad-writing-11-inch-light-2/11-inch.xcresult \
-            build/iPad-results/ipad-writing-13-inch-dark-1/13-inch.xcresult \
-            build/iPad-results/ipad-writing-13-inch-dark-2/13-inch.xcresult
+            build/iPad-results/ipad-writing-11-inch-light/11-inch.xcresult \
+            build/iPad-results/ipad-writing-13-inch-dark/13-inch.xcresult
       # Codecov uploads are temporarily disabled while CLI downloads fail TLS handshakes.
       - name: Coverage summary
         if: always()
@@ -418,81 +452,9 @@ jobs:
           path: build/iPad-coverage
           if-no-files-found: warn
           retention-days: 14
-  ipad-memory:
-    name: iPad memory safety (${{ matrix.check }})
-    needs: ipad-build
-    runs-on: macos-15
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        check: [lifecycle, address, thread]
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
-      LEFTBLANK_DISTRIBUTION: appstore
-      CARGO_BUILD_JOBS: 2
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Select Xcode for simulator services
-        run: sudo xcode-select --switch "$DEVELOPER_DIR"
-      - name: Download compiled lifecycle tests
-        if: matrix.check == 'lifecycle'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ipad-ui-tests
-          path: build
-      - name: Restore compiled lifecycle tests
-        if: matrix.check == 'lifecycle'
-        run: |
-          source scripts/environment.sh
-          mkdir -p build/iPad/Build
-          tar -xzf build/iPad-ui-tests.tar.gz -C build/iPad/Build
-      - name: Reuse compiled Rust engine
-        if: matrix.check != 'lifecycle'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .tools/cargo-ipad
-            .tools/tinymist-ipad-source
-            Engine/TinymistBridge/target
-          key: ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/prepare-ipad-engine.sh') }}
-          restore-keys: |
-            ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-
-      - name: Reuse resolved Swift packages
-        if: matrix.check != 'lifecycle'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .build/xcode-packages
-          key: ipad-swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-26.3-${{ hashFiles('Sources/Package.swift', 'iPad/**/Package.resolved') }}
-      - name: Build separate sanitizer test products
-        if: matrix.check != 'lifecycle'
-        run: scripts/build-ipad.sh simulator "${{ matrix.check }}"
-      - name: Repeated ownership lifecycle and memory metrics
-        if: matrix.check == 'lifecycle'
-        timeout-minutes: 25
-        run: |
-          source scripts/environment.sh
-          python3 scripts/ipad_simulator.py --size 11-inch --suite unit --memory \
-            --results build/iPad-memory/lifecycle-results
-      - name: Check Swift memory corruption and data races separately
-        if: matrix.check != 'lifecycle'
-        timeout-minutes: 25
-        run: |
-          source scripts/environment.sh
-          python3 scripts/ipad_simulator.py --size 11-inch --suite unit --no-coverage \
-            --derived-data "build/iPad-memory/${{ matrix.check }}" \
-            --results "build/iPad-memory/${{ matrix.check }}-results"
-      - name: Upload iPad memory diagnostics
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ipad-memory-${{ matrix.check }}
-          path: build/iPad-memory/*-results
-          if-no-files-found: warn
-          retention-days: 14
   gate:
     name: build and test
-    needs: [integration, appstore, ipad-build, ipad-ui, ipad-coverage, ipad-memory]
+    needs: [integration, appstore, ipad-build, ipad-ui, ipad-coverage]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 1
@@ -505,7 +467,6 @@ jobs:
           IPAD_BUILD_RESULT: ${{ needs.ipad-build.result }}
           IPAD_UI_RESULT: ${{ needs.ipad-ui.result }}
           IPAD_COVERAGE_RESULT: ${{ needs.ipad-coverage.result }}
-          IPAD_MEMORY_RESULT: ${{ needs.ipad-memory.result }}
         run: |
           test "$MAC_RESULT" = success
           if [ "$APPSTORE_REQUIRED" = true ]; then
@@ -516,4 +477,3 @@ jobs:
           test "$IPAD_BUILD_RESULT" = success
           test "$IPAD_UI_RESULT" = success
           test "$IPAD_COVERAGE_RESULT" = success
-          test "$IPAD_MEMORY_RESULT" = success
