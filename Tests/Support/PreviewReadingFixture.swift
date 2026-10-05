@@ -11,6 +11,7 @@ import WebKit
 @MainActor
 public final class PreviewReadingFixture {
     public let web: WKWebView
+    private let navigation = PreviewFixtureNavigation()
     #if os(macOS)
         private let window: NSWindow
     #else
@@ -57,6 +58,7 @@ public final class PreviewReadingFixture {
         """ : """
         <div class="typst-doc"><div class="typst-page-inner">One</div><div class="typst-page-inner">Two</div><div class="typst-page-inner">Three</div></div>
         """
+        web.navigationDelegate = navigation
         web.loadHTMLString("""
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>html,body{margin:0;width:100%;height:100%;} #typst-container-main{width:100%;height:100%;overflow:auto;}
@@ -66,23 +68,28 @@ public final class PreviewReadingFixture {
     }
 
     public func ready() async throws {
-        let deadline = ContinuousClock.now + .seconds(10)
-        var scriptError: Error?
+        // A cold simulator can take longer than ten seconds to start WebKit.
+        // Match the UI suite's load budget, but report navigation failures at once.
+        let deadline = ContinuousClock.now + .seconds(60)
         while ContinuousClock.now < deadline {
-            if !web.isLoading {
-                do {
-                    if try await web.evaluateJavaScript("typeof window.leftblankRestoreReading === 'function'")
-                        as? Bool == true
-                    {
-                        return
-                    }
-                } catch { scriptError = error }
+            if let error = navigation.error {
+                throw error
+            }
+            if navigation.finished {
+                guard try await web.evaluateJavaScript("typeof window.leftblankRestoreReading === 'function'")
+                    as? Bool == true
+                else {
+                    throw NSError(domain: "PreviewReadingFixture", code: 3, userInfo: [
+                        NSLocalizedDescriptionKey: "The loaded fixture did not install the production reading script.",
+                    ])
+                }
+                return
             }
             try await Task.sleep(for: .milliseconds(30))
         }
         throw NSError(domain: "PreviewReadingFixture", code: 1, userInfo: [
-            NSLocalizedDescriptionKey: "WebKit fixture did not become ready; loading=\(web.isLoading), " +
-                "attached=\(web.window != nil), script error=\(scriptError?.localizedDescription ?? "none")",
+            NSLocalizedDescriptionKey: "WebKit fixture did not finish navigation; loading=\(web.isLoading), " +
+                "attached=\(web.window != nil)",
         ])
     }
 
@@ -96,5 +103,29 @@ public final class PreviewReadingFixture {
             window.rootViewController = nil
             previousKeyWindow?.makeKey()
         #endif
+    }
+}
+
+@MainActor
+private final class PreviewFixtureNavigation: NSObject, WKNavigationDelegate {
+    var finished = false
+    var error: Error?
+
+    func webView(_: WKWebView, didFinish _: WKNavigation?) {
+        finished = true
+    }
+
+    func webView(_: WKWebView, didFail _: WKNavigation?, withError error: Error) {
+        self.error = error
+    }
+
+    func webView(_: WKWebView, didFailProvisionalNavigation _: WKNavigation?, withError error: Error) {
+        self.error = error
+    }
+
+    func webViewWebContentProcessDidTerminate(_: WKWebView) {
+        error = NSError(domain: "PreviewReadingFixture", code: 4, userInfo: [
+            NSLocalizedDescriptionKey: "The fixture's WebKit content process terminated.",
+        ])
     }
 }

@@ -139,7 +139,9 @@ def diagnostics(path, device=None):
 
 
 def shutdown(device):
-    result = run(['xcrun', 'simctl', 'shutdown', device['udid']], 60, check=False)
+    # Cold iOS 26 services can outlast 60 seconds while completing migration.
+    # Use the same bounded allowance as appearance setup; never retry tests.
+    result = run(['xcrun', 'simctl', 'shutdown', device['udid']], 120, check=False)
     if result.returncode:
         # A failed boot can already be shut down; verify rather than hiding errors.
         states = [entry['state'] for entries in inventory().values()

@@ -307,6 +307,8 @@ class SimulatorContracts(unittest.TestCase):
 
             def command(args, timeout, **_options):
                 operation = args[2] if args[0] == 'xcrun' else 'test'
+                if operation == 'shutdown':
+                    self.assertEqual(timeout, 120)
                 if operation == 'bootstatus':
                     operation = 'second boot' if 'first boot' in events else 'first boot'
                 if operation == 'ui':
