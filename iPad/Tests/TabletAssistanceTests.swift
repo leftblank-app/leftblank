@@ -196,6 +196,44 @@ struct TabletAssistanceTests {
         #expect(workspace.assistance.completions.contains { $0.label.hasPrefix("rect") })
     }
 
+    @Test func nativeSelectAllReplacesTheCompleteDocumentInBothLayouts() async throws {
+        let (workspace, _, _, _) = try await fixture()
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        window.rootViewController = controller
+        let keyboard = TabletTextView()
+        let coordinator = TabletEditor.Coordinator(workspace)
+        keyboard.workspace = workspace
+        keyboard.delegate = coordinator
+        workspace.editor = keyboard
+        controller.view.addSubview(keyboard)
+        window.makeKeyAndVisible()
+        defer {
+            keyboard.typingTask?.cancel()
+            workspace.generation = UUID()
+            keyboard.resignFirstResponder()
+            window.isHidden = true
+            previous?.makeKey()
+            try? FileManager.default.removeItem(at: workspace.stateDirectory)
+        }
+        for layout in [TabletWorkspace.Layout.writing, .split] {
+            workspace.layout = layout
+            keyboard.frame = CGRect(x: 0, y: 0, width: layout == .writing ? 600 : 300, height: 500)
+            keyboard.text = "= Original\n中文😀 and a second line.\n"
+            workspace.text = keyboard.text
+            keyboard.becomeFirstResponder()
+            keyboard.selectAll(nil)
+            #expect(keyboard.selectedRange == NSRange(location: 0, length: keyboard.text.utf16.count))
+            keyboard.insertText("= Replacement\nA complete document.\n")
+            #expect(keyboard.text == "= Replacement\nA complete document.\n")
+            #expect(workspace.text == keyboard.text)
+            #expect(workspace.selection == keyboard.selectedRange)
+        }
+    }
+
     @Test func inlineCompletionKeyboardDoesNotReplaceMarkedTextAndEscapeCancels() async throws {
         let (workspace, editor, _, completion) = try await fixture()
         defer { try? FileManager.default.removeItem(at: workspace.stateDirectory) }

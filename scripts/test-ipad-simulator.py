@@ -184,7 +184,7 @@ class SimulatorContracts(unittest.TestCase):
             self.assertTrue(passed)
             self.assertEqual(events, [(operation, device['udid']) for operation in ('bootstatus', 'test', 'shutdown')])
 
-    def test_memory_tests_select_unit_target_and_performance_diagnostics(self):
+    def test_memory_validation_keeps_the_requested_unit_target(self):
         with patch.object(runner, 'run', return_value=subprocess.CompletedProcess([], 0)) as run, \
              patch.object(runner, 'verify_result') as verify, patch.object(runner, 'export_coverage'), \
              patch.object(runner, 'configure_coverage'):
@@ -194,7 +194,7 @@ class SimulatorContracts(unittest.TestCase):
         self.assertIn('-only-testing:LeftBlankTabletTests', command)
         self.assertIn('-derivedDataPath', command)
         self.assertEqual(command[command.index('-enableCodeCoverage') + 1], 'YES')
-        self.assertEqual(command[command.index('-enablePerformanceTestsDiagnostics') + 1], 'YES')
+        self.assertNotIn('-enablePerformanceTestsDiagnostics', command)
         verify.assert_called_once_with(self.root / '11-inch.xcresult', self.root, memory=True)
 
     def test_full_ui_suite_retains_memory_validation_and_coverage(self):
@@ -207,7 +207,7 @@ class SimulatorContracts(unittest.TestCase):
         command = call.args[0]
         self.assertFalse(any(arg.startswith('-only-testing:') for arg in command))
         self.assertEqual(command[command.index('-enableCodeCoverage') + 1], 'YES')
-        self.assertEqual(command[command.index('-enablePerformanceTestsDiagnostics') + 1], 'YES')
+        self.assertNotIn('-enablePerformanceTestsDiagnostics', command)
         self.assertEqual(call.args[1], 1500)
         self.assertEqual(call.kwargs['startup_timeout'], 600)
         verify.assert_called_once_with(self.root / '11-inch.xcresult', self.root, memory=True)

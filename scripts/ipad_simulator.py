@@ -254,8 +254,6 @@ def test_device(size, device, bundle, results, *, suite='all', memory=False, cov
         # Xcode's verbose sysdiagnose can spend ten minutes after a test failure.
         # Keep the test report and attachments, then collect our bounded diagnostics.
         selection = ['-only-testing:LeftBlankTabletTests'] if suite == 'unit' else []
-        if memory:
-            selection += ['-enablePerformanceTestsDiagnostics', 'YES']
         started = time.time()
         run(['xcodebuild', '-xctestrun', str(bundle),
              '-derivedDataPath', str(bundle.parent.parent.parent),

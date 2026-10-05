@@ -278,6 +278,27 @@ final class WritingTests: XCTestCase {
             evaluatedWith: app.staticTexts["subscription-status"],
         )
         waitForExpectations(timeout: 30)
+        app.buttons["Done"].tap()
+        app.terminate()
+        let writer = startWriting()
+        expect(writer.textViews["manuscript"].exists) == true
+    }
+
+    func testSubscriptionLegalLinks() throws {
+        try XCTUnwrap(storeSession).clearTransactions()
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-appLanguage", "en",
+                               "-iPadCloudEnabled", "NO"]
+        launchInLandscape(app)
+        let banner = app.buttons["subscription-banner"]
+        if !banner.waitForExistence(timeout: 3) || !banner.isHittable {
+            waitForStableControl(app.buttons["sidebar-toggle"], in: app)
+            app.buttons["sidebar-toggle"].tap()
+        }
+        expect(banner.waitForExistence(timeout: 30)) == true
+        banner.tap()
+        let form = app.collectionViews["subscription-form"]
+        expect(form.waitForExistence(timeout: 30)) == true
         // Locate legal controls by their accessible names across supported runtimes.
         let privacy = app.descendants(matching: .any)["Privacy policy"].firstMatch
         reveal(privacy, in: form)
@@ -285,10 +306,6 @@ final class WritingTests: XCTestCase {
         let terms = app.descendants(matching: .any)["Terms of use"].firstMatch
         reveal(terms, in: form)
         expect(terms.exists) == true
-        app.buttons["Done"].tap()
-        app.terminate()
-        let writer = startWriting()
-        expect(writer.textViews["manuscript"].exists) == true
     }
 
     func testExpiredSubscriptionProjectExport() throws {
@@ -409,10 +426,12 @@ final class WritingTests: XCTestCase {
         waitForExpectations(timeout: 30)
         app.buttons["layout-writing"].tap()
         let editor = app.textViews["manuscript"]
+        let original = editor.value as? String ?? ""
+        let writing = "\n= iPad writing\nA shared local document.\n"
         editor.tap()
-        editor.typeKey("a", modifierFlags: .command)
-        editor.typeText("= iPad writing\nA shared local document.\n")
-        expect(editor.value as? String) == "= iPad writing\nA shared local document.\n"
+        editor.typeKey(.downArrow, modifierFlags: .command)
+        editor.typeText(writing)
+        expect(editor.value as? String) == original + writing
         // Finish the edit before resizing the text view and its selection UI.
         waitForState(NSPredicate { _, _ in
             app.staticTexts["save-status"].label == "Saved" &&
@@ -423,9 +442,10 @@ final class WritingTests: XCTestCase {
         editor.tap()
         // Showing the keyboard changes the split editor's height again.
         waitForStableControl(editor, in: app)
-        editor.typeKey("a", modifierFlags: .command)
-        editor.typeText("= iPad writing\nA shared local document.\n")
-        expect(editor.value as? String) == "= iPad writing\nA shared local document.\n"
+        let split = "Edited in split view.\n"
+        editor.typeKey(.downArrow, modifierFlags: .command)
+        editor.typeText(split)
+        expect(editor.value as? String) == original + writing + split
         let saved = NSPredicate(format: "label == %@", "Saved")
         expectation(for: saved, evaluatedWith: app.staticTexts["save-status"])
         waitForExpectations(timeout: 30)
@@ -445,7 +465,7 @@ final class WritingTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         waitForOrientation(in: app, landscape: false)
         app.buttons["layout-writing"].tap()
-        expect((app.textViews["manuscript"].value as? String)?.contains("iPad writing")) == true
+        expect(app.textViews["manuscript"].value as? String) == original + writing + split
         app.buttons["document-actions"].tap()
         app.buttons["Export PDF…"].tap()
         expectShareSheet(in: app)
@@ -574,11 +594,24 @@ final class WritingTests: XCTestCase {
         expect(editor.waitForExistence(timeout: 10)) == true
         expect((editor.value as? String)?.contains("=")) == true
         let inserted = editor.value as? String
+        let commands = app.navigationBars["Discover Commands"]
+        waitForState(
+            NSPredicate { _, _ in !commands.exists && editor.isHittable },
+            in: app,
+            name: "Insertion panel dismissed",
+        )
         app.buttons["commands"].tap()
+        expect(app.buttons["Undo"].waitForExistence(timeout: 10)) == true
         app.buttons["Undo"].tap()
         expectation(for: NSPredicate { _, _ in editor.value as? String == original }, evaluatedWith: app)
         waitForExpectations(timeout: 10)
+        waitForState(
+            NSPredicate { _, _ in !commands.exists && editor.isHittable },
+            in: app,
+            name: "Undo panel dismissed",
+        )
         app.buttons["commands"].tap()
+        expect(app.buttons["Redo"].waitForExistence(timeout: 10)) == true
         app.buttons["Redo"].tap()
         expectation(for: NSPredicate { _, _ in editor.value as? String == inserted }, evaluatedWith: app)
         waitForExpectations(timeout: 10)
