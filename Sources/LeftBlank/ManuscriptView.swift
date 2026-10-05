@@ -387,7 +387,9 @@ final class ManuscriptTextView: NSTextView {
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
-        guard !hasMarkedText(), NSEvent.pressedMouseButtons == 0 else {
+        // Global button state can belong to another window or the test host.
+        // AppKit sends drags separately; track only selection in this editor.
+        guard !hasMarkedText(), !selectingWithMouse else {
             sourceHover.dismiss()
             return
         }
