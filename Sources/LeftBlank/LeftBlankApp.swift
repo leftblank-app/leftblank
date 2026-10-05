@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     var replyToTermination: (Bool) -> Void = { NSApp.reply(toApplicationShouldTerminate: $0) }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        false
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -116,7 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        NSApp.terminate(nil)
+        workspace.closeDocument()
         return false
     }
 
@@ -238,7 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         file.addItem(.separator())
         item(L10n.text("Print…"), #selector(printDocument), "p", file, target: self)
         file.addItem(.separator())
-        item(L10n.text("Close Window"), #selector(NSWindow.performClose(_:)), "w", file)
+        item(L10n.text("Close Document"), #selector(closeDocument), "w", file, target: self)
         let edit = section(L10n.text("Edit"))
         item(L10n.text("Undo"), Selector(("undo:")), "z", edit)
         item(L10n.text("Redo"), Selector(("redo:")), "z", edit, modifiers: [.command, .shift])
@@ -304,6 +304,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             return
         }
         workspace.execute(command)
+    }
+
+    @objc private func closeDocument() {
+        workspace.closeDocument()
     }
 
     @objc private func about() {

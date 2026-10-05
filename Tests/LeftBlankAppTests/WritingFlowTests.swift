@@ -395,7 +395,7 @@ struct WritingFlowTests {
         try await app.workspace.library.create(builtIn: .blank)
         #expect(app.workspace.title == L10n.text("Untitled"))
         try await app.ready()
-        #expect(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+        #expect(!delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
         #expect(delegate.applicationShouldTerminate(NSApp) == .terminateNow)
         delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
     }

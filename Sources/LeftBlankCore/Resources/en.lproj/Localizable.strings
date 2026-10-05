@@ -870,3 +870,8 @@
 "The document changed. Open the object editor again." = "The document changed. Open the object editor again.";
 
 "Use a rectangular table, balanced cell content, and a numeric image width such as 80%." = "Use a rectangular table, balanced cell content, and a numeric image width such as 80%.";
+"Read-only Package" = "Read-only Package";
+"Close Document" = "Close Document";
+"Package source is read-only. Save a copy outside the package folder to edit it." = "Package source is read-only. Save a copy outside the package folder to edit it.";
+"Read-only" = "Read-only";
+"You can view and copy package source. Save a copy to edit it." = "You can view and copy package source. Save a copy to edit it.";

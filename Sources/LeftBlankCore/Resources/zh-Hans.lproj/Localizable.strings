@@ -870,3 +870,8 @@
 "The document changed. Open the object editor again." = "文稿已变更。请重新打开表格或图片编辑器。";
 
 "Use a rectangular table, balanced cell content, and a numeric image width such as 80%." = "各行的列数必须一致，单元格内的括号必须配对。图片宽度请使用 80% 等数值。";
+"Read-only Package" = "扩展包源码（只读）";
+"Close Document" = "关闭当前文件";
+"Package source is read-only. Save a copy outside the package folder to edit it." = "扩展包源码为只读。如需编辑，请将副本保存到扩展包目录之外。";
+"Read-only" = "只读";
+"You can view and copy package source. Save a copy to edit it." = "可查看和复制扩展包源码。另存副本后可编辑。";
