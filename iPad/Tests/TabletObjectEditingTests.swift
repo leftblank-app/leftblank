@@ -118,6 +118,7 @@ struct TabletObjectEditingTests {
         #expect(workspace.text.contains("[中文 New], [B]"))
         #expect(workspace.objectEditSession == nil)
         #expect(workspace.panel == nil)
+        #expect(editor.history.undoActionName == L10n.text("Edit Object"))
         editor.history.undo()
         #expect(workspace.text == original && editor.text == original)
         editor.history.redo()

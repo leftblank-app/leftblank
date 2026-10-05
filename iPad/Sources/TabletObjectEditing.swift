@@ -36,8 +36,8 @@ extension TabletWorkspace {
             }
             editor.undoManager?.beginUndoGrouping()
             apply(edit)
-            editor.undoManager?.endUndoGrouping()
             editor.undoManager?.setActionName(L10n.text("Edit Object"))
+            editor.undoManager?.endUndoGrouping()
             editor.becomeFirstResponder()
         } catch { message = L10n.text(error.localizedDescription) }
     }
