@@ -92,7 +92,7 @@ public final class TinymistClient {
             ))
         }
         self.transport = transport
-        writer = JSONRPCWriter(handle: transport.input) { [weak self] error in
+        writer = try JSONRPCWriter(handle: transport.input) { [weak self] error in
             DispatchQueue.main.async { [weak self] in
                 guard let self, generation == session else {
                     return
@@ -170,9 +170,9 @@ public final class TinymistClient {
         output?.readabilityHandler = nil
         errorOutput?.readabilityHandler = nil
         transport?.onExit = nil
-        transport?.stop()
         writer?.close()
         writer = nil
+        transport?.stop()
         output = nil
         errorOutput = nil
         transport = nil

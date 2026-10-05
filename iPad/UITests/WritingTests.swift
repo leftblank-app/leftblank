@@ -413,6 +413,11 @@ final class WritingTests: XCTestCase {
         editor.typeKey("a", modifierFlags: .command)
         editor.typeText("= iPad writing\nA shared local document.\n")
         expect(editor.value as? String) == "= iPad writing\nA shared local document.\n"
+        app.buttons["layout-split"].tap()
+        editor.tap()
+        editor.typeKey("a", modifierFlags: .command)
+        editor.typeText("= iPad writing\nA shared local document.\n")
+        expect(editor.value as? String) == "= iPad writing\nA shared local document.\n"
         let saved = NSPredicate(format: "label == %@", "Saved")
         expectation(for: saved, evaluatedWith: app.staticTexts["save-status"])
         waitForExpectations(timeout: 30)
@@ -579,13 +584,12 @@ final class WritingTests: XCTestCase {
     }
 
     func testPreviewTapRevealsSourcePosition() {
-        let app = startWriting()
+        let app = startWriting(template: "welcome")
         let editor = app.textViews["manuscript"]
-        editor.tap()
-        editor.typeKey("a", modifierFlags: .command)
-        let source = "= Source navigation\nTap this paragraph to reveal its source.\n"
-        editor.typeText(source)
-        expect(editor.value as? String) == source
+        let source = editor.value as? String ?? ""
+        let heading = "Ink for your thoughts"
+        let sourceLine = source.components(separatedBy: "\n").firstIndex(of: "= " + heading)
+        expect(sourceLine != nil) == true
         app.buttons["layout-preview"].tap()
         expectation(
             for: NSPredicate(format: "label == %@ AND value == %@", "Preview Updated", "Preview Updated"),
@@ -595,18 +599,18 @@ final class WritingTests: XCTestCase {
         let preview = app.webViews.firstMatch
         expect(preview.waitForExistence(timeout: 10)) == true
         expect(app.buttons["preview-error"].exists) == false
-        let paragraph = preview.staticTexts.matching(NSPredicate(
-            format: "label CONTAINS %@", "Tap this paragraph",
+        let renderedHeading = preview.staticTexts.matching(NSPredicate(
+            format: "label == %@", heading,
         )).firstMatch
-        expect(paragraph.waitForExistence(timeout: 15)) == true
+        expect(renderedHeading.waitForExistence(timeout: 15)) == true
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.lifetime = .keepAlways
         add(screenshot)
-        paragraph.tap()
+        renderedHeading.tap()
         let revealed = NSPredicate { _, _ in editor.isHittable }
         expectation(for: revealed, evaluatedWith: app)
         waitForExpectations(timeout: 15)
-        expect((app.staticTexts["source-position"].value as? String)?.hasPrefix("1:")) == true
+        expect((app.staticTexts["source-position"].value as? String)?.hasPrefix("\(sourceLine ?? -1):")) == true
         expect(editor.value as? String) == source
         let returning = app.buttons["preview-return"]
         expect(returning.waitForExistence(timeout: 10)) == true
