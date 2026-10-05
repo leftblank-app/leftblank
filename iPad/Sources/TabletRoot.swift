@@ -316,7 +316,7 @@ struct TabletRoot: View {
                 HStack {
                     Text(L10n.text(workspace.saveStatus)).accessibilityIdentifier("save-status")
                     Text(L10n.text(workspace.serviceStatus)).accessibilityIdentifier("engine-status")
-                        .accessibilityValue(workspace.previewReady ? L10n.text("Preview Updated") : L10n
+                        .accessibilityValue(workspace.previewReady ? L10n.text(workspace.serviceStatus) : L10n
                             .text("Waiting for Typesetting"))
                     Spacer()
                     if !reading, !sideBySide {

@@ -583,27 +583,31 @@ final class WritingTests: XCTestCase {
         let editor = app.textViews["manuscript"]
         editor.tap()
         editor.typeKey("a", modifierFlags: .command)
-        editor.typeText("= Source navigation\nTap this paragraph to reveal its source.\n")
+        let source = "= Source navigation\nTap this paragraph to reveal its source.\n"
+        editor.typeText(source)
+        expect(editor.value as? String) == source
         app.buttons["layout-preview"].tap()
         expectation(
-            for: NSPredicate(format: "value == %@", "Preview Updated"),
+            for: NSPredicate(format: "label == %@ AND value == %@", "Preview Updated", "Preview Updated"),
             evaluatedWith: app.staticTexts["engine-status"],
         )
         waitForExpectations(timeout: 60)
         let preview = app.webViews.firstMatch
         expect(preview.waitForExistence(timeout: 10)) == true
+        expect(app.buttons["preview-error"].exists) == false
+        let paragraph = preview.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS %@", "Tap this paragraph",
+        )).firstMatch
+        expect(paragraph.waitForExistence(timeout: 15)) == true
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.lifetime = .keepAlways
         add(screenshot)
-        // The page fits the preview width; use page-scaled coordinates so the
-        // paragraph stays the target on both 11-inch and 13-inch devices.
-        let paragraphY = preview.frame.width * 0.157 / preview.frame.height
-        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: paragraphY)).tap()
+        paragraph.tap()
         let revealed = NSPredicate { _, _ in editor.isHittable }
         expectation(for: revealed, evaluatedWith: app)
         waitForExpectations(timeout: 15)
         expect((app.staticTexts["source-position"].value as? String)?.hasPrefix("1:")) == true
-        expect(editor.value as? String) == "= Source navigation\nTap this paragraph to reveal its source.\n"
+        expect(editor.value as? String) == source
         let returning = app.buttons["preview-return"]
         expect(returning.waitForExistence(timeout: 10)) == true
         expect(app.buttons.matching(identifier: "preview-return").count) == 1
