@@ -2,6 +2,7 @@ import Foundation
 import LeftBlankCore
 @testable import LeftBlankTablet
 import LeftBlankTestSupport
+import PDFKit
 import Testing
 
 @Suite(.serialized)
@@ -29,8 +30,12 @@ struct TabletProjectTests {
         #expect(workspace.entryURL == document.sourceURL)
         #expect(workspace.text == "= Chapter\nProject body")
         #expect(workspace.serviceReady)
-        let pdf = try await workspace.compiledPDF()
+        await workspace.exportPDF()
+        let pdf = try #require(workspace.shareURL)
         #expect(try Data(contentsOf: pdf).starts(with: Data("%PDF".utf8)))
+        let rendered = try #require(PDFDocument(url: pdf))
+        #expect(rendered.pageCount == 1)
+        #expect(rendered.string?.contains("Project body") == true)
         #expect(pdf.path.hasPrefix(workspace.exportDirectory.path + "/"))
         let originalHistory = workspace.historyKey
         #expect(await workspace.openSource(document.sourceURL))

@@ -149,6 +149,19 @@ final class WritingTests: XCTestCase {
         starter.tap()
     }
 
+    private func focusEndOfShortDocument(_ editor: XCUIElement, in app: XCUIApplication) {
+        editor.tap()
+        waitForStableControl(editor, in: app)
+        // These short fixtures fit above this point, even with the keyboard open.
+        // Use touch positioning: XCTest hardware-key synthesis can get stuck
+        // waiting for UIKit animations after both Cmd+A and Cmd+Down.
+        let frame = editor.frame
+        let keyboard = app.keyboards.firstMatch
+        let bottom = keyboard.exists ? min(frame.maxY, keyboard.frame.minY) : frame.maxY
+        editor.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.width / 2, dy: bottom - frame.minY - 20)).tap()
+    }
+
     private func waitForState(_ predicate: NSPredicate, in app: XCUIApplication, name: String) {
         let ready = XCTNSPredicateExpectation(predicate: predicate, object: app)
         let completed = XCTWaiter.wait(for: [ready], timeout: 30) == .completed
@@ -210,9 +223,12 @@ final class WritingTests: XCTestCase {
     }
 
     private func expectShareSheet(in app: XCUIApplication) {
-        // The system sharing extension can still be loading on a cold hosted simulator.
-        let share = app.descendants(matching: .any)["Save to Files"].firstMatch
-        let visible = share.waitForExistence(timeout: 60)
+        // Verify our handoff to UIActivityViewController. The simulator's remote
+        // extension can remain empty even after presentation; its app inventory
+        // (including Save to Files) is outside this application's control.
+        // TabletProjectTests validates the generated PDF before this handoff.
+        let share = app.otherElements["ActivityListView"]
+        let visible = share.waitForExistence(timeout: 30)
         if !visible {
             capture("Share sheet unavailable")
             let hierarchy = XCTAttachment(string: app.debugDescription)
@@ -287,9 +303,10 @@ final class WritingTests: XCTestCase {
         let original = editor.value as? String ?? ""
         let addition = "\nPurchased access survives relaunch.\n"
         editor.tap()
-        editor.typeKey(.downArrow, modifierFlags: .command)
         editor.typeText(addition)
-        expect(editor.value as? String) == original + addition
+        let edited = editor.value as? String ?? ""
+        expect(edited.contains(addition)) == true
+        expect(edited.replacingOccurrences(of: addition, with: "")) == original
     }
 
     func testSubscriptionLegalLinks() throws {
@@ -436,8 +453,7 @@ final class WritingTests: XCTestCase {
         let editor = app.textViews["manuscript"]
         let original = editor.value as? String ?? ""
         let writing = "\n= iPad writing\nA shared local document.\n"
-        editor.tap()
-        editor.typeKey(.downArrow, modifierFlags: .command)
+        focusEndOfShortDocument(editor, in: app)
         editor.typeText(writing)
         expect(editor.value as? String) == original + writing
         // Finish the edit before resizing the text view and its selection UI.
@@ -447,11 +463,8 @@ final class WritingTests: XCTestCase {
         }, in: app, name: "Writing saved and rendered")
         app.buttons["layout-split"].tap()
         waitForStableControl(editor, in: app)
-        editor.tap()
-        // Showing the keyboard changes the split editor's height again.
-        waitForStableControl(editor, in: app)
+        focusEndOfShortDocument(editor, in: app)
         let split = "Edited in split view.\n"
-        editor.typeKey(.downArrow, modifierFlags: .command)
         editor.typeText(split)
         expect(editor.value as? String) == original + writing + split
         let saved = NSPredicate(format: "label == %@", "Saved")

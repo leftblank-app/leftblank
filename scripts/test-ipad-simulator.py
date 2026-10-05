@@ -411,6 +411,20 @@ class SimulatorContracts(unittest.TestCase):
             runner.run([sys.executable, '-c', program], 0.3, startup_timeout=3)
         self.assertLess(time.monotonic() - started, 4)
 
+    def test_phased_timeout_allows_result_finalization(self):
+        report = self.root / 'finalized.txt'
+        program = ("import signal, sys, time\n"
+                   "from pathlib import Path\n"
+                   "def finalize(_signum, _frame):\n"
+                   " Path(sys.argv[1]).write_text('failure attachments saved')\n"
+                   " raise SystemExit(0)\n"
+                   "signal.signal(signal.SIGINT, finalize)\n"
+                   "print(\"Test Suite 'All tests' started at now\", flush=True)\n"
+                   "time.sleep(30)\n")
+        with self.assertRaisesRegex(RuntimeError, 'execution timed out'):
+            runner.run([sys.executable, '-c', program, str(report)], 0.3, startup_timeout=3)
+        self.assertEqual(report.read_text(), 'failure attachments saved')
+
     def test_phased_command_failure_is_not_success(self):
         with self.assertRaises(subprocess.CalledProcessError) as failure:
             runner.run([sys.executable, '-c', 'raise SystemExit(65)'], 3, startup_timeout=3)

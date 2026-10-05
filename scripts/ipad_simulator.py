@@ -67,7 +67,16 @@ def run(command, timeout, *, capture=False, check=True, startup_timeout=None):
             wait_for_tests(process, startup_timeout, timeout)
             output = None
     except BaseException:
-        # xcodebuild can leave test workers behind if only its parent is killed.
+        # Let Xcode finalize failure attachments before removing its workers.
+        # A hung process group still has a bounded, unconditional cleanup.
+        if startup_timeout is not None:
+            try:
+                os.killpg(process.pid, signal.SIGINT)
+                output, _ = process.communicate(timeout=30)
+                if output:
+                    print(output, end='', flush=True)
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                pass
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
