@@ -238,6 +238,12 @@ final class ManuscriptTextView: NSTextView {
 
     @objc private func viewportChanged(_ notification: Notification) {
         if let clip = notification.object as? NSClipView, hoverViewportBounds != clip.bounds {
+            if sourceHover.panel != nil {
+                workspace?.recordOperation("hover.viewportChanged", [
+                    "previous": hoverViewportBounds.map(NSStringFromRect) ?? "none",
+                    "current": NSStringFromRect(clip.bounds),
+                ])
+            }
             hoverViewportBounds = clip.bounds
             sourceHover.dismiss()
         }
@@ -386,9 +392,7 @@ final class ManuscriptTextView: NSTextView {
             return
         }
         prepareForPointerInteraction()
-        let offset = sourceOffset(at: event)
-        workspace?.recordOperation("hover.pointer", ["offset": offset.map(String.init) ?? "none"])
-        sourceHover.move(to: offset)
+        sourceHover.move(to: sourceOffset(at: event))
     }
 
     override func mouseExited(with event: NSEvent) {
