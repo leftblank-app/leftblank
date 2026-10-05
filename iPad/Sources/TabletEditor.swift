@@ -114,7 +114,7 @@ struct TabletEditor: UIViewRepresentable {
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
-            (scrollView as? TabletTextView)?.sourceHover.dismiss()
+            (scrollView as? TabletTextView)?.sourceHover.viewportChanged()
         }
 
         func textViewDidChange(_ textView: UITextView) {

@@ -1,4 +1,5 @@
 import LeftBlankCore
+import OSLog
 import SwiftUI
 import UIKit
 
@@ -8,6 +9,8 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
     private var request: Task<Void, Never>?
     private var dismissal: Task<Void, Never>?
     private var range: NSRange?
+    private var viewport: CGRect?
+    private let logger = Logger(subsystem: "app.leftblank.writer", category: "source-hover")
     private(set) var host: UIHostingController<TabletHoverCard>?
     private var installed = false
 
@@ -85,6 +88,8 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
         }
         dismiss()
         range = target
+        viewport = editor.bounds
+        logger.notice("Hover started")
         request = Task { [weak self, weak workspace] in
             do {
                 try await Task.sleep(for: .milliseconds(400))
@@ -95,6 +100,7 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
                     "textDocument": ["uri": snapshot.url.absoluteString],
                     "position": TextPosition(offset: offset, in: snapshot.source).json,
                 ])
+                logger.notice("Hover response received")
                 guard !Task.isCancelled, workspace.accepts(snapshot), workspace.panel == nil,
                       range == target, let help = LanguageAssistance.hover(response)
                 else {
@@ -124,7 +130,18 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
         }
     }
 
-    func dismiss() {
+    func viewportChanged() {
+        guard viewport != editor?.bounds else {
+            return
+        }
+        dismiss()
+    }
+
+    func dismiss(reason: String = #function) {
+        if range != nil || host != nil {
+            logger.notice("Hover dismissed: \(reason, privacy: .public)")
+        }
+        viewport = nil
         request?.cancel()
         request = nil
         keepVisible()
@@ -174,6 +191,7 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
         )
         parent.addSubview(card.view)
         host = card
+        logger.notice("Hover presented")
     }
 }
 

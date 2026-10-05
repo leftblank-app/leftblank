@@ -547,6 +547,17 @@ extension TabletAssistanceTests {
         try #require(editor.becomeFirstResponder())
         controller.view.layoutIfNeeded()
         editor.scrollRangeToVisible(NSRange(location: 2, length: 1))
+        // Focus and keyboard appearance can finish laying out a cold simulator
+        // after layoutIfNeeded returns. Hover starts in the settled viewport.
+        var viewport = editor.bounds
+        var stableSince = ContinuousClock.now
+        try await waitFor {
+            if editor.bounds != viewport {
+                viewport = editor.bounds
+                stableSince = .now
+            }
+            return stableSince.duration(to: .now) >= .milliseconds(500)
+        }
         let selection = editor.selectedRange
         let start = try #require(editor.position(from: editor.beginningOfDocument, offset: 2))
         let end = try #require(editor.position(from: start, offset: 1))
@@ -558,6 +569,8 @@ extension TabletAssistanceTests {
         #expect(editor.selectedRange == selection && workspace.text == source)
         #expect(editor.isFirstResponder)
         let host = try #require(editor.sourceHover.host)
+        editor.delegate?.scrollViewDidScroll?(editor)
+        #expect(editor.sourceHover.host === host, "An unchanged layout callback must not dismiss hover")
         let parent = try #require(host.view.superview)
         let anchor = editor.convert(rect, to: parent)
         #expect(!host.view.frame.intersects(anchor))
