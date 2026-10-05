@@ -543,8 +543,14 @@ final class WritingTests: XCTestCase {
         let app = startWriting()
         let editor = app.textViews["manuscript"].firstMatch
         editor.tap()
-        editor.typeText("\n#align")
+        editor.typeKey("a", modifierFlags: .command)
+        editor.typeText("#align(center)[Hi]")
+        editor.typeKey(.leftArrow, modifierFlags: .command)
+        for _ in 0 ..< 3 {
+            editor.typeKey(.rightArrow, modifierFlags: [])
+        }
         let original = editor.value as? String
+        expect(original) == "#align(center)[Hi]"
         app.buttons["document-actions"].firstMatch.tap()
         let assistance = app.buttons["Writing Assistance"]
         waitForStableControl(assistance, in: app)
