@@ -37,8 +37,9 @@ if [ "$mode" = --fix ]; then
   "$lint" lint --fix --config .swiftlint.yml --no-cache
   "$format" "${paths[@]}" --config .swiftformat --cache ignore
 fi
-# Run both checks even when the first fails, to report every finding in CI.
+# Run every check even when an earlier one fails, to report every finding in CI.
 status=0
 "$format" "${paths[@]}" --config .swiftformat --lint --cache ignore || status=1
 "$lint" lint --strict --config .swiftlint.yml --no-cache || status=1
+python3 scripts/test-icon-policy.py "$lint" || status=1
 exit "$status"

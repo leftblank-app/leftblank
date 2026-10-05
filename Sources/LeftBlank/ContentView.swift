@@ -164,7 +164,11 @@ struct ContentView: View {
             .overlay(alignment: .bottomLeading) {
                 if let main = workspace.mainFileURL {
                     Button { workspace.open(main) } label: {
-                        Label(L10n.text("Return to Main Document"), systemImage: "arrow.uturn.backward")
+                        Label {
+                            Text(L10n.text("Return to Main Document"))
+                        } icon: {
+                            PhosphorIcon(name: "arrow-left", size: 12)
+                        }
                     }.buttonStyle(.plain).font(.system(size: 10))
                         .foregroundStyle(Theme.secondary).padding(8)
                         .background(Theme.panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 7)).padding(8)
