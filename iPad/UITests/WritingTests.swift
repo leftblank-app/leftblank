@@ -58,15 +58,17 @@ final class WritingTests: XCTestCase {
         let settled = NSPredicate { _, _ in !app.progressIndicators["document-loading"].exists }
         expectation(for: settled, evaluatedWith: app)
         waitForExpectations(timeout: 60)
-        if app.buttons["Show Sidebar"].exists || app.buttons["Hide Sidebar"].exists {
+        let duplicateSidebarCount = app.buttons.matching(NSPredicate(
+            format: "label IN %@", ["Show Sidebar", "Hide Sidebar"],
+        )).count
+        if duplicateSidebarCount != 0 {
             capture("Duplicate sidebar controls")
             let hierarchy = XCTAttachment(string: app.debugDescription)
             hierarchy.name = "Duplicate sidebar hierarchy"
             hierarchy.lifetime = .keepAlways
             add(hierarchy)
         }
-        expect(app.buttons["Show Sidebar"].exists) == false
-        expect(app.buttons["Hide Sidebar"].exists) == false
+        expect(duplicateSidebarCount) == 0
         return app
     }
 
@@ -364,7 +366,10 @@ final class WritingTests: XCTestCase {
         waitForExpectations(timeout: 60)
         expect(app.buttons["preview-error"].exists) == false
         capture("Welcome rendered")
-        app.buttons["check-source"].tap()
+        let checks = app.buttons["check-source"]
+        expect(checks.frame.width) >= 44
+        expect(checks.frame.height) >= 44
+        checks.tap()
         expect(app.navigationBars["Check Source"].waitForExistence(timeout: 10)) == true
         expect(app.buttons.matching(NSPredicate(format: "value == %@", "error")).count) == 0
         expect(app.buttons["unknown font family: noto sans sc"].exists) == false
@@ -405,10 +410,7 @@ final class WritingTests: XCTestCase {
         app.buttons["layout-writing"].tap()
         let editor = app.textViews["manuscript"]
         editor.tap()
-        editor.press(forDuration: 1.2)
-        let selectAll = app.descendants(matching: .any)["Select All"].firstMatch
-        expect(selectAll.waitForExistence(timeout: 10)) == true
-        selectAll.tap()
+        editor.typeKey("a", modifierFlags: .command)
         editor.typeText("= iPad writing\nA shared local document.\n")
         expect(editor.value as? String) == "= iPad writing\nA shared local document.\n"
         let saved = NSPredicate(format: "label == %@", "Saved")
@@ -580,10 +582,7 @@ final class WritingTests: XCTestCase {
         let app = startWriting()
         let editor = app.textViews["manuscript"]
         editor.tap()
-        editor.press(forDuration: 1.2)
-        let selectAll = app.descendants(matching: .any)["Select All"].firstMatch
-        expect(selectAll.waitForExistence(timeout: 10)) == true
-        selectAll.tap()
+        editor.typeKey("a", modifierFlags: .command)
         editor.typeText("= Source navigation\nTap this paragraph to reveal its source.\n")
         app.buttons["layout-preview"].tap()
         expectation(
@@ -607,6 +606,10 @@ final class WritingTests: XCTestCase {
         expect(editor.value as? String) == "= Source navigation\nTap this paragraph to reveal its source.\n"
         let returning = app.buttons["preview-return"]
         expect(returning.waitForExistence(timeout: 10)) == true
+        expect(app.buttons.matching(identifier: "preview-return").count) == 1
+        expect(app.buttons["preview-zoom-in"].exists) == false
+        expect(returning.frame.width) >= 44
+        expect(returning.frame.height) >= 44
         expect(returning.isEnabled) == true
         returning.tap()
         waitForState(
@@ -614,6 +617,7 @@ final class WritingTests: XCTestCase {
             in: app,
             name: "Return to reading",
         )
+        expect(app.buttons.matching(identifier: "preview-return").count) == 1
         app.buttons["preview-zoom-in"].tap()
         expect(app.staticTexts["110%"].waitForExistence(timeout: 10)) == true
         app.buttons["preview-zoom-out"].tap()

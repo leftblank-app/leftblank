@@ -62,7 +62,12 @@ import WebKit
             let width = try #require(await web.evaluateJavaScript(
                 "document.getElementById('typst-container').getBoundingClientRect().width",
             ) as? Double)
-            #expect(abs(width - (limit == nil ? 840 : 560)) < 1)
+            // Non-overlay scrollbars reduce the percentage width's containing block.
+            let available = try #require(await web.evaluateJavaScript(
+                "document.getElementById('typst-container-main').clientWidth",
+            ) as? Double)
+            let expected = min(available, limit.map(Double.init) ?? available) * Double(coordinator.zoom)
+            #expect(abs(width - expected) < 1)
         }
         try await web
             .evaluateJavaScript(

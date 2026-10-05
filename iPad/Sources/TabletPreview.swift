@@ -249,10 +249,10 @@ struct TabletPreviewReadingControls: View {
             onReturn()
         } label: {
             Label(L10n.text("Return to Reading"), systemImage: "arrow.uturn.backward")
+                .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
         }
         .labelStyle(.iconOnly)
         .accessibilityIdentifier("preview-return")
-        .frame(minWidth: 44, minHeight: 44)
         .disabled(session.returnAnchor == nil)
     }
 }
