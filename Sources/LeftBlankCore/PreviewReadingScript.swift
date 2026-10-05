@@ -72,6 +72,9 @@ public extension PreviewScripts {
                 cancel();
                 restoring = true;
                 const token = generation;
+                // A narrower column can clamp horizontal scrolling immediately.
+                // Record the new position before that scroll event is delivered.
+                apply(anchor);
                 // Bounded passes cover renderer resize without an endless scroll lock.
                 for (const delay of [40, 160, 400]) setTimeout(() => {
                     if (token !== generation) return;

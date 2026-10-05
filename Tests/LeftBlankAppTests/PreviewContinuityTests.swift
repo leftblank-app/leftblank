@@ -41,15 +41,29 @@ import WebKit
         let before = try #require(PreviewReadingAnchor(message: beforeMessage))
         #expect(before.page == 1)
         #expect(abs(before.y - anchor.y) < 0.02)
-        try await web
-            .evaluateJavaScript(
-                "window.leftblankPrepareResize(); document.getElementById('typst-container').style.width = '140%'; window.dispatchEvent(new Event('resize'));",
-            )
+        let coordinator = PreviewView.Coordinator(onError: { _ in })
+        coordinator.zoom = 1.4
+        coordinator.applyZoom(to: web)
         try await Task.sleep(for: .milliseconds(500))
         let zoomedMessage = try #require(await web.evaluateJavaScript("window.leftblankCaptureReading()"))
         let zoomed = try #require(PreviewReadingAnchor(message: zoomedMessage))
         #expect(zoomed.page == before.page)
         #expect(abs(zoomed.y - before.y) < 0.02)
+        // Entering and leaving a bounded reading column must retain the same
+        // page-relative position even when the zoom setting does not change.
+        for limit: CGFloat? in [400, nil] {
+            coordinator.maxPageWidth = limit
+            coordinator.applyZoom(to: web)
+            try await Task.sleep(for: .milliseconds(500))
+            let message = try #require(await web.evaluateJavaScript("window.leftblankCaptureReading()"))
+            let resized = try #require(PreviewReadingAnchor(message: message))
+            #expect(resized.page == before.page)
+            #expect(abs(resized.y - before.y) < 0.02)
+            let width = try #require(await web.evaluateJavaScript(
+                "document.getElementById('typst-container').getBoundingClientRect().width",
+            ) as? Double)
+            #expect(abs(width - (limit == nil ? 840 : 560)) < 1)
+        }
         try await web
             .evaluateJavaScript(
                 "window.leftblankPrepareResize(); window.leftblankSourceJump(); document.getElementById('typst-container-main').scrollTop = 0;",

@@ -156,9 +156,13 @@ struct PreviewView: NSViewRepresentable {
             (() => {
                 const container = document.getElementById('typst-container');
                 if (!container) return false;
-                if (container.style.width !== '\(zoom * 100)%') window.leftblankPrepareResize?.();
-                container.style.width = '\(zoom * 100)%';
-                container.style.maxWidth = '\(maxPageWidth.map { "\($0 * zoom)px" } ?? "none")';
+                const width = '\(zoom * 100)%';
+                const maxWidth = '\(maxPageWidth.map { "\($0 * zoom)px" } ?? "none")';
+                if (container.style.width !== width || container.style.maxWidth !== maxWidth) {
+                    window.leftblankPrepareResize?.();
+                }
+                container.style.width = width;
+                container.style.maxWidth = maxWidth;
                 container.style.marginInline = 'auto';
                 if (window.leftblankSetDark) window.leftblankSetDark(\(dark ? "true" : "false"));
                 window.dispatchEvent(new Event('resize'));
