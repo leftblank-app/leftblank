@@ -135,6 +135,7 @@ extension WritingFlowTests {
         L10n.setLanguage(.simplifiedChinese)
         let app = try WritingFixture(text: "= Root", startService: false)
         defer { app.close() }
+        app.window.orderFront(nil)
         let package = app.workspace.packageCache.appendingPathComponent("preview/test/1.0.0/shapes.typ")
         try FileManager.default.createDirectory(
             at: package.deletingLastPathComponent(),
@@ -178,6 +179,10 @@ extension WritingFlowTests {
         }
         app.workspace.closeDocument()
         await app.layout()
+        try await app.wait {
+            title.layoutSubtreeIfNeeded()
+            return descendants(title).contains { $0 is DocumentTitleField }
+        }
         #expect(!descendants(title).compactMap { $0 as? HelpAnchor }
             .contains { $0.title == L10n.text("Read-only Package") })
         #expect(descendants(title).contains { $0 is DocumentTitleField })

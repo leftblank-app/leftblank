@@ -131,6 +131,11 @@ extension WritingFlowTests {
 extension WritingFixture {
     func hover(over needle: String, delta: Int = 1) async throws {
         let editor = try #require(workspace.editor)
+        // A real hover starts in an already displayed window. Showing a child
+        // panel must not be the event that first lays out its hidden parent.
+        window.orderFront(nil)
+        await layout()
+        try #require(window.isVisible)
         let range = (editor.string as NSString).range(of: needle)
         try #require(range.location != NSNotFound)
         let offset = range.location + delta
