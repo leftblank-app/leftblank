@@ -207,6 +207,8 @@ final class ManuscriptTextView: NSTextView {
 
     weak var workspace: Workspace?
     var assistancePopover: NSPopover?
+    lazy var sourceHover = SourceHoverController(editor: self)
+    private var sourceTrackingArea: NSTrackingArea?
     private var selectingWithMouse = false
     private var highlightTask: Task<Void, Never>?
     private var placeholders: [NSRange] = []
@@ -229,8 +231,10 @@ final class ManuscriptTextView: NSTextView {
     private var characterEdit: TextReplacement?
 
     private var viewportTask: Task<Void, Never>?
+    private var hoverViewportBounds: NSRect?
 
     func observeViewport(_ clip: NSClipView) {
+        hoverViewportBounds = clip.bounds
         clip.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(
             self,
@@ -241,6 +245,10 @@ final class ManuscriptTextView: NSTextView {
     }
 
     @objc private func viewportChanged(_ notification: Notification) {
+        if let clip = notification.object as? NSClipView, hoverViewportBounds != clip.bounds {
+            hoverViewportBounds = clip.bounds
+            sourceHover.dismiss()
+        }
         guard viewportTask == nil else {
             return
         }
@@ -297,6 +305,7 @@ final class ManuscriptTextView: NSTextView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        sourceHover.observeWindow()
         observeUndoManager()
         window?.invalidateCursorRects(for: self)
     }
@@ -360,6 +369,35 @@ final class ManuscriptTextView: NSTextView {
         if isEditable {
             addCursorRect(visibleRect, cursor: .iBeam)
         }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let sourceTrackingArea {
+            removeTrackingArea(sourceTrackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+        )
+        addTrackingArea(area)
+        sourceTrackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        guard !hasMarkedText(), NSEvent.pressedMouseButtons == 0 else {
+            sourceHover.dismiss()
+            return
+        }
+        prepareForPointerInteraction()
+        sourceHover.move(to: sourceOffset(at: event))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        sourceHover.scheduleDismissal()
     }
 
     override func cursorUpdate(with event: NSEvent) {
@@ -556,6 +594,11 @@ final class ManuscriptTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
+        let hadHover = sourceHover.panel != nil
+        sourceHover.dismiss()
+        if hadHover, event.keyCode == 53, !hasMarkedText() {
+            return
+        }
         if handleTypingKey(event) {
             return
         }

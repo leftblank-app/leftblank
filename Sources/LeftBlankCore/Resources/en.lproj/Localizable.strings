@@ -581,6 +581,14 @@
 "Discover changes available for this heading, equation or selection." = "Discover changes available for this heading, equation or selection.";
 
 "Find the source of a variable, function, reference or imported module." = "Find the source of a variable, function, reference or imported module.";
+"⌘-click source to go to definition" = "⌘-click source to go to definition";
+"Help for %@" = "Help for %@";
+"View Typst documentation" = "View Typst documentation";
+"Explanation" = "Explanation";
+"Example" = "Example";
+"Rendered example" = "Rendered example";
+"Rendering example…" = "Rendering example…";
+"This example cannot be previewed on its own. See its documentation." = "This example cannot be previewed on its own. See its documentation.";
 
 "Return to your previous writing position." = "Return to your previous writing position.";
 

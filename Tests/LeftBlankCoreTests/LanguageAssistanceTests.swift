@@ -71,6 +71,50 @@ private func assistanceAction(_ edits: [[String: Any]], uri: String = assistance
     #expect(LanguageAssistance.signatureHelp(simple)?.activeParameter == "x")
 }
 
+@Test func hoverSeparatesSignatureFromDocumentationWithoutInterpretingPlaintext() throws {
+    let markdown = "```typc\nlet greet(name: str);\n```\n\n---\n\nA **greeting**.\n\n```typ\n#greet(\"Reader\")\n```"
+    for contents: Any in [markdown, ["kind": "markdown", "value": markdown]] {
+        let help = try #require(LanguageAssistance.hover(assistanceJSON(["contents": contents])))
+        #expect(help.signature == "let greet(name: str);")
+        #expect(help.documentation.hasPrefix("A greeting."))
+        #expect(help.documentation.contains("#greet"))
+        #expect(help.text.contains("let greet"))
+    }
+    let parts = try #require(LanguageAssistance.hover(assistanceJSON(["contents": [
+        ["language": "typst", "value": "greet(name)"], "A greeting.",
+    ]])))
+    #expect(parts.signature == "greet(name)")
+    #expect(parts.documentation == "A greeting.")
+    let plain = try #require(LanguageAssistance.hover(assistanceJSON(["contents": [
+        "kind": "plaintext",
+        "value": markdown,
+    ]])))
+    #expect(plain.signature == nil)
+    #expect(plain.documentation == markdown)
+}
+
+@Test func hoverOnlyActivatesExplicitOfficialDocumentationLinks() throws {
+    let help = try #require(LanguageAssistance.hover(assistanceJSON([
+        "contents": "A number.\n\n---\n\n[Open docs](https://typst.app/docs/reference/foundations/float/)",
+    ])))
+    #expect(help.documentation == "A number.")
+    #expect(help.documentationURL?.absoluteString == "https://typst.app/docs/reference/foundations/float/")
+    for url in [
+        "command:execute",
+        "file:///private/file",
+        "https://typst.app.evil.test/docs/",
+        "https://example.com/",
+        "http://typst.app/docs/",
+    ] {
+        let rejected = try #require(LanguageAssistance.hover(assistanceJSON(["contents": "[Open docs](\(url))"])))
+        #expect(rejected.documentationURL == nil)
+    }
+    let plain = try #require(LanguageAssistance.hover(assistanceJSON(["contents": [
+        "kind": "plaintext", "value": "[Open docs](https://typst.app/docs/)",
+    ]])))
+    #expect(plain.documentationURL == nil)
+}
+
 @Test func languageAssistanceActionsApplyUnicodeCRLFAndVersionedEdits() throws {
     let source = "中文😀\r\n= Heading\r\n$x$\r\n"
     let response = try assistanceJSON([assistanceAction([
