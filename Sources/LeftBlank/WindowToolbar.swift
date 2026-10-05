@@ -132,9 +132,7 @@ private struct DocumentTitle: View {
 struct ReadOnlyPackageBadge: View {
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: "lock")
-                .font(.system(size: 10, weight: .medium))
-                .accessibilityHidden(true)
+            PhosphorIcon(name: "lock-simple", size: 12)
             Text(L10n.text("Read-only"))
                 .font(.system(size: 10, weight: .medium))
         }
