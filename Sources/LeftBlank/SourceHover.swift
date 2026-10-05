@@ -49,6 +49,7 @@ final class SourceHoverController: NSObject {
         }
         dismiss()
         range = target
+        workspace.recordOperation("hover.started", ["range": NSStringFromRange(target)])
         request = Task { [weak self, weak workspace] in
             do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
             guard let self, let workspace,
@@ -57,6 +58,7 @@ final class SourceHoverController: NSObject {
             else {
                 return
             }
+            workspace.recordOperation("hover.received")
             present(help, at: target)
         }
     }
@@ -106,7 +108,10 @@ final class SourceHoverController: NSObject {
         }
     }
 
-    func dismiss() {
+    func dismiss(reason: String = #function) {
+        if range != nil || panel != nil {
+            editor?.workspace?.recordOperation("hover.dismissed", ["reason": reason])
+        }
         previewTask?.cancel()
         previewTask = nil
         examplePreview = nil
@@ -130,6 +135,9 @@ final class SourceHoverController: NSObject {
         }
         let anchor = editor.firstRect(forCharacterRange: range, actualRange: nil)
         let visible = window.convertToScreen(editor.convert(editor.visibleRect, to: nil))
+        editor.workspace?.recordOperation("hover.anchor", [
+            "anchor": NSStringFromRect(anchor), "visible": NSStringFromRect(visible),
+        ])
         guard anchor.intersects(visible) else {
             return
         }
@@ -156,6 +164,7 @@ final class SourceHoverController: NSObject {
         panel.hidesOnDeactivate = true
         panel.appearance = editor.effectiveAppearance
         panel.contentView = host
+        editor.workspace?.recordOperation("hover.presented")
         self.panel = panel
         self.help = help
         window.addChildWindow(panel, ordered: .above)

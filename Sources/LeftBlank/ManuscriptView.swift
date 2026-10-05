@@ -386,7 +386,9 @@ final class ManuscriptTextView: NSTextView {
             return
         }
         prepareForPointerInteraction()
-        sourceHover.move(to: sourceOffset(at: event))
+        let offset = sourceOffset(at: event)
+        workspace?.recordOperation("hover.pointer", ["offset": offset.map(String.init) ?? "none"])
+        sourceHover.move(to: offset)
     }
 
     override func mouseExited(with event: NSEvent) {
