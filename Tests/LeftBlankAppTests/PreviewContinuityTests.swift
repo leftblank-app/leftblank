@@ -8,7 +8,7 @@ import WebKit
 
 @Suite(.serialized) @MainActor struct PreviewContinuityTests {
     @Test func lazyPagesRestoreBeforePaintingAndScrollingSupersedesRestoration() async throws {
-        let fixture = PreviewReadingFixture(script: PreviewScripts.reading, lazySVG: true)
+        let fixture = try PreviewReadingFixture(script: PreviewScripts.reading, lazySVG: true)
         defer { fixture.close() }
         try await fixture.ready()
         let web = fixture.web
@@ -29,7 +29,7 @@ import WebKit
     }
 
     @Test func normalizedReadingAnchorSurvivesZoomAndSourceJumpCancelsRestore() async throws {
-        let fixture = PreviewReadingFixture(script: PreviewScripts.reading)
+        let fixture = try PreviewReadingFixture(script: PreviewScripts.reading)
         defer { fixture.close() }
         try await fixture.ready()
         let web = fixture.web
@@ -85,7 +85,7 @@ import WebKit
     }
 
     @Test func nativeReturnRestoresBookmarkedPageAndAcknowledgesSuccess() async throws {
-        let fixture = PreviewReadingFixture(script: PreviewScripts.reading)
+        let fixture = try PreviewReadingFixture(script: PreviewScripts.reading)
         defer { fixture.close() }
         try await fixture.ready()
         let session = PreviewReadingSession()

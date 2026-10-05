@@ -337,13 +337,15 @@ jobs:
           compression-level: 0
           retention-days: 1
   ipad-ui:
-    name: iPad UI (${{ matrix.size }}, ${{ matrix.appearance }})
+    name: iPad UI (${{ matrix.size }}, ${{ matrix.appearance }}, shard ${{ matrix.shard }})
     needs: ipad-build
     runs-on: macos-15
     timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
+        size: [11-inch, 13-inch]
+        shard: [1, 2]
         include:
           - size: 11-inch
             appearance: light
@@ -376,13 +378,13 @@ jobs:
         run: |
           source scripts/environment.sh
           python3 scripts/ipad_simulator.py --fresh-device --size "${{ matrix.size }}" \
-            --appearance "${{ matrix.appearance }}"
+            --appearance "${{ matrix.appearance }}" --ui-shard "${{ matrix.shard }}"
       - name: Upload native iPad test results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         timeout-minutes: 3
         with:
-          name: ipad-writing-${{ matrix.size }}-${{ matrix.appearance }}
+          name: ipad-writing-${{ matrix.size }}-${{ matrix.appearance }}-${{ matrix.shard }}
           path: build/iPad-writing
           if-no-files-found: warn
           retention-days: 14
@@ -409,8 +411,10 @@ jobs:
         run: |
           source scripts/environment.sh
           python3 scripts/ipad_coverage.py --minimum 80 --result \
-            build/iPad-results/ipad-writing-11-inch-light/11-inch.xcresult \
-            build/iPad-results/ipad-writing-13-inch-dark/13-inch.xcresult
+            build/iPad-results/ipad-writing-11-inch-light-1/11-inch.xcresult \
+            build/iPad-results/ipad-writing-11-inch-light-2/11-inch.xcresult \
+            build/iPad-results/ipad-writing-13-inch-dark-1/13-inch.xcresult \
+            build/iPad-results/ipad-writing-13-inch-dark-2/13-inch.xcresult
       - name: Upload iPad application coverage to Codecov
         if: ${{ !cancelled() && hashFiles('build/iPad-coverage/codecov.lcov') != '' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1

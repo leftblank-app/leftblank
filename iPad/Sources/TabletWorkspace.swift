@@ -450,6 +450,8 @@ final class TabletWorkspace: ObservableObject {
                 return true
             }
             guard savedText != source else {
+                saveStatus = text == source ? "Saved" : "Saving"
+                persistRecovery()
                 return true
             }
             do {

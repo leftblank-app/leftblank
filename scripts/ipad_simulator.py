@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the full native UI suite on one requested iPad size."""
+"""Run native tests and all or half of the UI suite on one iPad size."""
 
 import argparse
 import codecs
@@ -225,8 +225,18 @@ def configure_coverage(bundle):
     bundle.write_bytes(plistlib.dumps(parameters))
 
 
+def ui_test_selection(shard):
+    source = Path(__file__).resolve().parent.parent / 'iPad/UITests/WritingTests.swift'
+    cases = sorted(re.findall(r'^\s+func (test\w+)\(', source.read_text(), re.MULTILINE))
+    selected = cases[shard - 1::2]
+    if not selected or len(cases) != len(set(cases)):
+        raise RuntimeError('UI shards require unique test methods and a nonempty selection')
+    return ['-only-testing:LeftBlankTabletTests'] + [
+        '-only-testing:LeftBlankUITests/WritingTests/' + name for name in selected]
+
+
 def test_device(size, device, bundle, results, *, suite='all', memory=False, coverage=True, appearance=None,
-                cold_start=False):
+                cold_start=False, ui_shard=None):
     print(f"::group::{size}: boot, native {suite} tests, shutdown", flush=True)
     try:
         if coverage:
@@ -252,6 +262,8 @@ def test_device(size, device, bundle, results, *, suite='all', memory=False, cov
         # Xcode's verbose sysdiagnose can spend ten minutes after a test failure.
         # Keep the test report and attachments, then collect our bounded diagnostics.
         selection = ['-only-testing:LeftBlankTabletTests'] if suite == 'unit' else []
+        if ui_shard is not None:
+            selection = ui_test_selection(ui_shard)
         if memory:
             selection += ['-enablePerformanceTestsDiagnostics', 'YES']
         started = time.time()
@@ -288,6 +300,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--size', choices=('11-inch', '13-inch'), required=True)
     parser.add_argument('--suite', choices=('all', 'unit'), default='all')
+    parser.add_argument('--ui-shard', type=int, choices=(1, 2), help='Run half of the UI methods plus native tests')
     parser.add_argument('--derived-data', type=Path, default=Path('build/iPad'))
     parser.add_argument('--results', type=Path, default=Path('build/iPad-writing'))
     parser.add_argument('--memory', action='store_true')
@@ -296,6 +309,8 @@ def main(argv=None):
     parser.add_argument('--fresh-device', action='store_true',
                         help='Create a disposable simulator on a hosted CI runner')
     args = parser.parse_args(argv)
+    if args.ui_shard is not None and (args.suite != 'all' or args.memory):
+        parser.error('--ui-shard requires the full suite without --memory')
     if args.fresh_device and os.environ.get('GITHUB_ACTIONS') != 'true':
         parser.error('--fresh-device is restricted to disposable hosted CI runners')
     root = Path(__file__).resolve().parent.parent
@@ -327,6 +342,8 @@ def main(argv=None):
     finally:
         print('::endgroup::', flush=True)
     options = {}
+    if args.ui_shard is not None:
+        options['ui_shard'] = args.ui_shard
     if args.fresh_device and args.suite == 'all':
         options['cold_start'] = True
     if args.appearance:

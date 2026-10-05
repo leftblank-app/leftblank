@@ -197,6 +197,39 @@ class SimulatorContracts(unittest.TestCase):
         self.assertEqual(command[command.index('-enablePerformanceTestsDiagnostics') + 1], 'YES')
         verify.assert_called_once_with(self.root / '11-inch.xcresult', self.root, memory=True)
 
+    def test_ui_shards_cover_every_method_once_and_keep_native_tests(self):
+        source = self.root / 'iPad/UITests/WritingTests.swift'
+        source.parent.mkdir(parents=True)
+        source.write_text('''final class WritingTests: XCTestCase {
+            func testZulu() {}
+            func helper() {}
+            func testAlpha() async throws {}
+            func testBravo() {}
+        }''')
+        with patch.object(runner, '__file__', str(self.root / 'scripts/ipad_simulator.py')):
+            first, second = runner.ui_test_selection(1), runner.ui_test_selection(2)
+        native = '-only-testing:LeftBlankTabletTests'
+        prefix = '-only-testing:LeftBlankUITests/WritingTests/'
+        self.assertEqual(first, [native, prefix + 'testAlpha', prefix + 'testZulu'])
+        self.assertEqual(second, [native, prefix + 'testBravo'])
+        self.assertEqual(set(first) & set(second), {native})
+        with patch.object(runner, 'run', return_value=subprocess.CompletedProcess([], 0)) as run, \
+             patch.object(runner, 'verify_result'), patch.object(runner, 'export_coverage'), \
+             patch.object(runner, 'configure_coverage'), \
+             patch.object(runner, 'ui_test_selection', return_value=first):
+            self.assertTrue(runner.test_device('11-inch', DEVICES[0][1], self.root / 'test.xctestrun',
+                                              self.root, ui_shard=1))
+        command = next(call.args[0] for call in run.call_args_list if call.args[0][0] == 'xcodebuild')
+        self.assertEqual([arg for arg in command if arg.startswith('-only-testing:')], first)
+
+    def test_invalid_shard_combinations_fail_before_boot(self):
+        with patch.object(runner, 'inventory') as inventory, contextlib.redirect_stderr(io.StringIO()):
+            for arguments in (['--ui-shard', '0'], ['--ui-shard', '3'],
+                              ['--ui-shard', '1', '--suite', 'unit'], ['--ui-shard', '1', '--memory']):
+                with self.assertRaises(SystemExit):
+                    runner.main(['--size', '11-inch', *arguments])
+            inventory.assert_not_called()
+
     def test_custom_memory_products_do_not_reuse_coverage_build(self):
         bundle = self.root / 'build/iPad-memory/address/Build/Products/memory.xctestrun'
         bundle.parent.mkdir(parents=True)

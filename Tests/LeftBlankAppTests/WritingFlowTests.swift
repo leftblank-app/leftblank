@@ -139,6 +139,19 @@ struct WritingFlowTests {
         #expect(editor.string.contains("#table("))
     }
 
+    @Test func editingBackToSavedContentRestoresSavedStatus() async throws {
+        let original = "= Original\nSaved 中文😀\n"
+        let app = try WritingFixture(text: original)
+        defer { app.close() }
+        try await app.ready()
+        app.workspace.edited("Temporary replacement")
+        app.workspace.edited(original)
+        app.workspace.save()
+        #expect(app.workspace.saveStatus == "Saved")
+        #expect(app.workspace.savedText == original)
+        #expect(try String(contentsOf: app.document, encoding: .utf8) == original)
+    }
+
     @Test func documentSaveConflictReloadAndRecovery() async throws {
         let app = try WritingFixture(text: "= Original\n")
         defer { app.close() }
