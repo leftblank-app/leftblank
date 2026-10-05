@@ -581,6 +581,14 @@
 "Discover changes available for this heading, equation or selection." = "发现当前标题、公式或选区可用的操作。";
 
 "Find the source of a variable, function, reference or imported module." = "找到变量、函数、引用或导入模块的定义位置。";
+"⌘-click source to go to definition" = "⌘ 点击源码，跳转到定义";
+"Help for %@" = "%@ 的帮助";
+"View Typst documentation" = "查看 Typst 官方文档";
+"Explanation" = "说明";
+"Example" = "示例";
+"Rendered example" = "示例排版效果";
+"Rendering example…" = "正在渲染示例…";
+"This example cannot be previewed on its own. See its documentation." = "暂时无法单独预览此示例，可查看文档说明。";
 
 "Return to your previous writing position." = "回到之前的写作位置。";
 

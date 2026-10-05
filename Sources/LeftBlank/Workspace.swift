@@ -1713,6 +1713,34 @@ final class Workspace: ObservableObject {
 }
 
 extension Workspace {
+    func hoverHelp(at offset: Int) async -> LanguageHover? {
+        guard serviceReady, client.supports("hoverProvider"), !paletteOpen, !isLibraryHome,
+              layout != .preview, !documentTransitionInProgress, !applyingCommand,
+              assistance == nil, editor?.hasMarkedText() != true,
+              offset >= 0, offset < text.utf16.count
+        else {
+            return nil
+        }
+        let generation = serviceGeneration, version = documentVersion, url = documentURL, caret = selection
+        do {
+            try flushChanges()
+            let result = try await client.request("textDocument/hover", [
+                "textDocument": ["uri": url.absoluteString],
+                "position": TextPosition(offset: offset, in: text).json,
+            ])
+            guard !Task.isCancelled, generation == serviceGeneration, version == documentVersion,
+                  url == documentURL, caret == selection, assistance == nil, !paletteOpen,
+                  layout != .preview, !documentTransitionInProgress, editor?.hasMarkedText() != true
+            else {
+                return nil
+            }
+            return LanguageAssistance.hover(result)
+        } catch {
+            // Passive help never interrupts writing with connection/error messages.
+            return nil
+        }
+    }
+
     func dismissAssistance() {
         assistanceRequest = UUID()
         assistanceTask?.cancel()

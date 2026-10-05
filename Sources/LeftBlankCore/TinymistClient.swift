@@ -24,6 +24,10 @@ public enum ServiceError: LocalizedError {
 
 @MainActor
 public final class TinymistClient {
+    public static var bundledFontURL: URL? {
+        L10n.resourceBundle.url(forResource: "NotoSansSC", withExtension: "ttf")
+    }
+
     private let makeTransport: @MainActor () throws -> any TinymistTransport
 
     public init(makeTransport: (@MainActor () throws -> any TinymistTransport)? = nil) {
@@ -107,7 +111,7 @@ public final class TinymistClient {
         try BundledPackages.prepare(in: packageCache)
         // iPad's PingFang UI collection uses Apple-specific glyph tables that
         // Typst cannot parse. Supply the same portable CJK fallback on both platforms.
-        let bundledFont = L10n.resourceBundle.url(forResource: "NotoSansSC", withExtension: "ttf")
+        let bundledFont = Self.bundledFontURL
         let response = try await request("initialize", [
             "processId": ProcessInfo.processInfo.processIdentifier,
             "rootUri": root.absoluteString,
