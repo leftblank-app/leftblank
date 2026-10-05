@@ -1100,8 +1100,8 @@ public struct WritingCommand: Identifiable, Sendable {
             "code",
             "d",
             "Go to Definition",
-            "Find the source of a variable, function or reference.",
-            "definition jump 定义 跳转",
+            "Find the source of a variable, function, reference or imported module.",
+            "definition jump import include module 定义 跳转 模块",
             isInsertion: false,
         ),
         .init(

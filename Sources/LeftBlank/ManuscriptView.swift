@@ -375,11 +375,38 @@ final class ManuscriptTextView: NSTextView {
     override func mouseDown(with event: NSEvent) {
         workspace?.dismissAssistance()
         prepareForPointerInteraction()
+        if event.modifierFlags.intersection([.command, .control, .option, .shift]) == [.command],
+           !hasMarkedText(), workspace?.canNavigateSource == true,
+           let offset = sourceOffset(at: event)
+        {
+            setSelectedRange(NSRange(location: offset, length: 0))
+            window?.makeFirstResponder(self)
+            workspace?.goToDefinition()
+            return
+        }
         selectingWithMouse = true
         defer { selectingWithMouse = false
             scheduleHighlight()
         }
         super.mouseDown(with: event)
+    }
+
+    /// Hit the character itself, not the nearest insertion position in the margin.
+    func sourceOffset(at event: NSEvent) -> Int? {
+        guard let manager = layoutManager, let container = textContainer else {
+            return nil
+        }
+        let point = convert(event.locationInWindow, from: nil)
+        let location = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        let index = manager.characterIndex(for: location, in: container, fractionOfDistanceBetweenInsertionPoints: nil)
+        guard index < string.utf16.count else {
+            return nil
+        }
+        let glyphs = manager.glyphRange(
+            forCharacterRange: NSRange(location: index, length: 1),
+            actualCharacterRange: nil,
+        )
+        return manager.boundingRect(forGlyphRange: glyphs, in: container).contains(location) ? index : nil
     }
 
     func load(_ content: String, selection: NSRange) {
@@ -520,6 +547,12 @@ final class ManuscriptTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 111, event.modifierFlags.isDisjoint(with: [.command, .control, .option, .shift]),
+           !hasMarkedText(), workspace?.canNavigateSource == true
+        {
+            workspace?.goToDefinition()
+            return
+        }
         if !hasMarkedText(), event.keyCode == 48, !placeholders.isEmpty {
             placeholderIndex += event.modifierFlags.contains(.shift) ? -1 : 1
             if placeholderIndex >= 0, placeholderIndex < placeholders.count {

@@ -19,6 +19,8 @@ The app supports English and Simplified Chinese, with the localized name **留�
 | Import a document | `⇧⌘O` |
 | Save as / export PDF | `⇧⌘S` / `⇧⌘E` |
 | Completion / find | `⌃.` / `⌘F` |
+| Go to definition | `⌘`-click, `F12` (or `fn-F12`), or `⌃⌘J` |
+| Return to previous source position | `⌃⌘[` |
 | Universe packages | `⇧⌘U` |
 
 For example, `⌘J → i → t` opens the table form. Choose the row and column counts, insert, then move between cells with Tab. Select text and press `⌘J → s → b` to make it bold. Each insertion is one undoable edit. You can always write Typst directly.
@@ -26,6 +28,10 @@ For example, `⌘J → i → t` opens the table form. Choose the row and column 
 The command catalog has 109 discoverable commands, including 74 insertion actions. Mathematics has nested categories for basic operations, equation structures and symbols. `⌘J → m → b → f` inserts a fraction, using the appropriate syntax inside an existing equation. Commands show their purpose, example, direct shortcut, discovery path and official reference.
 
 Frequent actions have direct shortcuts as well as discoverable paths. `⌘]` / `⌘[` indent and outdent, `⌘/` toggles comments, and `⌥⇧F` formats the source. Hovering a toolbar button shows a compact action name and shortcut.
+
+Command-click a variable, function, module member, label reference, or the path in an `import` / `include` to go to its definition. **Go to Definition** is also in the editor's context menu and **Editing & Code** commands. Navigation uses Typst's language service, including local modules, import aliases and external packages. Built-in functions without Typst source show contextual help instead.
+
+**Go Back** restores the previous file and caret, including nested jumps. `⌘W` closes the current file and returns to the previous document; `⌘Q` quits the app. The original document remains the compilation entry while you inspect dependencies. Your own modules stay editable; package sources display a lock and **Read-only** badge and cannot be overwritten.
 
 The outline appears in the left margin without moving the text. Hover to explore headings, then use the small pin to keep them visible; hovering the pinned control reveals its close action. `⌘4` also pins or dismisses it. The command panel keeps a stable height through searching, selection and parameter entry; its guide stays in the same place.
 
