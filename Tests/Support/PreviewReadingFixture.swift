@@ -17,7 +17,7 @@ public final class PreviewReadingFixture {
         private let window: UIWindow
     #endif
 
-    public init(script: String) {
+    public init(script: String, lazySVG: Bool = false) {
         let config = WKWebViewConfiguration()
         config.userContentController.addUserScript(WKUserScript(
             source: script,
@@ -38,13 +38,20 @@ public final class PreviewReadingFixture {
             window.rootViewController = controller
             window.isHidden = false
         #endif
+        let pages = lazySVG ? """
+        <svg class="typst-doc" width="100%" viewBox="0 0 600 3000">
+        <g class="typst-page" data-page-width="600" data-page-height="1000" transform="translate(0,0)"></g>
+        <g class="typst-page" data-page-width="600" data-page-height="1000" transform="translate(0,1000)"></g>
+        <g class="typst-page" data-page-width="600" data-page-height="1000" transform="translate(0,2000)"></g>
+        </svg>
+        """ : """
+        <div class="typst-doc"><div class="typst-page-inner">One</div><div class="typst-page-inner">Two</div><div class="typst-page-inner">Three</div></div>
+        """
         web.loadHTMLString("""
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>html,body{margin:0;width:100%;height:100%;} #typst-container-main{width:100%;height:100%;overflow:auto;}
         #typst-container{width:100%;} .typst-page-inner{width:100%;aspect-ratio:3/5;margin-bottom:20px;background:white;}</style></head>
-        <body><div id="typst-container-main"><div id="typst-container"><div class="typst-doc">
-        <div class="typst-page-inner">One</div><div class="typst-page-inner">Two</div><div class="typst-page-inner">Three</div>
-        </div></div></div></body></html>
+        <body><div id="typst-container-main"><div id="typst-container">\(pages)</div></div></body></html>
         """, baseURL: nil)
     }
 

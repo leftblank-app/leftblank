@@ -7,6 +7,27 @@ import UIKit
 import WebKit
 
 @Suite(.serialized) @MainActor struct TabletPreviewContinuityTests {
+    @Test func lazyPagesRestoreBeforePaintingAndScrollingSupersedesRestoration() async throws {
+        let fixture = PreviewReadingFixture(script: PreviewScripts.reading, lazySVG: true)
+        defer { fixture.close() }
+        try await fixture.ready()
+        let web = fixture.web
+        #expect(try await web
+            .evaluateJavaScript("window.leftblankRestoreReading({page:1,x:.5,y:.4,viewportY:.2})") as? Bool == true)
+        try await Task.sleep(for: .milliseconds(500))
+        let first = try #require(await web.evaluateJavaScript("window.leftblankCaptureReading()"))
+        #expect(PreviewReadingAnchor(message: first)?.page == 1)
+        // A rendering pass only adds glyphs. It must not restore an old page.
+        try await web.evaluateJavaScript("""
+        window.leftblankPrepareResize();
+        document.getElementById('typst-container-main').scrollTop = 2200;
+        document.querySelector('.typst-page').innerHTML = '<rect width="600" height="1000"/>';
+        """)
+        try await Task.sleep(for: .milliseconds(500))
+        let last = try #require(await web.evaluateJavaScript("window.leftblankCaptureReading()"))
+        #expect(PreviewReadingAnchor(message: last)?.page == 2)
+    }
+
     @Test func normalizedReadingAnchorSurvivesZoomAndSourceJumpCancelsRestore() async throws {
         let fixture = PreviewReadingFixture(script: PreviewScripts.reading)
         defer { fixture.close() }
