@@ -228,51 +228,6 @@ struct TabletAssistanceTests {
         keyboard.unmarkText()
     }
 
-    @Test func selectAllReplacesSourceWithInlineCompletionOpen() async throws {
-        let (workspace, _, _, completion) = try await fixture()
-        defer { try? FileManager.default.removeItem(at: workspace.stateDirectory) }
-        let keyboard = TabletTextView()
-        let coordinator = TabletEditor.Coordinator(workspace)
-        keyboard.workspace = workspace
-        keyboard.delegate = coordinator
-        workspace.editor = keyboard
-        workspace.layout = .split
-        keyboard.text = workspace.text
-        keyboard.selectedRange = workspace.selection
-        workspace.assistance.onInvalidate = { [weak keyboard] in keyboard?.dismissTypingAssistance() }
-        keyboard.presentTypingAssistance([completion], signature: nil, prefix: "rec")
-        let command = try #require(keyboard.keyCommands?.first {
-            $0.input == "a" && $0.modifierFlags == .command && $0.wantsPriorityOverSystemBehavior
-        })
-        let action = try #require(command.action)
-        #expect(keyboard.canPerformAction(action, withSender: command))
-        keyboard.perform(action, with: command)
-        #expect(keyboard.selectedRange == NSRange(location: 0, length: workspace.text.utf16.count))
-        #expect(workspace.selection == keyboard.selectedRange)
-        #expect(keyboard.typingOverlay == nil)
-        #expect(workspace.assistance.snapshot == nil)
-        keyboard.scheduleTypingAssistance()
-        #expect(keyboard.typingTask == nil)
-        let source = "= Source navigation\nTap this paragraph to reveal its source.\n"
-        keyboard.insertText(source)
-        #expect(keyboard.text == source)
-        #expect(workspace.text == source)
-        #expect(workspace.selection == keyboard.selectedRange)
-        keyboard.setMarkedText("中文", selectedRange: NSRange(location: 2, length: 0))
-        let composingSelection = keyboard.selectedRange
-        keyboard.selectAll(command)
-        #expect(keyboard.markedTextRange != nil)
-        #expect(keyboard.selectedRange == composingSelection)
-        #expect(!keyboard.canPerformAction(action, withSender: command))
-        let composingCommands = try #require(keyboard.keyCommands)
-        #expect(!composingCommands.contains {
-            $0.input == "a" && $0.modifierFlags == .command && $0.wantsPriorityOverSystemBehavior
-        })
-        keyboard.unmarkText()
-        keyboard.dismissTypingAssistance()
-        withExtendedLifetime(coordinator) {}
-    }
-
     @Test func embeddedTypingCompletionAndMultilineParameterHelpStayInline() async throws {
         let (workspace, _, _, _) = try await fixture()
         defer {

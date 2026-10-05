@@ -148,17 +148,6 @@ struct TabletEditor: UIViewRepresentable {
         snippet = nil
     }
 
-    override func selectAll(_ sender: Any?) {
-        guard isSelectable, markedTextRange == nil else {
-            return
-        }
-        workspace?.assistance.invalidate()
-        dismissTypingAssistance()
-        clearSnippet()
-        selectedRange = NSRange(location: 0, length: text.utf16.count)
-        workspace?.selection = selectedRange
-    }
-
     func setSnippet(_ value: Snippet, at offset: Int) {
         snippet = SnippetNavigation(value, at: offset)
         if let range = snippet?.current {
@@ -264,13 +253,6 @@ struct TabletEditor: UIViewRepresentable {
             command.discoverabilityTitle = L10n.text(title)
             return command
         }
-        if isSelectable, markedTextRange == nil {
-            // Keep Select All with the source editor when a split preview or
-            // an inline completion is also in the responder chain.
-            let selectAll = UIKeyCommand(input: "a", modifierFlags: .command, action: #selector(selectAll(_:)))
-            selectAll.wantsPriorityOverSystemBehavior = true
-            commands.append(selectAll)
-        }
         if typingOverlay != nil || typingTask != nil || workspace?.assistance.loading == true, markedTextRange == nil {
             let bindings: [(String, Selector)] = [
                 (UIKeyCommand.inputEscape, #selector(dismissTypingFromKeyboard)),
@@ -297,9 +279,6 @@ struct TabletEditor: UIViewRepresentable {
     }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        if action == #selector(selectAll(_:)) {
-            return isSelectable && markedTextRange == nil && !text.isEmpty
-        }
         if [#selector(dismissTypingFromKeyboard), #selector(nextTypingCompletion),
             #selector(previousTypingCompletion), #selector(acceptTypingFromKeyboard)].contains(action)
         {
