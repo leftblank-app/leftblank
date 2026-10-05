@@ -362,22 +362,6 @@ jobs:
           source scripts/environment.sh
           mkdir -p build/iPad/Build
           tar -xzf build/iPad-ui-tests.tar.gz -C build/iPad/Build
-      - name: Native unit tests, writing, preview navigation, catalog and PDF sharing
-        # Cold boot + up to 10m test-host launch + 25m full-suite execution + diagnostics.
-        timeout-minutes: 45
-        run: |
-          source scripts/environment.sh
-          python3 scripts/ipad_simulator.py --fresh-device --size "${{ matrix.size }}" \
-            --appearance "${{ matrix.appearance }}" --memory
-      - name: Upload native iPad test results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        timeout-minutes: 3
-        with:
-          name: ipad-writing-${{ matrix.size }}-${{ matrix.appearance }}
-          path: build/iPad-writing
-          if-no-files-found: warn
-          retention-days: 14
       - name: Reuse compiled Rust engine
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -393,17 +377,22 @@ jobs:
         with:
           path: .build/xcode-packages
           key: ipad-swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-26.3-${{ hashFiles('Sources/Package.swift', 'iPad/**/Package.resolved') }}
-      - name: Build ${{ matrix.sanitizer }} sanitizer tests
-        timeout-minutes: 15
-        run: scripts/build-ipad.sh simulator "${{ matrix.sanitizer }}"
-      - name: Run ${{ matrix.sanitizer }} sanitizer tests
-        timeout-minutes: 25
+      - name: Native tests, UI, memory metrics and ${{ matrix.sanitizer }} sanitizer
+        # One owned simulator for the full suite and the separate sanitizer build/run.
+        timeout-minutes: 70
         run: |
           source scripts/environment.sh
-          python3 scripts/ipad_simulator.py --size "${{ matrix.size }}" --suite unit --no-coverage \
-            --appearance "${{ matrix.appearance }}" \
-            --derived-data "build/iPad-memory/${{ matrix.sanitizer }}" \
-            --results "build/iPad-memory/${{ matrix.sanitizer }}-results"
+          python3 scripts/ipad_simulator.py --fresh-device --size "${{ matrix.size }}" \
+            --appearance "${{ matrix.appearance }}" --memory --sanitizer "${{ matrix.sanitizer }}"
+      - name: Upload native iPad test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        timeout-minutes: 3
+        with:
+          name: ipad-writing-${{ matrix.size }}-${{ matrix.appearance }}
+          path: build/iPad-writing
+          if-no-files-found: warn
+          retention-days: 14
       - name: Upload iPad sanitizer diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

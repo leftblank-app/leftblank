@@ -100,6 +100,61 @@ class SimulatorContracts(unittest.TestCase):
                 self.assertEqual(create[-2:], ['iPad-Air-13-inch', 'com.apple.CoreSimulator.SimRuntime.iOS-26-2'])
                 self.assertEqual(run.call_args.args[0], ['xcrun', 'simctl', 'delete', identifier])
 
+    def test_sanitizer_reuses_owned_device_and_cleans_up_after_each_failure_stage(self):
+        original = self.prepare_bundle()
+        device = dict(DEVICES[0][1], deviceTypeIdentifier='iPad-Air-11-inch')
+        inventory = {'com.apple.CoreSimulator.SimRuntime.iOS-26-2': [device]}
+        identifier = '12345678-1234-1234-1234-123456789abc'
+        for sanitizer in ('address', 'thread'):
+            sanitized = self.root / 'build/iPad-memory' / sanitizer / 'Build/Products/tests.xctestrun'
+            sanitized.parent.mkdir(parents=True)
+            sanitized.touch()
+            for failure in (None, 'ui', 'build', 'sanitizer'):
+                events = []
+
+                def command(args, _timeout, **_options):
+                    if args[0].endswith('build-ipad.sh'):
+                        events.append('build')
+                        self.assertEqual(args[1:], ['simulator', sanitizer])
+                        if failure == 'build':
+                            raise subprocess.CalledProcessError(65, args)
+                    if args[:3] == ['xcrun', 'simctl', 'delete']:
+                        events.append('delete')
+                        self.assertEqual(args[3], identifier)
+                    return subprocess.CompletedProcess(args, 0, stdout=identifier)
+
+                def tests(_size, owned, bundle, _results, **options):
+                    self.assertEqual(owned['udid'], identifier)
+                    if bundle == original:
+                        events.append('ui')
+                        self.assertTrue(options['cold_start'])
+                        self.assertTrue(options['memory'])
+                        return failure != 'ui'
+                    events.append('sanitizer')
+                    self.assertEqual(bundle, sanitized)
+                    self.assertEqual(options, {'suite': 'unit', 'coverage': False, 'appearance': 'light'})
+                    return failure != 'sanitizer'
+
+                with self.subTest(sanitizer=sanitizer, failure=failure), \
+                     patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'}), \
+                     patch.object(runner, '__file__', str(self.root / 'scripts/ipad_simulator.py')), \
+                     patch.object(runner, 'inventory', return_value=inventory), \
+                     patch.object(runner, 'run', side_effect=command), \
+                     patch.object(runner, 'test_device', side_effect=tests):
+                    arguments = ['--size', '11-inch', '--fresh-device', '--memory',
+                                 '--appearance', 'light', '--sanitizer', sanitizer]
+                    if failure == 'build':
+                        with self.assertRaises(subprocess.CalledProcessError):
+                            runner.main(arguments)
+                    else:
+                        self.assertEqual(runner.main(arguments), 1 if failure else 0)
+                expected = ['ui']
+                if failure != 'ui':
+                    expected.append('build')
+                    if failure != 'build':
+                        expected.append('sanitizer')
+                self.assertEqual(events, expected + ['delete'])
+
     def test_fresh_device_rejects_local_default_device_storage(self):
         with patch.dict(os.environ, {'GITHUB_ACTIONS': 'false'}), \
              patch.object(runner, 'inventory') as inventory, contextlib.redirect_stderr(io.StringIO()):

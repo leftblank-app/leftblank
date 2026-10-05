@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run native tests and the full UI suite on one iPad size."""
+"""Run native/UI tests and optional sanitizer validation on one iPad."""
 
 import argparse
 import codecs
@@ -297,6 +297,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--size', choices=('11-inch', '13-inch'), required=True)
     parser.add_argument('--suite', choices=('all', 'unit'), default='all')
+    parser.add_argument('--sanitizer', choices=('address', 'thread'),
+                        help='Build and run native sanitizer tests on the same device after the full suite')
     parser.add_argument('--derived-data', type=Path, default=Path('build/iPad'))
     parser.add_argument('--results', type=Path, default=Path('build/iPad-writing'))
     parser.add_argument('--memory', action='store_true')
@@ -305,6 +307,8 @@ def main(argv=None):
     parser.add_argument('--fresh-device', action='store_true',
                         help='Create a disposable simulator on a hosted CI runner')
     args = parser.parse_args(argv)
+    if args.sanitizer and args.suite != 'all':
+        parser.error('--sanitizer follows the full suite; use --suite all')
     if args.fresh_device and os.environ.get('GITHUB_ACTIONS') != 'true':
         parser.error('--fresh-device is restricted to disposable hosted CI runners')
     root = Path(__file__).resolve().parent.parent
@@ -347,7 +351,22 @@ def main(argv=None):
     if args.no_coverage:
         options['coverage'] = False
     try:
-        return 0 if test_device(args.size, device, bundles[0], results, **options) else 1
+        if not test_device(args.size, device, bundles[0], results, **options):
+            return 1
+        if args.sanitizer:
+            # Reinstall instrumented products on the initialized device instead
+            # of paying for another simulator migration and first boot.
+            run([str(root / 'scripts/build-ipad.sh'), 'simulator', args.sanitizer], 900)
+            directory = root / 'build/iPad-memory' / args.sanitizer
+            sanitized = list((directory / 'Build/Products').glob('*.xctestrun'))
+            if len(sanitized) != 1:
+                raise RuntimeError('Expected one separate sanitizer .xctestrun bundle')
+            reports = directory.with_name(args.sanitizer + '-results')
+            reports.mkdir(parents=True, exist_ok=True)
+            if not test_device(args.size, device, sanitized[0], reports, suite='unit',
+                               coverage=False, appearance=args.appearance):
+                return 1
+        return 0
     finally:
         if args.fresh_device:
             run(['xcrun', 'simctl', 'delete', device['udid']], 60)
