@@ -26,6 +26,10 @@ extension WritingFlowTests {
             #expect(editor.selectedRange() == selection)
             #expect(app.workspace.text == source)
             #expect(app.workspace.previewURL == previewURL)
+            let panel = try #require(editor.sourceHover.panel)
+            let anchor = editor.firstRect(forCharacterRange: NSRange(location: 1, length: 5), actualRange: nil)
+            #expect(!panel.frame.intersects(anchor))
+            #expect(min(abs(panel.frame.maxY - anchor.minY), abs(panel.frame.minY - anchor.maxY)) <= 9)
             if let artifacts = ProcessInfo.processInfo.environment["LEFTBLANK_UI_ARTIFACTS"] {
                 let directory = URL(fileURLWithPath: artifacts)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -36,6 +40,9 @@ extension WritingFlowTests {
                 view.cacheDisplay(in: view.bounds, to: bitmap)
                 try #require(bitmap.representation(using: .png, properties: [:]))
                     .write(to: directory.appendingPathComponent("hover-align-\(appearance.rawValue).png"))
+                try app.captureHoverContext().write(to: directory.appendingPathComponent(
+                    "hover-context-\(appearance.rawValue).png",
+                ))
             }
             editor.sourceHover.dismiss()
         }
@@ -111,5 +118,33 @@ extension WritingFlowTests {
         task.cancel()
         #expect(await task.value == false)
         #expect(!cancelled.isRunning)
+    }
+}
+
+private extension WritingFixture {
+    /// Capture native view pixels at their actual window/screen coordinates,
+    /// including the separate nonactivating child panel.
+    func captureHoverContext() throws -> Data {
+        let panel = try #require(workspace.editor?.sourceHover.panel)
+        let views = try [#require(window.contentView), #require(panel.contentView)]
+        let frames = try views.map { view in try #require(view.window).convertToScreen(view.convert(
+            view.bounds,
+            to: nil,
+        )) }
+        let bounds = frames[0].union(frames[1])
+        let bitmaps = try views.map { view in
+            let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            return bitmap
+        }
+        let image = NSImage(size: bounds.size, flipped: false) { _ in
+            for (bitmap, frame) in zip(bitmaps, frames) {
+                bitmap.draw(in: frame.offsetBy(dx: -bounds.minX, dy: -bounds.minY))
+            }
+            return true
+        }
+        let tiff = try #require(image.tiffRepresentation)
+        let representation = try #require(NSBitmapImageRep(data: tiff))
+        return try #require(representation.representation(using: .png, properties: [:]))
     }
 }

@@ -557,6 +557,23 @@ extension TabletAssistanceTests {
         try await waitFor { editor.sourceHover.host != nil }
         #expect(editor.selectedRange == selection && workspace.text == source)
         #expect(editor.isFirstResponder)
+        let host = try #require(editor.sourceHover.host)
+        let parent = try #require(host.view.superview)
+        let anchor = editor.convert(rect, to: parent)
+        #expect(!host.view.frame.intersects(anchor))
+        #expect(min(abs(host.view.frame.maxY - anchor.minY), abs(host.view.frame.minY - anchor.maxY)) <= 9)
+        if let example = host.rootView.help.example {
+            _ = await workspace.exampleRenderer.image(
+                for: example,
+                directory: workspace.stateDirectory.appendingPathComponent("HoverExamples"),
+                packageCache: workspace.packageCache,
+            )
+        }
+        window.layoutIfNeeded()
+        let capture = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        try Attachment.record(#require(capture.pngData()), named: "iPad-pointer-hover.png")
         editor.setContentOffset(CGPoint(x: 0, y: editor.contentOffset.y + 40), animated: false)
         #expect(editor.sourceHover.host == nil)
     }
