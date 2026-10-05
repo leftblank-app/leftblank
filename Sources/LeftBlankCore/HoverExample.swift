@@ -6,6 +6,22 @@ public struct HoverExample: Equatable, Hashable, Sendable {
     public let image: Data?
     public let imageFormat: String?
 
+    /// Build the same self-contained preview document for either native engine.
+    public func writePreview(in directory: URL) throws -> URL {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let code: String
+        if let image, let imageFormat {
+            try image.write(to: directory.appendingPathComponent("example.\(imageFormat)"))
+            code = "#image(\"example.\(imageFormat)\", width: 100%)"
+        } else {
+            code = source
+        }
+        let input = directory.appendingPathComponent("example.typ")
+        try Data(("#set page(width: 300pt, height: auto, margin: 12pt, fill: white)\n" + code).utf8)
+            .write(to: input)
+        return input
+    }
+
     /// Extract one runnable documentation example, never a `typc` signature.
     /// Documentation's `>>>` setup lines run but stay hidden in the displayed snippet.
     static func first(in contents: [JSONValue]) -> Self? {

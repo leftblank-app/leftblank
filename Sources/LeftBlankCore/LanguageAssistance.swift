@@ -35,6 +35,32 @@ public struct SourceCompletion: Equatable, Sendable {
 }
 
 public enum LanguageAssistance {
+    public static func hoverRange(at offset: Int, in text: String) -> NSRange? {
+        let source = text as NSString
+        guard offset >= 0, offset < source.length else {
+            return nil
+        }
+        let separators = CharacterSet.alphanumerics.union(.nonBaseCharacters)
+            .union(CharacterSet(charactersIn: "_-")).inverted
+        guard source.rangeOfCharacter(from: separators, range: NSRange(location: offset, length: 1))
+            .location == NSNotFound
+        else {
+            return nil
+        }
+        let before = source.rangeOfCharacter(
+            from: separators,
+            options: .backwards,
+            range: NSRange(location: 0, length: offset),
+        )
+        let after = source.rangeOfCharacter(
+            from: separators,
+            range: NSRange(location: offset, length: source.length - offset),
+        )
+        let start = before.location == NSNotFound ? 0 : NSMaxRange(before)
+        let end = after.location == NSNotFound ? source.length : after.location
+        return NSRange(location: start, length: end - start)
+    }
+
     /// Completion edits remain local; numbered placeholders use the native snippet navigation.
     public static func completions(
         _ response: JSONValue,

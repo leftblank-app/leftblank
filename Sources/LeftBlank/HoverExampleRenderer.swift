@@ -42,18 +42,8 @@ final class HoverExampleRenderer {
         let root = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         do {
-            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            let input = root.appendingPathComponent("example.typ")
+            let input = try example.writePreview(in: root)
             let output = root.appendingPathComponent("example.pdf")
-            let source: String
-            if let image = example.image, let format = example.imageFormat {
-                try image.write(to: root.appendingPathComponent("example.\(format)"))
-                source = "#image(\"example.\(format)\", width: 100%)"
-            } else {
-                source = example.source
-            }
-            try Data(("#set page(width: 300pt, height: auto, margin: 12pt, fill: white)\n" + source).utf8)
-                .write(to: input)
             let process = Process()
             process.executableURL = binary
             process.currentDirectoryURL = root

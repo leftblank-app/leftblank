@@ -49,6 +49,7 @@ struct TabletObjectEditor: View {
         if let session = workspace.objectEditSession {
             ObjectEditorForm(
                 object: session.object,
+                removeIcon: TabletIcon(name: "minus"),
                 resourceRoot: workspace.resourceRoot,
                 sourceURL: session.url,
                 failure: workspace.message,

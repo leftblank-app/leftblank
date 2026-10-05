@@ -238,7 +238,7 @@ struct TabletPreviewReadingControls: View {
     var body: some View {
         if showFollow {
             Toggle(isOn: $session.followsWriting) {
-                Label(L10n.text("Follow Writing"), systemImage: "cursorarrow.motionlines")
+                Label { Text(L10n.text("Follow Writing")) } icon: { TabletIcon(name: "crosshair") }
             }
             .labelStyle(.iconOnly)
             .toggleStyle(.button)
@@ -248,7 +248,7 @@ struct TabletPreviewReadingControls: View {
         Button { session.returnToReading()
             onReturn()
         } label: {
-            Label(L10n.text("Return to Reading"), systemImage: "arrow.uturn.backward")
+            Label { Text(L10n.text("Return to Reading")) } icon: { TabletIcon(name: "arrow-counter-clockwise") }
                 .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
         }
         .labelStyle(.iconOnly)

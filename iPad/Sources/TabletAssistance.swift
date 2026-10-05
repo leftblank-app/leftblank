@@ -241,6 +241,44 @@ extension TabletWorkspace {
         }
     }
 
+    func closeSource() async {
+        guard let entryURL, !busy, editor?.markedTextRange == nil else {
+            return
+        }
+        if let index = navigationHistory.lastIndex(where: {
+            $0.0.resolvingSymlinksInPath() != sourceURL?.resolvingSymlinksInPath()
+        }) {
+            let (url, position) = navigationHistory[index]
+            if await openSource(url) {
+                jump(position)
+                navigationHistory.removeSubrange(index...)
+            }
+            return
+        }
+        if sourceURL?.resolvingSymlinksInPath() != entryURL.resolvingSymlinksInPath() {
+            _ = await openSource(entryURL)
+            return
+        }
+        guard await save() else {
+            return
+        }
+        generation = UUID()
+        client.stop()
+        assistance.invalidate()
+        document = nil
+        activeSourceURL = nil
+        navigationHistory = []
+        projectSources = []
+        text = ""
+        savedText = ""
+        baseline = nil
+        selection = NSRange(location: 0, length: 0)
+        previewURL = nil
+        previewReady = false
+        serviceReady = false
+        try? FileManager.default.removeItem(at: recoveryURL)
+    }
+
     func revealPreview() {
         guard let snapshot = assistanceSnapshot() else {
             return
@@ -330,7 +368,7 @@ struct TabletAssistanceView: View {
                         }
                     }
                     if let hover = assistance.hover {
-                        Text(hover.text)
+                        TabletHelpContent(help: hover, workspace: workspace)
                     }
                     if assistance.hover == nil, assistance.signature == nil {
                         Text(L10n.text("No explanation here yet. Try a function, variable or parameter."))

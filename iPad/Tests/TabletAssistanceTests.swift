@@ -2,6 +2,7 @@ import Foundation
 import LeftBlankCore
 @testable import LeftBlankTablet
 import LeftBlankTestSupport
+import SwiftUI
 import Testing
 import UIKit
 
@@ -373,5 +374,201 @@ struct TabletAssistanceTests {
         #expect(workspace.text == "#include \"chapter.typ\"")
         #expect(workspace.importSources.isEmpty && workspace.panel == nil)
         #expect(workspace.serviceReady)
+    }
+}
+
+extension TabletAssistanceTests {
+    @Test func helpExamplesRenderWithTheEmbeddedEngineAndKeepTheManuscript() async throws {
+        let (workspace, editor, _, _) = try await fixture()
+        defer { workspace.client.stop()
+            try? FileManager.default.removeItem(at: workspace.stateDirectory)
+        }
+        workspace.activeSourceURL = nil
+        let source = "#align(center)[Hi]"
+        let document = try await workspace.library.create(title: "Examples", text: source)
+        await workspace.open(document)
+        workspace.selection = NSRange(location: 3, length: 0)
+        editor.selectedRange = workspace.selection
+        let selection = workspace.selection, preview = workspace.previewURL
+        workspace.requestAssistance(.help)
+        await workspace.assistance.task?.value
+        let example = try #require(workspace.assistance.hover?.example)
+        let root = workspace.stateDirectory.appendingPathComponent("HoverExamples")
+        let image = try #require(await workspace.exampleRenderer.image(
+            for: example, directory: root, packageCache: workspace.packageCache,
+        ))
+        #expect(image.size.width > 0 && image.size.height > 0)
+        let bitmap = try #require(image.cgImage)
+        let context = try #require(CGContext(
+            data: nil,
+            width: bitmap.width,
+            height: bitmap.height,
+            bitsPerComponent: 8,
+            bytesPerRow: bitmap.width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+        ))
+        context.setFillColor(UIColor.white.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: bitmap.width, height: bitmap.height))
+        context.draw(bitmap, in: CGRect(x: 0, y: 0, width: bitmap.width, height: bitmap.height))
+        let pixels = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+        #expect(
+            (0 ..< bitmap.width * bitmap.height).contains { pixels[$0 * 4] < 200 },
+            "The thumbnail must contain rendered ink, not an empty white page",
+        )
+        #expect(workspace.selection == selection && workspace.text == source)
+        #expect(workspace.previewURL == preview && workspace.serviceReady)
+        #expect(try DocumentStorage.read(document.sourceURL).0 == source)
+        func exampleFor(_ code: String, suffix: String = "") throws -> HoverExample {
+            try #require(LanguageAssistance.hover(.object([
+                "contents": .string("```typ\n\(code)\n```\n" + suffix),
+            ]))?.example)
+        }
+        let codeOnly = try exampleFor("#align(center)[Hi]")
+        let rendered = try #require(await workspace.exampleRenderer.image(
+            for: codeOnly, directory: root, packageCache: workspace.packageCache,
+        ))
+        #expect(await workspace.exampleRenderer.image(
+            for: codeOnly, directory: root, packageCache: workspace.packageCache,
+        ) === rendered)
+        let svg = Data(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"40\" height=\"20\"><rect width=\"40\" height=\"20\"/></svg>"
+                .utf8,
+        )
+        let illustrated = try exampleFor(
+            "#missing()",
+            suffix: "<img src=\"data:image/svg+xml;base64,\(svg.base64EncodedString())\"/>",
+        )
+        #expect(await workspace.exampleRenderer.image(
+            for: illustrated, directory: root, packageCache: workspace.packageCache,
+        ) != nil)
+        try Data("Private manuscript".utf8).write(to: root.appendingPathComponent("secret.txt"))
+        #expect(try await workspace.exampleRenderer.image(
+            for: exampleFor("#read(\"../secret.txt\")"),
+            directory: root,
+            packageCache: workspace.packageCache,
+        ) == nil)
+        try FileManager.default.removeItem(at: root.appendingPathComponent("secret.txt"))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+
+    @Test func externalDefinitionsAreReadOnlyAndCloseReturnsToTheProject() async throws {
+        let (workspace, editor, _, _) = try await fixture()
+        defer { workspace.client.stop()
+            try? FileManager.default.removeItem(at: workspace.stateDirectory)
+        }
+        workspace.activeSourceURL = nil
+        let source = "#import \"@preview/cetz:0.5.2\": canvas\n#canvas({})"
+        let document = try await workspace.library.create(title: "Packages", text: source)
+        await workspace.open(document)
+        let origin = NSRange(location: (source as NSString).range(of: "#canvas").location + 2, length: 0)
+        workspace.selection = origin
+        editor.selectedRange = origin
+        workspace.goToDefinition()
+        await workspace.assistance.task?.value
+        #expect(workspace.isPackageSource)
+        #expect(!workspace.canEditSource && !editor.isEditable)
+        #expect(workspace.entryURL == document.sourceURL && workspace.serviceReady)
+        let packageURL = try #require(workspace.sourceURL)
+        let original = try DocumentStorage.read(packageURL).0
+        workspace.edited("Changed package", selection: .init(location: 0, length: 0))
+        #expect(workspace.text == original)
+        workspace.text = "Changed package"
+        #expect(await workspace.save() == false)
+        #expect(try DocumentStorage.read(packageURL).0 == original)
+        workspace.text = original
+        await workspace.closeSource()
+        #expect(workspace.sourceURL == document.sourceURL && workspace.selection == origin)
+        #expect(workspace.canEditSource && workspace.text == source && workspace.serviceReady)
+        let keyboard = TabletTextView()
+        keyboard.workspace = workspace
+        let command = try #require(keyboard.keyCommands?.first { $0.input == "w" && $0.modifierFlags == .command })
+        #expect(try keyboard.canPerformAction(#require(command.action), withSender: command))
+        await workspace.closeSource()
+        #expect(workspace.document == nil && workspace.sourceURL == nil)
+        #expect(try DocumentStorage.read(document.sourceURL).0 == source)
+    }
+
+    @Test func localImportsAliasesAndIncludesNavigateWithoutChangingTheEntry() async throws {
+        let (workspace, editor, _, _) = try await fixture()
+        defer {
+            workspace.client.stop()
+            try? FileManager.default.removeItem(at: workspace.stateDirectory)
+        }
+        workspace.activeSourceURL = nil
+        let source = "#import \"module.typ\" as utils\n#utils.greet()\n#include \"chapter.typ\""
+        let document = try await workspace.library.create(title: "Modules", text: source)
+        let module = document.folderURL.appendingPathComponent("module.typ")
+        let chapter = document.folderURL.appendingPathComponent("chapter.typ")
+        try Data("#let greet() = [Hello]".utf8).write(to: module)
+        try Data("A chapter".utf8).write(to: chapter)
+        await workspace.open(document)
+        for (token, target) in [("module.typ", module), ("greet", module), ("chapter.typ", chapter)] {
+            let origin = NSRange(location: (source as NSString).range(of: token).location + 2, length: 0)
+            workspace.selection = origin
+            editor.selectedRange = origin
+            workspace.goToDefinition()
+            await workspace.assistance.task?.value
+            #expect(workspace.sourceURL == target)
+            #expect(workspace.entryURL == document.sourceURL && workspace.canEditSource)
+            await workspace.closeSource()
+            #expect(workspace.sourceURL == document.sourceURL && workspace.selection == origin)
+        }
+        let outside = workspace.stateDirectory.appendingPathComponent("outside.typ")
+        try Data("Outside project".utf8).write(to: outside)
+        #expect(await workspace.openSource(outside) == false)
+        #expect(workspace.sourceURL == document.sourceURL)
+    }
+
+    @Test func pointerHelpPreservesSelectionAndClosesOnScroll() async throws {
+        let (workspace, _, _, _) = try await fixture()
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        let controller = UIHostingController(rootView: TabletEditor(workspace: workspace))
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer {
+            (workspace.editor as? TabletTextView)?.sourceHover.dismiss()
+            workspace.client.stop()
+            window.isHidden = true
+            previous?.makeKey()
+            try? FileManager.default.removeItem(at: workspace.stateDirectory)
+        }
+        workspace.activeSourceURL = nil
+        let source = "#align(center)[Hi]\n" + String(repeating: "Writing.\n", count: 100)
+        let document = try await workspace.library.create(title: "Pointer", text: source)
+        await workspace.open(document)
+        workspace.layout = .writing
+        try await waitFor { workspace.editor is TabletTextView }
+        let editor = try #require(workspace.editor as? TabletTextView)
+        try await waitFor { editor.isEditable && editor.text == source }
+        try #require(editor.becomeFirstResponder())
+        controller.view.layoutIfNeeded()
+        editor.scrollRangeToVisible(NSRange(location: 2, length: 1))
+        let selection = editor.selectedRange
+        let start = try #require(editor.position(from: editor.beginningOfDocument, offset: 2))
+        let end = try #require(editor.position(from: start, offset: 1))
+        let rect = try editor.firstRect(for: #require(editor.textRange(from: start, to: end)))
+        let point = CGPoint(x: rect.midX, y: rect.midY)
+        #expect(editor.sourceHover.offset(at: point) == 2)
+        editor.sourceHover.move(to: point)
+        try await waitFor { editor.sourceHover.host != nil }
+        #expect(editor.selectedRange == selection && workspace.text == source)
+        #expect(editor.isFirstResponder)
+        editor.setContentOffset(CGPoint(x: 0, y: editor.contentOffset.y + 40), animated: false)
+        #expect(editor.sourceHover.host == nil)
+    }
+
+    private func waitFor(
+        sourceLocation: Testing.SourceLocation = #_sourceLocation,
+        _ condition: () -> Bool,
+    ) async throws {
+        let deadline = ContinuousClock.now + .seconds(15)
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        try #require(condition(), sourceLocation: sourceLocation)
     }
 }

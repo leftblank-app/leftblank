@@ -16,7 +16,7 @@ public struct ObjectEditSession: Identifiable {
 }
 
 /// Both platforms use the same draft form and validation. Apply commits one source edit.
-public struct ObjectEditorForm: View {
+public struct ObjectEditorForm<RemoveIcon: View>: View {
     @State private var object: StructuredObject
     @State private var pasted = ""
     @State private var error: String?
@@ -24,10 +24,12 @@ public struct ObjectEditorForm: View {
     private let resourceRoot: URL?
     private let sourceURL: URL?
     private let failure: String?
+    private let removeIcon: RemoveIcon
     private let apply: (StructuredObject) -> Void
     private let cancel: () -> Void
     public init(
         object: StructuredObject,
+        removeIcon: RemoveIcon,
         resourceRoot: URL? = nil,
         sourceURL: URL? = nil,
         failure: String? = nil,
@@ -37,6 +39,7 @@ public struct ObjectEditorForm: View {
         self.resourceRoot = resourceRoot
         self.sourceURL = sourceURL
         self.failure = failure
+        self.removeIcon = removeIcon
         _object = State(initialValue: object)
         self.apply = apply
         self.cancel = cancel
@@ -121,7 +124,7 @@ public struct ObjectEditorForm: View {
                             Button { for row in object.rows.indices {
                                 object.rows[row].remove(at: column)
                             } } label: {
-                                Label(L10n.format("Column %d", column + 1), systemImage: "minus.circle")
+                                Label { Text(L10n.format("Column %d", column + 1)) } icon: { removeIcon }
                             }.frame(width: 130).disabled(object.rows.first?.count == 1)
                         }
                     }
@@ -147,7 +150,7 @@ public struct ObjectEditorForm: View {
                                 .accessibilityLabel(L10n.format("Cell %d, %d", row + 1, column + 1))
                                 .accessibilityIdentifier("object-cell-\(row)-\(column)")
                             }
-                            Button { object.rows.remove(at: row) } label: { Image(systemName: "minus.circle") }
+                            Button { object.rows.remove(at: row) } label: { removeIcon }
                                 .disabled(object.rows.count == 1).accessibilityLabel(L10n.text("Delete Row"))
                         }
                     }

@@ -21,6 +21,7 @@ struct ContentView: View {
         .sheet(item: $workspace.objectEditSession) { session in
             ObjectEditorForm(
                 object: session.object,
+                removeIcon: PhosphorIcon(name: "minus"),
                 resourceRoot: workspace.resourceRoot,
                 sourceURL: session.url,
                 failure: workspace.message,

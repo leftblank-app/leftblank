@@ -38,7 +38,7 @@ final class SourceHoverController: NSObject {
 
     func move(to offset: Int?) {
         guard let editor, let workspace = editor.workspace,
-              let offset, let target = wordRange(at: offset, in: editor.string)
+              let offset, let target = LanguageAssistance.hoverRange(at: offset, in: editor.string)
         else {
             scheduleDismissal()
             return
@@ -61,32 +61,6 @@ final class SourceHoverController: NSObject {
             workspace.recordOperation("hover.received")
             present(help, at: target)
         }
-    }
-
-    private func wordRange(at offset: Int, in text: String) -> NSRange? {
-        let source = text as NSString
-        guard offset >= 0, offset < source.length else {
-            return nil
-        }
-        let separators = CharacterSet.alphanumerics.union(.nonBaseCharacters)
-            .union(CharacterSet(charactersIn: "_-")).inverted
-        guard source.rangeOfCharacter(from: separators, range: NSRange(location: offset, length: 1))
-            .location == NSNotFound
-        else {
-            return nil
-        }
-        let before = source.rangeOfCharacter(
-            from: separators,
-            options: .backwards,
-            range: NSRange(location: 0, length: offset),
-        )
-        let after = source.rangeOfCharacter(
-            from: separators,
-            range: NSRange(location: offset, length: source.length - offset),
-        )
-        let start = before.location == NSNotFound ? 0 : NSMaxRange(before)
-        let end = after.location == NSNotFound ? source.length : after.location
-        return NSRange(location: start, length: end - start)
     }
 
     func keepVisible() {

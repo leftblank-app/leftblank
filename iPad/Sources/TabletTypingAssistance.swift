@@ -3,7 +3,7 @@ import UIKit
 
 extension TabletWorkspace {
     func requestTypingAssistance(automatic: Bool) {
-        guard let snapshot = assistanceSnapshot(), layout != .preview, panel == nil, canWrite else {
+        guard let snapshot = assistanceSnapshot(), layout != .preview, panel == nil, canEditSource else {
             return
         }
         assistance.invalidate()
@@ -45,7 +45,7 @@ extension TabletWorkspace {
                         params,
                     ))
                 }
-                guard !Task.isCancelled, request == assistance.requestID, accepts(snapshot), canWrite,
+                guard !Task.isCancelled, request == assistance.requestID, accepts(snapshot), canEditSource,
                       layout != .preview
                 else {
                     return
