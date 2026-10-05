@@ -183,9 +183,12 @@ final class WritingTests: XCTestCase {
         // These short fixtures fit above this point, even with the keyboard open.
         // Use touch positioning: XCTest hardware-key synthesis can get stuck
         // waiting for UIKit animations after both Cmd+A and Cmd+Down.
+        // Read both frames from elements: snapshot frames do not follow the
+        // rotated interface, so a landscape keyboard snapshot can report a top
+        // edge above the editor and send this tap outside the text.
         let frame = editor.frame
-        let keyboard = try? app.keyboards.firstMatch.snapshot()
-        let bottom = keyboard.map { min(frame.maxY, $0.frame.minY) } ?? frame.maxY
+        let keyboard = app.keyboards.firstMatch
+        let bottom = keyboard.exists ? min(frame.maxY, keyboard.frame.minY) : frame.maxY
         editor.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: frame.width / 2, dy: bottom - frame.minY - 20)).tap()
     }

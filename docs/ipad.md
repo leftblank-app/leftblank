@@ -122,25 +122,25 @@ xcodebuild -project iPad/LeftBlank.xcodeproj -scheme LeftBlank-iPad \
 ```
 
 Mac and iPad share one `.github/workflows/ci.yml` workflow. Mac regression and
-Mac App Store validation (main only) run alongside the iPad engine and device
-builds. iPad validation has two depths:
+Mac App Store validation (main only) run alongside the iPad engine, device and
+simulator builds. The simulator build produces the tests every UI job runs.
+iPad validation has two depths:
 
 - **Smoke** (pull requests, or `workflow_dispatch` with `ipad_suite=smoke`):
-  each 11-inch/light and 13-inch/dark UI job compiles the simulator tests while
-  its simulator boots, then runs every native unit test plus the curated UI
+  one 11-inch/light UI job runs every native unit test plus the curated UI
   scenarios in `SMOKE_TESTS` (`scripts/ipad_simulator.py`): writing, split
   view, autosave, preview, rotation, Welcome rendering and PDF sharing. The
   whole pull-request workflow is designed to finish within ten minutes.
 - **Full** (main, or `workflow_dispatch` with the default `ipad_suite=full`):
-  one simulator build is shared by both UI jobs, which run every UI scenario
-  and record memory metrics. Separate Address Sanitizer and Thread Sanitizer
-  jobs compile their own products and run the native unit tests in parallel,
-  and the 80% iPad application coverage gate merges both UI results.
+  11-inch/light and 13-inch/dark UI jobs run every UI scenario and record
+  memory metrics. Separate Address Sanitizer and Thread Sanitizer jobs compile
+  their own products and run the native unit tests in parallel, and the 80%
+  iPad application coverage gate merges both UI results.
 
 The existing `build and test` check aggregates Mac and iPad results and rejects
 failed, cancelled or unexpectedly skipped prerequisites. Smoke runs require the
-full-only simulator build, coverage and sanitizer jobs to be skipped; full runs
-require them to pass. PRs expect the main-only App Store check to be skipped;
+full-only coverage and sanitizer jobs to be skipped; full runs require them to
+pass. PRs expect the main-only App Store check to be skipped;
 main requires it to pass. Mac regression tests remain in `scripts/test.sh`.
 Platform build/release boundaries, engine tradeoffs and the feature-gap
 inventory are in [ipad-architecture.md](ipad-architecture.md).
@@ -150,26 +150,23 @@ flowchart LR
     mac[Mac regression] --> gate[build and test]
     store[Mac App Store validation - main only] --> gate
     checks[iPad engine and device builds] --> gate
-    smoke[Smoke: build while booting, 11-inch and 13-inch UI] --> gate
-    build[Full: simulator build] --> ui[11-inch and 13-inch UI] --> coverage[80% coverage] --> gate
-    build --> memory[Address and Thread Sanitizers] --> gate
+    build[iPad simulator build] --> ui[11-inch UI; full adds 13-inch] --> gate
+    ui --> coverage[Full: 80% coverage] --> gate
+    build --> memory[Full: Address and Thread Sanitizers] --> gate
 ```
 
 Successful compilation is cached before UI testing, so a failed UI test does not
-discard the Rust build. Cache uploads are bounded and optional. In full mode the
-simulator build produces an `.xctestrun` bundle once. Its Products directory is
+discard the Rust build. Cache uploads are bounded and optional. The simulator
+build produces an `.xctestrun` bundle once. Its Products directory is
 transferred in a compressed tar archive, preserving executable permissions and
-symlinks. The intermediate artifact is retained for one day. Both UI runners
+symlinks. The intermediate artifact is retained for one day. UI runners
 consume this same build without resolving or rebuilding packages. Each
 invocation of `scripts/ipad_simulator.py --size <11-inch|13-inch>` selects and
 boots only its requested size on the newest available iOS runtime, then shuts it
 down after testing. The two sizes cannot compete for resources on the same
 machine. A disposable simulator boots, receives its appearance, shuts down and
 boots again before testing: an iOS 26 first boot can leave rotation broken and
-ran tests measurably slower. With `--build`, `scripts/build-ipad.sh simulator`
-starts first and compiles in the background (15-minute limit) during device
-discovery, creation and the cold start; tests begin once both finish. A failed
-build fails the run, shuts the device down and deletes the disposable simulator.
+ran tests measurably slower.
 Each UI runner selects Xcode 26.3 system-wide as well as through `DEVELOPER_DIR`
 before contacting CoreSimulator. Its first device query has a three-minute
 limit for service initialization and runtime mounting; later inventory checks

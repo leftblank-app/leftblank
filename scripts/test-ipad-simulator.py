@@ -100,118 +100,19 @@ class SimulatorContracts(unittest.TestCase):
                 self.assertEqual(create[-2:], ['iPad-Air-13-inch', 'com.apple.CoreSimulator.SimRuntime.iOS-26-2'])
                 self.assertEqual(run.call_args.args[0], ['xcrun', 'simctl', 'delete', identifier])
 
-    def test_build_starts_first_and_stops_after_each_failure_stage(self):
-        device = dict(DEVICES[0][1], deviceTypeIdentifier='iPad-Air-11-inch')
+    def test_every_fresh_device_suite_cold_starts(self):
+        self.prepare_bundle()
+        devices = {'com.apple.CoreSimulator.SimRuntime.iOS-26-2': [dict(DEVICES[0][1], deviceTypeIdentifier='x')]}
         identifier = '12345678-1234-1234-1234-123456789abc'
-        for failure in (None, 'discovery', 'tests', 'crash'):
-            events = []
-
-            class Build:
-                def __init__(self, _root, _log):
-                    events.append('build')
-
-                def stop(self):
-                    events.append('stop')
-
-            def inventory(**_options):
-                events.append('discovery')
-                if failure == 'discovery':
-                    raise RuntimeError('No available iOS runtime with a 11-inch iPad')
-                return {'com.apple.CoreSimulator.SimRuntime.iOS-26-2': [device]}
-
-            def command(args, _timeout, **_options):
-                if args[:3] == ['xcrun', 'simctl', 'delete']:
-                    events.append('delete')
-                return subprocess.CompletedProcess(args, 0, stdout=identifier)
-
-            def tests(_size, owned, bundle, _results, **options):
-                self.assertEqual(owned['udid'], identifier)
-                self.assertIsNone(bundle)
-                self.assertIsInstance(options.pop('build'), Build)
-                self.assertEqual(options, {'cold_start': True, 'suite': 'smoke', 'coverage': False,
-                                           'appearance': 'dark'})
-                events.append('tests')
-                if failure == 'crash':
-                    raise RuntimeError('test process failed')
-                return failure != 'tests'
-
-            with self.subTest(failure=failure), \
+        for suite in ('all', 'smoke', 'unit'):
+            with self.subTest(suite=suite), \
                  patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'}), \
                  patch.object(runner, '__file__', str(self.root / 'scripts/ipad_simulator.py')), \
-                 patch.object(runner, 'Build', Build), patch.object(runner, 'diagnostics'), \
-                 patch.object(runner, 'inventory', side_effect=inventory), \
-                 patch.object(runner, 'run', side_effect=command), \
-                 patch.object(runner, 'test_device', side_effect=tests):
-                arguments = ['--size', '11-inch', '--fresh-device', '--build', '--suite', 'smoke',
-                             '--no-coverage', '--appearance', 'dark']
-                if failure == 'crash':
-                    with self.assertRaises(RuntimeError):
-                        runner.main(arguments)
-                else:
-                    self.assertEqual(runner.main(arguments), 0 if failure is None else 1)
-            if failure == 'discovery':
-                self.assertEqual(events, ['build', 'discovery', 'stop'])
-            else:
-                self.assertEqual(events, ['build', 'discovery', 'tests', 'delete', 'stop'])
-
-    def test_build_waits_within_its_limit_and_reports_failures(self):
-        products = self.root / 'build/iPad/Build/Products'
-        products.mkdir(parents=True)
-        log = self.root / 'build.log'
-        script = self.root / 'scripts/build-ipad.sh'
-        script.parent.mkdir()
-        for body, outcome in (('touch "$(dirname "$0")/../build/iPad/Build/Products/t.xctestrun"', 'bundle'),
-                              ('echo compile error; exit 65', 'failure'), ('sleep 30', 'timeout')):
-            script.write_text('#!/bin/sh\n' + body + '\n')
-            script.chmod(0o755)
-            with self.subTest(outcome=outcome):
-                started = time.monotonic()
-                build = runner.Build(self.root, log, timeout=1)
-                if outcome == 'bundle':
-                    self.assertEqual(build.wait(), products / 't.xctestrun')
-                elif outcome == 'failure':
-                    with self.assertRaises(subprocess.CalledProcessError):
-                        build.wait()
-                    self.assertIn('compile error', log.read_text())
-                else:
-                    with self.assertRaises(subprocess.TimeoutExpired):
-                        build.wait()
-                    self.assertIsNotNone(build.process.poll())
-                self.assertLess(time.monotonic() - started, 5)
-
-    def test_compilation_is_awaited_after_cold_start_and_before_tests(self):
-        for failure in (None, 'build'):
-            events = []
-
-            class Build:
-                def wait(self):
-                    events.append('build')
-                    if failure:
-                        raise subprocess.CalledProcessError(65, ['scripts/build-ipad.sh'])
-                    return Path('tests.xctestrun')
-
-            def command(args, timeout, **_options):
-                operation = args[2] if args[0] == 'xcrun' else 'test'
-                if operation == 'ui':
-                    operation = 'set appearance' if len(args) == 6 else 'appearance'
-                events.append(operation)
-                if operation == 'test':
-                    self.assertEqual(args[args.index('-xctestrun') + 1], 'tests.xctestrun')
-                return subprocess.CompletedProcess(args, 0, stdout='Dark\n')
-
-            with self.subTest(failure=failure), patch.object(runner, 'run', side_effect=command), \
-                 patch.object(runner, 'verify_result'), patch.object(runner, 'diagnostics'):
-                passed = runner.test_device('13-inch', DEVICES[1][1], None, self.root, suite='smoke',
-                                            coverage=False, appearance='dark', cold_start=True, build=Build())
-            self.assertEqual(passed, failure is None)
-            prefix = ['bootstatus', 'set appearance', 'shutdown', 'bootstatus', 'appearance', 'build']
-            self.assertEqual(events, prefix + (['shutdown'] if failure else ['test', 'shutdown']))
-
-    def test_build_rejects_unrelated_products(self):
-        with patch.object(runner, 'inventory') as inventory, contextlib.redirect_stderr(io.StringIO()):
-            with self.assertRaises(SystemExit):
-                runner.main(['--size', '11-inch', '--build', '--derived-data', 'build/iPad-memory/address'])
-            inventory.assert_not_called()
+                 patch.object(runner, 'inventory', return_value=devices), \
+                 patch.object(runner, 'run', return_value=subprocess.CompletedProcess([], 0, stdout=identifier)), \
+                 patch.object(runner, 'test_device', return_value=True) as tests:
+                self.assertEqual(runner.main(['--size', '11-inch', '--fresh-device', '--suite', suite]), 0)
+            self.assertTrue(tests.call_args.kwargs['cold_start'])
 
     def test_fresh_device_rejects_local_default_device_storage(self):
         with patch.dict(os.environ, {'GITHUB_ACTIONS': 'false'}), \

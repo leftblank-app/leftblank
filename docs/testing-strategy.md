@@ -63,7 +63,7 @@ need separate representative workloads and measured runner baselines.
 ## iPad safety checks
 
 Pull requests run the native iPad unit suite and a few curated UI smoke
-scenarios on both simulator sizes. Main (and full manual dispatches) run the
+scenarios on the 11-inch simulator. Main (and full manual dispatches) run the
 complete UI suite on both sizes, the separate 80% application coverage gate,
 and two sanitizer jobs. The native suite checks ownership release after
 repeated workspace/editor/engine lifecycles; full runs also require its XCTest

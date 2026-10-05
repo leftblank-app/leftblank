@@ -244,9 +244,11 @@ def configure_coverage(bundle):
 
 
 def test_device(size, device, bundle, results, *, suite='all', memory=False, coverage=True, appearance=None,
-                cold_start=False, build=None):
+                cold_start=False):
     print(f"::group::{size}: boot, native {suite} tests, shutdown", flush=True)
     try:
+        if coverage:
+            configure_coverage(bundle)
         # bootstatus also initiates the boot and reports migration progress.
         run(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b', '-d'], 240)
         if appearance:
@@ -266,10 +268,6 @@ def test_device(size, device, bundle, results, *, suite='all', memory=False, cov
             actual = run(['xcrun', 'simctl', 'ui', device['udid'], 'appearance'], 120, capture=True).stdout
             if actual.strip().lower() != appearance:
                 raise RuntimeError('Simulator appearance differs from the requested ' + appearance)
-        if build:
-            bundle = build.wait()
-        if coverage:
-            configure_coverage(bundle)
         # Xcode's verbose sysdiagnose can spend ten minutes after a test failure.
         # Keep the test report and attachments, then collect our bounded diagnostics.
         selection = []
@@ -306,52 +304,11 @@ def test_device(size, device, bundle, results, *, suite='all', memory=False, cov
             print('::endgroup::', flush=True)
 
 
-def find_bundle(products):
-    bundles = list(products.glob('*.xctestrun'))
-    if len(bundles) != 1:
-        raise RuntimeError('Expected one .xctestrun bundle; run scripts/build-ipad.sh simulator first')
-    return bundles[0]
-
-
-class Build:
-    """scripts/build-ipad.sh simulator, compiling while the device is set up."""
-
-    def __init__(self, root, log, timeout=900):
-        self.products = root / 'build/iPad/Build/Products'
-        self.log = log
-        self.deadline = time.monotonic() + timeout
-        print(f'+ scripts/build-ipad.sh simulator > {log} (limit {timeout}s)', flush=True)
-        with log.open('w') as output:
-            self.process = subprocess.Popen([str(root / 'scripts/build-ipad.sh'), 'simulator'], stdout=output,
-                                            stderr=subprocess.STDOUT, start_new_session=True)
-
-    def wait(self):
-        waited = time.monotonic()
-        try:
-            self.process.wait(timeout=max(0, self.deadline - waited))
-        finally:
-            self.stop()
-            print(f'Waited {time.monotonic() - waited:.1f}s for compilation after device setup', flush=True)
-            print('::group::Simulator build output', flush=True)
-            print(self.log.read_text(errors='replace'), flush=True)
-            print('::endgroup::', flush=True)
-        if self.process.returncode:
-            raise subprocess.CalledProcessError(self.process.returncode, self.process.args)
-        return find_bundle(self.products)
-
-    def stop(self):
-        if self.process.poll() is None:
-            os.killpg(self.process.pid, signal.SIGKILL)
-            self.process.wait()
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--size', choices=('11-inch', '13-inch'), required=True)
     parser.add_argument('--suite', choices=('all', 'smoke', 'unit'), default='all',
                         help='smoke runs the native unit tests and the curated SMOKE_TESTS UI scenarios')
-    parser.add_argument('--build', action='store_true',
-                        help='Run scripts/build-ipad.sh simulator while the device is set up')
     parser.add_argument('--derived-data', type=Path, default=Path('build/iPad'))
     parser.add_argument('--results', type=Path, default=Path('build/iPad-writing'))
     parser.add_argument('--memory', action='store_true')
@@ -360,25 +317,15 @@ def main(argv=None):
     parser.add_argument('--fresh-device', action='store_true',
                         help='Create a disposable simulator on a hosted CI runner')
     args = parser.parse_args(argv)
-    if args.build and args.derived_data != Path('build/iPad'):
-        parser.error('--build produces build/iPad; omit --derived-data')
     if args.fresh_device and os.environ.get('GITHUB_ACTIONS') != 'true':
         parser.error('--fresh-device is restricted to disposable hosted CI runners')
     root = Path(__file__).resolve().parent.parent
-    bundle = None if args.build else find_bundle(root / args.derived_data / 'Build/Products')
+    bundles = list((root / args.derived_data / 'Build/Products').glob('*.xctestrun'))
+    if len(bundles) != 1:
+        raise RuntimeError('Expected one .xctestrun bundle; run scripts/build-ipad.sh simulator first')
     results = root / args.results
     results.mkdir(parents=True, exist_ok=True)
     run(['sysctl', 'hw.memsize', 'hw.ncpu'], 10)
-    # Compile from the start; device discovery, creation and cold start overlap it.
-    build = Build(root, results / f'{args.size}-build.log') if args.build else None
-    try:
-        return run_tests(args, bundle, results, build)
-    finally:
-        if build:
-            build.stop()
-
-
-def run_tests(args, bundle, results, build):
     print(f'::group::{args.size}: initialize simulator service and discover device', flush=True)
     try:
         # A fresh UI runner has not warmed CoreSimulator through compilation.
@@ -403,8 +350,6 @@ def run_tests(args, bundle, results, build):
     options = {}
     if args.fresh_device:
         options['cold_start'] = True
-    if build:
-        options['build'] = build
     if args.appearance:
         options['appearance'] = args.appearance
     if args.suite != 'all':
@@ -414,7 +359,7 @@ def run_tests(args, bundle, results, build):
     if args.no_coverage:
         options['coverage'] = False
     try:
-        return 0 if test_device(args.size, device, bundle, results, **options) else 1
+        return 0 if test_device(args.size, device, bundles[0], results, **options) else 1
     finally:
         if args.fresh_device:
             run(['xcrun', 'simctl', 'delete', device['udid']], 60)

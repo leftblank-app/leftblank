@@ -15,9 +15,9 @@ on:
 permissions:
   contents: read
 
-# Pull requests run the iPad smoke suite: native unit tests plus a few curated
-# UI scenarios. Main and full dispatches add every UI scenario on both sizes,
-# coverage, memory metrics and sanitizers. Job conditions repeat this test
+# Pull requests run the iPad smoke suite on one 11-inch simulator: native unit
+# tests plus a few curated UI scenarios. Main and full dispatches add every UI
+# scenario on both sizes, coverage, memory metrics and sanitizers. Job conditions repeat this test
 # because workflow env is unavailable there.
 env:
   IPAD_SUITE: ${{ (github.event_name == 'pull_request' || inputs.ipad_suite == 'smoke') && 'smoke' || 'full' }}
@@ -315,7 +315,6 @@ jobs:
           key: ${{ steps.swift-cache.outputs.cache-primary-key }}
   ipad-simulator-build:
     name: iPad simulator build
-    if: github.event_name != 'pull_request' && inputs.ipad_suite != 'smoke'
     runs-on: macos-15
     timeout-minutes: 60
     env:
@@ -382,24 +381,17 @@ jobs:
           retention-days: 1
   ipad-ui:
     name: iPad (${{ matrix.size }}, ${{ matrix.appearance }})
-    # Full mode tests the shared simulator build. Smoke mode skips that job and
-    # compiles here while the simulator boots, so it starts immediately.
     needs: ipad-simulator-build
-    if: ${{ !cancelled() && needs.ipad-simulator-build.result != 'failure' }}
     runs-on: macos-15
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - size: 11-inch
-            appearance: light
-          - size: 13-inch
-            appearance: dark
+        # Smoke runs one size; main and full dispatches cover both sizes and appearances.
+        include: ${{ fromJSON((github.event_name == 'pull_request' || inputs.ipad_suite == 'smoke') && '[{"size":"11-inch","appearance":"light"}]' || '[{"size":"11-inch","appearance":"light"},{"size":"13-inch","appearance":"dark"}]') }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       LEFTBLANK_DISTRIBUTION: appstore
-      CARGO_BUILD_JOBS: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode for simulator services
@@ -408,59 +400,28 @@ jobs:
           sudo xcode-select --switch "$DEVELOPER_DIR"
           xcodebuild -version
       - name: Download compiled simulator tests
-        if: env.IPAD_SUITE == 'full'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         timeout-minutes: 3
         with:
           name: ipad-ui-tests
           path: build
       - name: Restore compiled simulator tests
-        if: env.IPAD_SUITE == 'full'
         timeout-minutes: 2
         run: |
           source scripts/environment.sh
           mkdir -p build/iPad/Build
           tar -xzf build/iPad-ui-tests.tar.gz -C build/iPad/Build
-      - name: Reuse compiled Rust engine
-        id: engine-cache
-        if: env.IPAD_SUITE == 'smoke'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .tools/cargo-ipad
-            .tools/tinymist-ipad-source
-            Engine/TinymistBridge/target
-          key: ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/prepare-ipad-engine.sh') }}
-          restore-keys: |
-            ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-
-      - name: Reuse resolved Swift packages
-        if: env.IPAD_SUITE == 'smoke'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .build/xcode-packages
-          key: ipad-swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-26.3-${{ hashFiles('Sources/Package.swift', 'iPad/**/Package.resolved') }}
       - name: Native tests and ${{ env.IPAD_SUITE }} UI suite
         timeout-minutes: ${{ env.IPAD_SUITE == 'smoke' && 20 || 50 }}
         run: |
           source scripts/environment.sh
           if [ "$IPAD_SUITE" = smoke ]; then
-            suite=(--suite smoke --no-coverage --build)
+            suite=(--suite smoke --no-coverage)
           else
             suite=(--memory)
           fi
           python3 scripts/ipad_simulator.py --fresh-device --size "${{ matrix.size }}" \
             --appearance "${{ matrix.appearance }}" "${suite[@]}"
-      - name: Save compiled engine
-        if: env.IPAD_SUITE == 'smoke' && steps.engine-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        continue-on-error: true
-        timeout-minutes: 5
-        with:
-          path: |
-            .tools/cargo-ipad
-            .tools/tinymist-ipad-source
-            Engine/TinymistBridge/target
-          key: ${{ steps.engine-cache.outputs.cache-primary-key }}
       - name: Upload native iPad test results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -474,6 +435,7 @@ jobs:
     name: iPad memory safety (${{ matrix.check }})
     # Reuse the Rust engine cached by the simulator build, off the UI path.
     needs: ipad-simulator-build
+    if: github.event_name != 'pull_request' && inputs.ipad_suite != 'smoke'
     runs-on: macos-15
     timeout-minutes: 40
     strategy:
@@ -576,11 +538,9 @@ jobs:
           APPSTORE_RESULT: ${{ needs.appstore.result }}
           APPSTORE_REQUIRED: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
           IPAD_BUILD_RESULT: ${{ needs.ipad-build.result }}
+          IPAD_SIMULATOR_RESULT: ${{ needs.ipad-simulator-build.result }}
           IPAD_UI_RESULT: ${{ needs.ipad-ui.result }}
-          IPAD_FULL_RESULTS: >-
-            ${{ needs.ipad-simulator-build.result }}
-            ${{ needs.ipad-coverage.result }}
-            ${{ needs.ipad-memory.result }}
+          IPAD_FULL_RESULTS: ${{ needs.ipad-coverage.result }} ${{ needs.ipad-memory.result }}
         run: |
           test "$MAC_RESULT" = success
           if [ "$APPSTORE_REQUIRED" = true ]; then
@@ -589,6 +549,7 @@ jobs:
             test "$APPSTORE_RESULT" = skipped
           fi
           test "$IPAD_BUILD_RESULT" = success
+          test "$IPAD_SIMULATOR_RESULT" = success
           test "$IPAD_UI_RESULT" = success
           # Smoke mode must skip, never fail or cancel, the full-only jobs.
           if [ "$IPAD_SUITE" = full ]; then
