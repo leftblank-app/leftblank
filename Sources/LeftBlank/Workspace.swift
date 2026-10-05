@@ -24,6 +24,11 @@ final class Workspace: ObservableObject {
     @Published var fileURL: URL?
     @Published var mainFileURL: URL?
     @Published var savedText: String?
+    @Published var objectEditSession: ObjectEditSession?
+    let previewReading = PreviewReadingSession()
+    private var previewFollowTask: Task<Void, Never>?
+    var previewReturnLayout: EditorLayout?
+    private var previewCompilationURL: URL?
     @Published var historyOpen = false
     @Published var historyInterval: HistoryInterval = .hourly
     lazy var history = DocumentHistoryController(workspace: self)
@@ -39,7 +44,13 @@ final class Workspace: ObservableObject {
     }
 
     private var previewReadyForNavigation = false
-    private var pendingPreviewNavigation: (url: URL, position: TextPosition, version: Int, reportFailure: Bool)?
+    private var pendingPreviewNavigation: (
+        url: URL,
+        position: TextPosition,
+        version: Int,
+        reportFailure: Bool,
+        following: Bool,
+    )?
     @Published var diagnostics: [DiagnosticItem] = []
     @Published var layout: EditorLayout = .writing {
         didSet {
@@ -70,6 +81,7 @@ final class Workspace: ObservableObject {
             if selection != oldValue {
                 dismissAssistance()
                 trackOutline(at: selection.location)
+                schedulePreviewFollow()
             }
         }
     }
@@ -329,6 +341,11 @@ final class Workspace: ObservableObject {
         guard !isLibraryHome else {
             return
         }
+        if previewCompilationURL != compilationURL {
+            previewCompilationURL = compilationURL
+            previewReading.reset()
+            previewReturnLayout = nil
+        }
         recordOperation("service.start")
         checksOpen = false
         dismissAssistance()
@@ -403,6 +420,7 @@ final class Workspace: ObservableObject {
         text = newText
         textMetrics = updatedMetrics
         documentVersion += 1
+        schedulePreviewFollow()
         previewStale = true
         saveStatus = fileURL == nil ? "Saving Draft" : "Unsaved"
         if serviceReady {
@@ -1043,6 +1061,8 @@ final class Workspace: ObservableObject {
             requestCompletion()
         case "quickHelp": closePalette()
             requestAssistance(.help)
+        case "editObject": closePalette()
+            editObjectAtCursor()
         case "contextActions": closePalette()
             requestAssistance(.actions)
         case "definition": closePalette()
@@ -1312,7 +1332,26 @@ final class Workspace: ObservableObject {
         recordOperation("preview.loading")
     }
 
-    private func queuePreviewNavigation(reportFailure: Bool) {
+    func schedulePreviewFollow() {
+        previewFollowTask?.cancel()
+        guard previewReading.followsWriting, layout == .split, !paletteOpen,
+              editor?.hasMarkedText() != true
+        else {
+            return
+        }
+        let generation = serviceGeneration
+        previewFollowTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
+            guard let self, generation == serviceGeneration, previewReading.followsWriting,
+                  layout == .split, !paletteOpen, editor?.hasMarkedText() != true
+            else {
+                return
+            }
+            queuePreviewNavigation(reportFailure: false, following: true)
+        }
+    }
+
+    private func queuePreviewNavigation(reportFailure: Bool, following: Bool = false) {
         // Tinymist resolves the leaf before an exact token boundary. Step into
         // the selected character so heading/paragraph starts map to their text,
         // rather than the preceding newline (which has no rendered position).
@@ -1322,7 +1361,7 @@ final class Workspace: ObservableObject {
             .character(at: offset) != 13
             ? NSMaxRange(source.rangeOfComposedCharacterSequence(at: offset)) : offset
         let target = metrics.position(at: queryOffset)
-        pendingPreviewNavigation = (documentURL, target, documentVersion, reportFailure)
+        pendingPreviewNavigation = (documentURL, target, documentVersion, reportFailure, following)
         recordOperation("preview.jump.queued", ["line": String(target.line), "version": String(documentVersion)])
         sendPendingPreviewNavigation()
     }
@@ -1331,7 +1370,9 @@ final class Workspace: ObservableObject {
         guard let pending = pendingPreviewNavigation else {
             return
         }
-        guard pending.url == documentURL, pending.version == documentVersion else {
+        guard pending.url == documentURL, pending.version == documentVersion,
+              !pending.following || previewReading.followsWriting
+        else {
             pendingPreviewNavigation = nil
             return
         }
@@ -1345,7 +1386,7 @@ final class Workspace: ObservableObject {
         let column = (text as NSString).substring(with: NSRange(location: start, length: end - start)).utf8.count
         Task {
             guard generation == serviceGeneration, pending.url == documentURL,
-                  pending.version == documentVersion
+                  pending.version == documentVersion, !pending.following || previewReading.followsWriting
             else {
                 return
             }
@@ -1470,31 +1511,68 @@ final class Workspace: ObservableObject {
         return (data, version)
     }
 
-    func requestCompletion() {
-        guard serviceReady, !paletteOpen, layout != .preview, editor?.hasMarkedText() != true else {
+    func requestCompletion(automatic: Bool = false) {
+        guard serviceReady, !paletteOpen, !isLibraryHome, objectEditSession == nil, layout != .preview,
+              let editor, !editor.hasMarkedText(), editor.string == text
+        else {
             return
         }
         let version = documentVersion, generation = serviceGeneration
-        let caret = selection
-        Task {
+        let caret = selection, source = text, url = documentURL
+        editor.dismissTypingAssistance()
+        let requestID = editor.typingRequestID
+        editor.typingTask = Task { [weak self, weak editor] in
+            guard let self, let editor else {
+                return
+            }
+            let context = await TypingContext.resolve(source: source, selection: caret)
+            guard !Task.isCancelled, !automatic || context != nil else {
+                return
+            }
             do {
                 try flushChanges()
-                let result = try await client.request(
-                    "textDocument/completion",
-                    [
-                        "textDocument": ["uri": documentURL.absoluteString],
-                        "position": position.json,
+                let params: [String: Any] = [
+                    "textDocument": ["uri": url.absoluteString],
+                    "position": TextPosition(offset: caret.location, in: source).json,
+                ]
+                var items: [SourceCompletion] = []
+                var signature: LanguageSignature?
+                if !automatic || context?.wantsCompletion == true {
+                    let result = try await client.request("textDocument/completion", params.merging([
                         "context": ["triggerKind": 1],
-                    ],
-                )
-                guard version == documentVersion, generation == serviceGeneration, caret == selection, !paletteOpen,
-                      layout != .preview, editor?.hasMarkedText() != true
+                    ]) { _, new in new })
+                    items = LanguageAssistance.completions(result, source: source, selection: caret)
+                }
+                if !Task.isCancelled, context?.wantsSignature == true, client.supports("signatureHelpProvider") {
+                    signature = try await LanguageAssistance.signatureHelp(client.request(
+                        "textDocument/signatureHelp",
+                        params,
+                    ))
+                }
+                guard !Task.isCancelled, version == documentVersion, generation == serviceGeneration,
+                      url == documentURL, source == text, caret == selection, !paletteOpen,
+                      layout != .preview, !editor.hasMarkedText(), requestID == editor.typingRequestID
                 else {
                     return
                 }
-                let candidates = result.array.isEmpty ? result["items"].array : result.array
-                editor?.presentCompletions(Array(candidates.prefix(12)))
-            } catch { showMessage(error.localizedDescription) }
+                editor.presentTypingAssistance(
+                    items,
+                    signature: signature,
+                    source: source,
+                    selection: caret,
+                    requestID: requestID,
+                    prefix: context?.prefix ?? "",
+                )
+                if !automatic, items.isEmpty, signature == nil {
+                    showMessage(L10n.text("No completions are available here."))
+                }
+            } catch {
+                if !automatic, !Task.isCancelled, generation == serviceGeneration,
+                   url == documentURL, version == documentVersion, requestID == editor.typingRequestID
+                {
+                    showMessage(error.localizedDescription)
+                }
+            }
         }
     }
 
@@ -1546,6 +1624,8 @@ final class Workspace: ObservableObject {
         guard let target = SourceLocation(params) else {
             return
         }
+        previewReturnLayout = layout
+        previewReading.rememberReturnPosition()
         let url = target.url
         if url.standardizedFileURL != documentURL.standardizedFileURL, !open(url, preservingMain: true) {
             return
@@ -1594,6 +1674,7 @@ final class Workspace: ObservableObject {
 
     func shutdown() {
         dismissAssistance()
+        previewFollowTask?.cancel()
         recordOperation("session.end")
         saveTask?.cancel()
         syncTask?.cancel()
@@ -1669,6 +1750,7 @@ final class Workspace: ObservableObject {
 
 extension Workspace {
     func dismissAssistance() {
+        editor?.dismissTypingAssistance()
         assistanceRequest = UUID()
         assistanceTask?.cancel()
         assistanceTask = nil
@@ -1677,7 +1759,7 @@ extension Workspace {
     }
 
     func requestAssistance(_ kind: WritingAssistance.Kind) {
-        guard serviceReady, !paletteOpen, !isLibraryHome, layout != .preview,
+        guard serviceReady, !paletteOpen, !isLibraryHome, objectEditSession == nil, layout != .preview,
               let editor, !editor.hasMarkedText()
         else {
             return

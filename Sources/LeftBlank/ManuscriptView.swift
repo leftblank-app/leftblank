@@ -97,6 +97,7 @@ struct ManuscriptView: NSViewRepresentable {
             workspace.edited(editor.string, change: editor.takeCharacterEdit())
             editor.workspaceRevision = workspace.revision
             editor.scheduleHighlight()
+            editor.scheduleTypingAssistance()
         }
 
         func textStorage(
@@ -117,6 +118,7 @@ struct ManuscriptView: NSViewRepresentable {
             }
             workspace.selection = editor.selectedRange()
             editor.scheduleHighlight()
+            editor.scheduleTypingAssistance()
         }
     }
 }
@@ -208,7 +210,13 @@ final class ManuscriptTextView: NSTextView {
     private var highlightTask: Task<Void, Never>?
     private var placeholders: [NSRange] = []
     private var placeholderIndex = 0
-    private var completionItems: [JSONValue] = []
+    var typingTask: Task<Void, Never>?
+    var typingRequestID = UUID()
+    var typingPanel: NSPanel?
+    var typingList = CompletionList(items: [], prefix: "")
+    var typingSignature: LanguageSignature?
+    var typingSource = ""
+    var typingSelection = NSRange(location: 0, length: 0)
     private var highlighting = false
     private(set) var appliedFontSize: CGFloat = 0
     private var styler = ManuscriptStyler()
@@ -382,6 +390,7 @@ final class ManuscriptTextView: NSTextView {
     }
 
     func load(_ content: String, selection: NSRange) {
+        dismissTypingAssistance()
         highlightTask?.cancel()
         loading = true
         defer { loading = false
@@ -516,6 +525,9 @@ final class ManuscriptTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if handleTypingKey(event) {
+            return
+        }
         if !hasMarkedText(), event.keyCode == 48, !placeholders.isEmpty {
             placeholderIndex += event.modifierFlags.contains(.shift) ? -1 : 1
             if placeholderIndex >= 0, placeholderIndex < placeholders.count {
@@ -545,49 +557,8 @@ final class ManuscriptTextView: NSTextView {
         super.keyDown(with: event)
     }
 
-    func presentCompletions(_ items: [JSONValue]) {
-        guard !items.isEmpty else {
-            workspace?.showMessage(L10n.text("No completions are available here."))
-            return
-        }
-        completionItems = items
-        let menu = NSMenu()
-        for (index, item) in items.enumerated() {
-            let entry = NSMenuItem(
-                title: item["label"].string ?? L10n.text("Complete"),
-                action: #selector(applyCompletion(_:)),
-                keyEquivalent: "",
-            )
-            entry.target = self
-            entry.tag = index
-            menu.addItem(entry)
-        }
-        let rect = firstRect(forCharacterRange: selectedRange(), actualRange: nil)
-        let windowRect = window?.convertFromScreen(rect) ?? .zero
-        let point = convert(windowRect.origin, from: nil)
-        menu.popUp(positioning: nil, at: point, in: self)
-    }
-
-    @objc private func applyCompletion(_ sender: NSMenuItem) {
-        guard completionItems.indices.contains(sender.tag) else {
-            return
-        }
-        let item = completionItems[sender.tag]
-        let edit = item["textEdit"]
-        let content = edit["newText"].string ?? item["insertText"].string ?? item["label"].string ?? ""
-        var range = selectedRange()
-        let sourceRange = edit["range"].isNull ? edit["replace"] : edit["range"]
-        if !sourceRange.isNull {
-            let start = TextPosition(
-                line: sourceRange["start"]["line"].int ?? 0,
-                character: sourceRange["start"]["character"].int ?? 0,
-            ).offset(in: string)
-            let end = TextPosition(
-                line: sourceRange["end"]["line"].int ?? 0,
-                character: sourceRange["end"]["character"].int ?? 0,
-            ).offset(in: string)
-            range = NSRange(location: start, length: max(0, end - start))
-        }
-        insertSnippet(Snippet(text: content), replacing: range)
+    func setCompletionPlaceholders(_ selections: [NSRange]) {
+        placeholders = selections
+        placeholderIndex = 0
     }
 }

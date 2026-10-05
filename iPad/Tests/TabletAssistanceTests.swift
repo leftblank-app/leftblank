@@ -196,6 +196,75 @@ struct TabletAssistanceTests {
         #expect(workspace.assistance.completions.contains { $0.label.hasPrefix("rect") })
     }
 
+    @Test func inlineCompletionKeyboardDoesNotReplaceMarkedTextAndEscapeCancels() async throws {
+        let (workspace, editor, _, completion) = try await fixture()
+        defer { try? FileManager.default.removeItem(at: workspace.stateDirectory) }
+        let keyboard = TabletTextView()
+        keyboard.workspace = workspace
+        keyboard.text = workspace.text
+        keyboard.selectedRange = workspace.selection
+        keyboard.presentTypingAssistance([completion], signature: nil, prefix: "rec")
+        #expect(keyboard.typingOverlay != nil)
+        let tab = try #require(keyboard.keyCommands?.first {
+            $0.input == "\t" && $0.action.map(NSStringFromSelector) == "acceptTypingFromKeyboard"
+        })
+        #expect(tab.wantsPriorityOverSystemBehavior)
+        editor.history.beginUndoGrouping()
+        keyboard.acceptTypingFromKeyboard()
+        editor.history.endUndoGrouping()
+        #expect(workspace.text == "#rect()")
+        editor.history.undo()
+        #expect(workspace.text == "#rec")
+        keyboard.presentTypingAssistance([completion], signature: nil, prefix: "rec")
+        keyboard.dismissTypingFromKeyboard()
+        #expect(keyboard.typingOverlay == nil)
+        #expect(workspace.assistance.snapshot == nil)
+        keyboard.setMarkedText("中文", selectedRange: NSRange(location: 2, length: 0))
+        keyboard.scheduleTypingAssistance()
+        #expect(keyboard.typingTask == nil)
+        #expect(keyboard.typingOverlay == nil)
+        let commands = try #require(keyboard.keyCommands)
+        #expect(!commands.contains { $0.action.map(NSStringFromSelector) == "acceptTypingFromKeyboard" })
+        keyboard.unmarkText()
+    }
+
+    @Test func embeddedTypingCompletionAndMultilineParameterHelpStayInline() async throws {
+        let (workspace, _, _, _) = try await fixture()
+        defer {
+            workspace.client.stop()
+            try? FileManager.default.removeItem(at: workspace.stateDirectory)
+        }
+        workspace.activeSourceURL = nil
+        let document = try await workspace.library.create(text: "#rec")
+        await workspace.open(document)
+        let keyboard = TabletTextView()
+        keyboard.workspace = workspace
+        keyboard.text = workspace.text
+        keyboard.selectedRange = NSRange(location: 4, length: 0)
+        workspace.editor = keyboard
+        workspace.selection = keyboard.selectedRange
+        workspace.assistance.onInvalidate = { [weak keyboard] in keyboard?.dismissTypingAssistance() }
+        workspace.requestTypingAssistance(automatic: true)
+        await workspace.assistance.task?.value
+        #expect(keyboard.typingList.items.contains { $0.label.hasPrefix("rect") })
+        #expect(workspace.panel == nil)
+        #expect(workspace.text == "#rec")
+        let source = "#rect(\n  width: 20pt)"
+        workspace.replace(source)
+        keyboard.text = source
+        workspace.selection = NSRange(location: (source as NSString).range(of: "20pt").location, length: 0)
+        keyboard.selectedRange = workspace.selection
+        workspace.requestTypingAssistance(automatic: true)
+        await workspace.assistance.task?.value
+        #expect(keyboard.typingSignature?.activeParameter == "width:")
+        #expect(keyboard.typingOverlay != nil)
+        #expect(workspace.panel == nil)
+        workspace.requestTypingAssistance(automatic: true)
+        workspace.selection = NSRange(location: 0, length: 0)
+        await workspace.assistance.task?.value
+        #expect(workspace.assistance.snapshot == nil)
+    }
+
     @Test func projectImportRequiresAnEntryAndRejectsPathsOutsideTheProject() async throws {
         let (workspace, editor, _, _) = try await fixture()
         defer {

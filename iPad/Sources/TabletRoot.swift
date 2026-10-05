@@ -269,6 +269,23 @@ struct TabletRoot: View {
                                 detail: workspace.previewIssue ?? L10n.text(workspace.serviceStatus),
                             )
                         }
+                    }.overlay(alignment: .bottomTrailing) {
+                        HStack(spacing: 10) {
+                            TabletPreviewReadingControls(session: workspace.previewReading) {
+                                workspace.layout = workspace.previewReturnLayout == .split && detailWidth >= 800
+                                    ? .split : .preview
+                            }
+                            Button { workspace.previewZoom = max(0.5, workspace.previewZoom - 0.1) } label: {
+                                Image(systemName: "minus.magnifyingglass")
+                            }.accessibilityLabel(L10n.text("Zoom Out")).accessibilityIdentifier("preview-zoom-out")
+                                .frame(minWidth: 44, minHeight: 44).disabled(workspace.previewZoom <= 0.5)
+                            Text("\(Int((workspace.previewZoom * 100).rounded()))%")
+                                .font(.caption.monospacedDigit())
+                            Button { workspace.previewZoom = min(2, workspace.previewZoom + 0.1) } label: {
+                                Image(systemName: "plus.magnifyingglass")
+                            }.accessibilityLabel(L10n.text("Zoom In")).accessibilityIdentifier("preview-zoom-in")
+                                .frame(minWidth: 44, minHeight: 44).disabled(workspace.previewZoom >= 2)
+                        }.padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10)).padding(8)
                     }.overlay(alignment: .top) {
                         if workspace.serviceStatus == "Document Needs Attention" {
                             Button { workspace.panel = .checks } label: {
@@ -295,6 +312,11 @@ struct TabletRoot: View {
                         .accessibilityValue(workspace.previewReady ? L10n.text("Preview Updated") : L10n
                             .text("Waiting for Typesetting"))
                     Spacer()
+                    if !reading, !sideBySide {
+                        TabletPreviewReadingControls(session: workspace.previewReading, showFollow: false) {
+                            workspace.layout = .preview
+                        }
+                    }
                     let position = workspace.metrics.position(at: workspace.selection.location)
                     Text("\(position.line + 1):\(position.character + 1)")
                         .accessibilityIdentifier("source-position")
@@ -369,6 +391,9 @@ struct TabletRoot: View {
                     Button(L10n.text("Outline")) { workspace.panel = .outline }.keyboardShortcut("4")
                     Button(L10n.text("Project Files")) { workspace.showProjectFiles() }
                         .accessibilityIdentifier("project-files")
+                    Button(L10n.text("Edit Table or Image…")) { workspace.editObjectAtCursor() }
+                        .disabled(!workspace.canWrite || workspace.busy)
+                        .accessibilityIdentifier("edit-object")
                     Menu(L10n.text("Writing Assistance")) {
                         Button(L10n.text("Complete at Cursor")) { workspace.requestAssistance(.completion) }
                         Button(L10n.text("Explain at Cursor")) { workspace.requestAssistance(.help) }

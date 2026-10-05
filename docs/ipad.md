@@ -65,6 +65,28 @@ catalog; narrower windows show detail with a back-to-results action. Selection
 and search survive rotation across this breakpoint. The action bar stays visible
 below the scrollable detail content.
 
+## Editing parity
+
+Mac and iPad share the typing-context scanner, completion selection model, object
+parser and form, and preview reading script. Each platform keeps native editor
+focus, IME, keyboard, touch or pointer behavior, and undo integration.
+
+- Completion appears inline after typing pauses. Hardware keyboards can select
+  candidates with arrows and Tab. Touch targets are at least 44 points on iPad.
+  Multiline function calls receive parameter help. Escape dismisses assistance.
+- **Edit Table or Image…** updates a supported object at the cursor. Table rows,
+  columns, cells, TSV paste, and image resource/width/caption/alignment editing
+  use the same validation on both platforms. Unsupported syntax stays in source.
+- Preview controls provide **Follow Writing**, **Return to Reading**, and zoom.
+  User scrolling pauses follow mode. Page-relative anchors survive scale and
+  layout changes, but do not track paragraph identity through document reflow.
+
+Shared tests cover UTF-16 ranges, stale snapshots, parsing limits, and reading
+state. Mac tests use AppKit and the real Tinymist process. iPad tests use UIKit,
+the embedded engine, and native undo. Both clients test reading anchors in real
+WKWebViews. iPad UI tests cover automatic suggestions, existing-table editing,
+undo/redo and compilation on both supported simulator sizes in CI.
+
 ## Build and validation
 
 Run from an SSD-backed worktree under `/Volumes/SSD/Developer`:

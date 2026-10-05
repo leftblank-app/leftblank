@@ -23,9 +23,11 @@ final class TabletAssistance: ObservableObject {
     var snapshot: Snapshot?
     var task: Task<Void, Never>?
     var requestID = UUID()
+    var onInvalidate: (() -> Void)?
     var pendingPreview: Snapshot?
 
     func invalidate() {
+        onInvalidate?()
         task?.cancel()
         task = nil
         requestID = UUID()
@@ -39,20 +41,24 @@ final class TabletAssistance: ObservableObject {
 }
 
 extension TabletWorkspace {
-    private func assistanceSnapshot() -> TabletAssistance.Snapshot? {
+    func assistanceSnapshot() -> TabletAssistance.Snapshot? {
         guard let url = sourceURL, serviceReady, !busy, editor?.markedTextRange == nil else {
             return nil
         }
         return .init(source: text, url: url, version: version, generation: generation, selection: selection)
     }
 
-    private func accepts(_ snapshot: TabletAssistance.Snapshot) -> Bool {
+    func accepts(_ snapshot: TabletAssistance.Snapshot) -> Bool {
         snapshot.url == sourceURL && snapshot.version == version && snapshot.generation == generation
             && snapshot.source == text && snapshot.selection == selection
             && !busy && editor?.markedTextRange == nil
     }
 
     func requestAssistance(_ kind: TabletAssistance.Kind) {
+        if kind == .completion {
+            requestTypingAssistance(automatic: false)
+            return
+        }
         guard let snapshot = assistanceSnapshot(), layout != .preview else {
             return
         }
@@ -72,17 +78,9 @@ extension TabletWorkspace {
                     "position": start.json,
                 ]
                 var hover: LanguageHover?, signature: LanguageSignature?
-                var actions: [SourceCodeAction] = [], completions: [SourceCompletion] = []
+                var actions: [SourceCodeAction] = []
                 switch kind {
-                case .completion:
-                    let result = try await client.request("textDocument/completion", params.merging([
-                        "context": ["triggerKind": 1],
-                    ]) { _, new in new })
-                    completions = LanguageAssistance.completions(
-                        result,
-                        source: snapshot.source,
-                        selection: snapshot.selection,
-                    )
+                case .completion: return
                 case .help:
                     if client.supports("hoverProvider") {
                         hover = try await LanguageAssistance.hover(client.request("textDocument/hover", params))
@@ -118,7 +116,6 @@ extension TabletWorkspace {
                 assistance.hover = hover
                 assistance.signature = signature
                 assistance.actions = actions
-                assistance.completions = completions
                 assistance.loading = false
             } catch {
                 guard request == assistance.requestID, accepts(snapshot), !Task.isCancelled else {
@@ -248,6 +245,7 @@ extension TabletWorkspace {
         guard let snapshot = assistanceSnapshot() else {
             return
         }
+        followingPreviewNavigation = false
         assistance.pendingPreview = snapshot
         panel = nil
         if layout == .writing {
@@ -260,7 +258,9 @@ extension TabletWorkspace {
         guard let snapshot = assistance.pendingPreview else {
             return
         }
-        guard snapshot.url == sourceURL, snapshot.version == version, snapshot.generation == generation else {
+        guard snapshot.url == sourceURL, snapshot.version == version, snapshot.generation == generation,
+              !followingPreviewNavigation || previewReading.followsWriting
+        else {
             assistance.pendingPreview = nil
             return
         }
@@ -270,6 +270,8 @@ extension TabletWorkspace {
             return
         }
         assistance.pendingPreview = nil
+        let following = followingPreviewNavigation
+        followingPreviewNavigation = false
         let source = snapshot.source as NSString
         let offset = min(snapshot.selection.location, source.length)
         let queryOffset = offset < source.length && source.character(at: offset) != 10 && source
@@ -281,7 +283,7 @@ extension TabletWorkspace {
         Task {
             do {
                 guard snapshot.generation == generation, snapshot.url == sourceURL,
-                      snapshot.version == version
+                      snapshot.version == version, !following || previewReading.followsWriting
                 else {
                     return
                 }
@@ -313,20 +315,7 @@ struct TabletAssistanceView: View {
                 ProgressView().accessibilityLabel(L10n.text("Connecting"))
             } else {
                 switch assistance.kind {
-                case .completion:
-                    if assistance.completions.isEmpty {
-                        Text(L10n.text("No completions are available here."))
-                    }
-                    ForEach(Array(assistance.completions.enumerated()), id: \.offset) { index, item in
-                        Button { workspace.applyCompletion(item) } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.label).font(.system(.body, design: .monospaced))
-                                if !item.detail.isEmpty {
-                                    Text(item.detail).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }.frame(minHeight: 44)
-                        }.disabled(!workspace.canWrite).accessibilityIdentifier("completion-item-\(index)")
-                    }
+                case .completion: EmptyView()
                 case .help:
                     if let signature = assistance.signature {
                         Text(signature.label).font(.system(.body, design: .monospaced))

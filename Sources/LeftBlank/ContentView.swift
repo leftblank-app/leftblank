@@ -18,6 +18,18 @@ struct ContentView: View {
         }
         .background(Theme.background)
         .foregroundStyle(Theme.text)
+        .sheet(item: $workspace.objectEditSession) { session in
+            ObjectEditorForm(
+                object: session.object,
+                resourceRoot: workspace.resourceRoot,
+                sourceURL: session.url,
+                failure: workspace.message,
+                apply: { object in
+                    workspace.applyObjectEdit(object, session: session)
+                },
+                cancel: { workspace.objectEditSession = nil },
+            )
+        }
         .sheet(isPresented: $workspace.historyOpen) {
             DocumentHistoryView(workspace: workspace, history: workspace.history)
         }
@@ -100,6 +112,7 @@ struct ContentView: View {
                     url: url,
                     zoom: workspace.previewZoom,
                     dark: workspace.previewDark,
+                    readingSession: workspace.previewReading,
                     onLoading: { workspace.previewWillLoad(at: url) },
                     onReady: { workspace.previewDidBecomeReady(at: url) },
                 ) { workspace.showMessage(
@@ -120,6 +133,10 @@ struct ContentView: View {
         }.background(Theme.panel)
             .overlay(alignment: .topTrailing) {
                 FloatingPaneControls(title: L10n.text("Preview"), icon: "eye") {
+                    PreviewReadingControls(session: workspace.previewReading) {
+                        workspace.layout = workspace.previewReturnLayout ?? .preview
+                    }
+
                     Button { workspace.previewDark.toggle() } label: {
                         Text(workspace.previewDark ? L10n.text("Dark") : L10n.text("Light"))
                             .font(.system(size: 10, weight: .medium))
@@ -179,6 +196,11 @@ struct ContentView: View {
                 detail: L10n.text("Explore with letter keys, or press / to search all commands."),
             )
             Spacer()
+            if workspace.layout == .writing {
+                PreviewReadingControls(session: workspace.previewReading, showFollow: false) {
+                    workspace.layout = workspace.previewReturnLayout ?? .preview
+                }
+            }
             Text(L10n.text(workspace.saveStatus)).font(.system(size: 10)).foregroundStyle(Theme.muted)
             Rectangle().fill(Theme.border).frame(width: 1, height: 10)
             Text(L10n.format("%@ words", String(workspace.wordCount))).font(.system(size: 10, design: .monospaced))

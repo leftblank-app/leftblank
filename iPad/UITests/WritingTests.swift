@@ -446,9 +446,7 @@ final class WritingTests: XCTestCase {
             ["Ready", "Preview Updated", "Document Needs Attention"].contains(app.staticTexts["engine-status"].label)
         }
         waitForState(ready, in: app, name: "Typesetting ready for completion")
-        app.buttons["document-actions"].tap()
-        app.buttons["Writing Assistance"].tap()
-        app.buttons["Complete at Cursor"].tap()
+        // Suggestions must arrive while the native editor retains typing focus.
         let completion = app.buttons["completion-item-0"]
         expect(completion.waitForExistence(timeout: 30)) == true
         capture("Native completion suggestions")
@@ -511,6 +509,41 @@ final class WritingTests: XCTestCase {
         expect(editor.value as? String) == original
     }
 
+    func testEditExistingTableAndUndo() {
+        let app = startWriting()
+        app.buttons["commands"].tap()
+        let table = app.buttons["command-table"]
+        expect(table.waitForExistence(timeout: 10)) == true
+        table.tap()
+        app.buttons["Insert"].tap()
+        let editor = app.textViews["manuscript"]
+        waitForState(NSPredicate { _, _ in
+            (editor.value as? String)?.contains("#table(") == true
+        }, in: app, name: "Table inserted")
+        let original = editor.value as? String
+        app.buttons["document-actions"].tap()
+        app.buttons["edit-object"].tap()
+        let addRow = app.buttons["object-add-row"]
+        expect(addRow.waitForExistence(timeout: 10)) == true
+        addRow.tap()
+        app.buttons["object-add-column"].tap()
+        capture("Edit existing table")
+        app.buttons["object-apply"].tap()
+        waitForState(NSPredicate { _, _ in
+            !app.buttons["object-apply"].exists && editor.value as? String != original
+        }, in: app, name: "Table edit applied")
+        let updated = editor.value as? String
+        app.buttons["commands"].tap()
+        app.buttons["Undo"].tap()
+        expect(editor.value as? String) == original
+        app.buttons["commands"].tap()
+        app.buttons["Redo"].tap()
+        expect(editor.value as? String) == updated
+        waitForState(NSPredicate { _, _ in
+            app.staticTexts["engine-status"].label == "Preview Updated"
+        }, in: app, name: "Edited table compiled")
+    }
+
     func testCommandInsertionAndPDFExport() {
         let app = startWriting()
         let original = app.textViews["manuscript"].value as? String
@@ -568,6 +601,19 @@ final class WritingTests: XCTestCase {
         waitForExpectations(timeout: 15)
         expect((app.staticTexts["source-position"].value as? String)?.hasPrefix("1:")) == true
         expect(editor.value as? String) == "= Source navigation\nTap this paragraph to reveal its source.\n"
+        let returning = app.buttons["preview-return"]
+        expect(returning.waitForExistence(timeout: 10)) == true
+        expect(returning.isEnabled) == true
+        returning.tap()
+        waitForState(
+            NSPredicate { _, _ in !editor.isHittable && preview.isHittable },
+            in: app,
+            name: "Return to reading",
+        )
+        app.buttons["preview-zoom-in"].tap()
+        expect(app.staticTexts["110%"].waitForExistence(timeout: 10)) == true
+        app.buttons["preview-zoom-out"].tap()
+        expect(app.staticTexts["100%"].waitForExistence(timeout: 10)) == true
     }
 
     func testTemplateDiscoveryAndPackageImport() {

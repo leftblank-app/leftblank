@@ -23,11 +23,33 @@ The app supports English and Simplified Chinese, with the localized name **留�
 
 For example, `⌘J → i → t` opens the table form. Choose the row and column counts, insert, then move between cells with Tab. Select text and press `⌘J → s → b` to make it bold. Each insertion is one undoable edit. You can always write Typst directly.
 
-The command catalog has 109 discoverable commands, including 74 insertion actions. Mathematics has nested categories for basic operations, equation structures and symbols. `⌘J → m → b → f` inserts a fraction, using the appropriate syntax inside an existing equation. Commands show their purpose, example, direct shortcut, discovery path and official reference.
+The command catalog has 110 discoverable commands, including 74 insertion actions. Mathematics has nested categories for basic operations, equation structures and symbols. `⌘J → m → b → f` inserts a fraction, using the appropriate syntax inside an existing equation. Commands show their purpose, example, direct shortcut, discovery path and official reference.
 
 Frequent actions have direct shortcuts as well as discoverable paths. `⌘]` / `⌘[` indent and outdent, `⌘/` toggles comments, and `⌥⇧F` formats the source. Hovering a toolbar button shows a compact action name and shortcut.
 
 The outline appears in the left margin without moving the text. Hover to explore headings, then use the small pin to keep them visible; hovering the pinned control reveals its close action. `⌘4` also pins or dismisses it. The command panel keeps a stable height through searching, selection and parameter entry; its guide stays in the same place.
+
+## Completion and existing objects
+
+On Mac and iPad, code completion appears after a short pause while you type.
+The editor keeps focus. Use the arrow keys and Tab to accept a candidate, or tap
+one on iPad. Escape dismisses the suggestions. Function calls also show parameter
+help, including calls that span multiple lines. Completion preserves snippet
+placeholders and creates one undo step. Chinese input composition defers these
+suggestions until composition finishes. Manual completion remains available.
+
+Place the cursor inside a table or image and choose **Edit Table or Image…**
+(`⌘J → c → e` on Mac; the document actions menu on iPad). Both apps use the same
+form. Tables support cells, rows, columns, a header row, cell alignment, and
+rectangular tab-separated data. Image editing supports existing document
+resources, a path, a numeric width, a plain caption, and alignment. Apply changes
+only the selected object and creates one undo step. Cancel leaves the source
+unchanged. A draft cannot overwrite a newer document revision.
+
+This form supports literal objects, including those inserted by LeftBlank.
+Generated tables, merged cells, expression-based dimensions, rich captions,
+and unsupported options stay in source editing. The form does not convert
+arbitrary Typst programs into visual objects.
 
 ## Images and document resources
 
@@ -48,6 +70,14 @@ PDF export compiles the whole book. Source-project export currently exports only
 Editor styling gently emphasizes headings, bold, italics and inline code. Moving the caret into a paragraph reveals its full source. Copying, saving and undo always use the original text. Change editor styling in Settings.
 
 The preview shows real typeset pages. Double-click a page to reveal the source; source selection can locate the corresponding preview position. Zoom is relative to the preview pane's fitted width. Dark preview changes screen colors only; images retain their colors and exported PDFs are unchanged.
+
+Both platforms offer **Follow Writing** and **Return to Reading** beside the
+preview controls. Follow Writing tracks the caret in side-by-side mode after a
+short pause. Scrolling the preview pauses it. A preview-to-source jump remembers
+your reading position; Return to Reading restores it. Zoom, window resizing and
+preview reloads preserve a page-relative position. This geometric anchor does
+not guarantee the same paragraph after substantial document reflow. iPad also
+offers preview zoom from 50% to 200%.
 
 While syntax is incomplete or invalid, LeftBlank retains the last successful preview and marks it as out of date. Rendering only visible page regions reduces display work; it does not mean every invalid document can compile partially. Export fails on a compilation error instead of silently exporting an old PDF.
 

@@ -33,6 +33,7 @@ public enum PreviewScripts {
             if (typeof impl.scrollTo === 'function' && typeof impl.clearSvgResizeAnchor === 'function') {
                 const scrollTo = impl.scrollTo;
                 impl.scrollTo = function(...args) {
+                    window.leftblankSourceJump?.();
                     this.clearSvgResizeAnchor();
                     return scrollTo.apply(this, args);
                 };
@@ -74,6 +75,6 @@ public enum PreviewScripts {
         const root = document.getElementById('typst-app');
         if (root) new MutationObserver(() => window.leftblankSetDark(!!window.leftblankPreviewDark))
             .observe(root, {attributes: true, attributeFilter: ['class']});
-        """
+        """ + reading
     }
 }
