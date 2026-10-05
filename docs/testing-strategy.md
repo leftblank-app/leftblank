@@ -139,3 +139,16 @@ Real iCloud delivery remains a two-Mac acceptance check: offline edits, nonoverl
 - Managed-document export dialogs now suggest the document title instead of the internal `main` filename.
 
 The first two were caught by CI and the icon defect by a real-window visual check. This is why LeftBlank needs complementary behavior and visual checks, in addition to its line-coverage target.
+
+## Agent document tools and MCP
+
+`AgentToolsTests` exercises the shared dispatcher with isolated real document
+storage and history; iPad includes this same core test suite. Native Mac tests
+cover unsaved buffers, undo/redo, history and disk conflicts, and launch the real
+Rust helper to validate discovery, authorization, forwarding and revocation.
+`Tests/MCP/editing.hurl` runs only in GitHub CI against a real `MCPConnection` and
+Swift document services created by the native test fixture. No mock transport or
+alternate HTTP service is used. The pinned Hurl 8.0.1 setup and formatter run in
+CI. Local Hurl/OrbStack execution remains reserved for verifying a fix after a CI
+failure. Signed sandbox execution and actual Codex/Claude installation are
+separate acceptance checks; successful loopback tests do not establish either.

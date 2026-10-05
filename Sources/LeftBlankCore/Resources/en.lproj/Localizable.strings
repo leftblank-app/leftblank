@@ -870,3 +870,36 @@
 "The document changed. Open the object editor again." = "The document changed. Open the object editor again.";
 
 "Use a rectangular table, balanced cell content, and a numeric image width such as 80%." = "Use a rectangular table, balanced cell content, and a numeric image width such as 80%.";
+
+"Agent Edit" = "Agent Edit";
+
+"Before agent edit" = "Before agent edit";
+
+
+
+"Copy Agent Setup Prompt" = "Copy Agent Setup Prompt";
+
+"Disconnect Coding Agent" = "Disconnect Coding Agent";
+
+"Allow a local coding agent to read or edit your documents while LeftBlank is running. You can disconnect at any time." = "Allow a local coding agent to read or edit your documents while LeftBlank is running. You can disconnect at any time.";
+
+"Read Only" = "Read Only";
+
+"Allow Editing" = "Allow Editing";
+
+"All documents, including new documents" = "All documents, including new documents";
+
+
+
+
+"The coding agent connection stopped. Your writing remains open." = "The coding agent connection stopped. Your writing remains open.";
+"Coding Agent" = "Coding Agent";
+"Connection enabled" = "Connection enabled";
+"Connection disabled" = "Connection disabled";
+"Current document" = "Current document";
+"Document access" = "Document access";
+"Enable Connection" = "Enable Connection";
+"Selected document" = "Selected document";
+"Prompt copied. Paste it into your coding agent on this Mac." = "Prompt copied. Paste it into your coding agent on this Mac.";
+"Could not start the coding agent connection. Enable it again in Settings." = "Could not start the coding agent connection. Enable it again in Settings.";
+"The connection stopped, but its saved permission could not be removed. Try disconnecting again." = "The connection stopped, but its saved permission could not be removed. Try disconnecting again.";

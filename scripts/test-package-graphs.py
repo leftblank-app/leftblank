@@ -61,6 +61,17 @@ class PackageGraphs(unittest.TestCase):
                 self.assertEqual([(p['platformName'], p['version']) for p in graph['platforms']],
                                  [('ios', '17.0')])
 
+    def test_mcp_stays_outside_shared_core_and_ipad_build(self):
+        for source in (ROOT / 'Sources/LeftBlankCore').glob('*.swift'):
+            text = source.read_text()
+            self.assertNotRegex(text, r'(?m)^import (?:MCP|RMCP|AppKit)$', str(source))
+        for name in ('build-ipad.sh', 'prepare-ipad-engine.sh'):
+            self.assertNotIn('MCPServer', (ROOT / 'scripts' / name).read_text())
+            self.assertNotIn('build-mcp.sh', (ROOT / 'scripts' / name).read_text())
+        self.assertNotIn('rmcp', (ROOT / 'Engine/TinymistBridge/Cargo.toml').read_text())
+        self.assertNotIn('MCPServer', PROJECT.read_text())
+        self.assertNotIn('MCPConnection.swift', PROJECT.read_text())
+
     def test_ipad_ignores_mac_preview_environment(self):
         self.assertEqual(self.ipad['appstore'], self.ipad['preview'])
 

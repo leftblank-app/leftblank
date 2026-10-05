@@ -870,3 +870,36 @@
 "The document changed. Open the object editor again." = "文稿已变更。请重新打开表格或图片编辑器。";
 
 "Use a rectangular table, balanced cell content, and a numeric image width such as 80%." = "各行的列数必须一致，单元格内的括号必须配对。图片宽度请使用 80% 等数值。";
+
+"Agent Edit" = "智能体编辑";
+
+"Before agent edit" = "智能体修改之前";
+
+
+
+"Copy Agent Setup Prompt" = "复制智能体配置提示词";
+
+"Disconnect Coding Agent" = "断开编程智能体";
+
+"Allow a local coding agent to read or edit your documents while LeftBlank is running. You can disconnect at any time." = "允许本机编程智能体在留白运行时读取或编辑文档。你可以随时断开连接。";
+
+"Read Only" = "只读";
+
+"Allow Editing" = "允许编辑";
+
+"All documents, including new documents" = "所有文档，包括新建文档";
+
+
+
+
+"The coding agent connection stopped. Your writing remains open." = "编程智能体连接已停止，你的文稿仍保持打开。";
+"Coding Agent" = "编程智能体";
+"Connection enabled" = "连接已启用";
+"Connection disabled" = "连接未启用";
+"Current document" = "当前文稿";
+"Document access" = "文稿访问范围";
+"Enable Connection" = "启用连接";
+"Selected document" = "已授权的文稿";
+"Prompt copied. Paste it into your coding agent on this Mac." = "提示词已复制，请粘贴到这台 Mac 上的编程智能体。";
+"Could not start the coding agent connection. Enable it again in Settings." = "无法启动编程智能体连接，请在设置中重新启用。";
+"The connection stopped, but its saved permission could not be removed. Try disconnecting again." = "连接已停止，但无法移除已保存的授权。请再次尝试停用。";

@@ -42,3 +42,6 @@ env -u CC -u CXX xcodebuild -project iPad/LeftBlank.xcodeproj -scheme LeftBlank-
   -clonedSourcePackagesDirPath .build/xcode-packages \
   ${diagnostics[@]+"${diagnostics[@]}"} \
   ARCHS=arm64 CODE_SIGNING_ALLOWED=NO "${actions[@]}"
+
+# Assert the actual app artifact, in addition to the package graph contract.
+python3 scripts/check-ipad-mcp-boundary.py "$derived_data/Build/Products"

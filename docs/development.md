@@ -2,7 +2,7 @@
 
 LeftBlank uses SwiftUI and AppKit for the app and editing experience, with Tinymist as a managed child process for Typst language services and preview. Documents use ordinary `.typ` source and relative assets. The visual approach was inspired by Nano Emacs.
 
-Use Xcode 26 or later with a Swift 6.2 or later toolchain and the macOS SDK. Local development scripts expect the external development volume at `/Volumes/SSD/Developer`; run from an SSD checkout:
+Use Xcode 26 or later with a Swift 6.2 or later toolchain and the macOS SDK. The macOS MCP helper additionally requires Rust 1.92.0 (`rustup toolchain install 1.92.0 --profile minimal`). Local development scripts expect the external development volume at `/Volumes/SSD/Developer`; run from an SSD checkout:
 
 ```sh
 scripts/build.sh release
@@ -27,6 +27,7 @@ Unicode editing, marked-text protection, undo and saving have automated coverage
 
 ## Design and engineering notes
 
+- [MCP integration design and implementation status](mcp-design.md)
 - [Product requirements](requirements.md)
 - [Architecture](architecture.md)
 - [Implementation and verification](progress.md)

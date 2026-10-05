@@ -29,6 +29,8 @@ def package(binary_dir, distribution):
     shutil.copy2(binary_dir / 'LeftBlank', contents / 'MacOS/LeftBlank')
     engine = '.tools/tinymist-appstore' if distribution == 'appstore' else '.tools/tinymist'
     shutil.copy2(engine, contents / 'Helpers/tinymist')
+    shutil.copy2('.tools/leftblank-mcp', contents / 'Helpers/leftblank-mcp')
+    shutil.copy2('.tools/MCP-LICENSES.txt', resources / 'MCP-LICENSES.txt')
     # Native SwiftPM embeds its PackageFrameworks path ahead of the app's rpath.
     # Remove build-machine paths so cold-launch checks exercise bundled code.
     executable = contents / 'MacOS/LeftBlank'

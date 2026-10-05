@@ -8,3 +8,4 @@ build/
 __pycache__/
 Engine/TinymistBridge/target/
 **/xcuserdata/
+Tools/MCPServer/target/

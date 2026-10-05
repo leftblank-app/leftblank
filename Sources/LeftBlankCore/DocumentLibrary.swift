@@ -11,6 +11,7 @@ public struct LibraryDocument: Identifiable, Equatable, Sendable {
     public let folderURL: URL
     public let snippet: String
     public let hasUnresolvedConflicts: Bool
+    public let metadataRevision: String
     public var isTrashed: Bool {
         trashedAt != nil
     }
@@ -118,7 +119,11 @@ public actor DocumentLibrary {
         self.now = now
     }
 
-    public func list(query: String = "", includeTrashed: Bool = false) throws -> [LibraryDocument] {
+    public func list(
+        query: String = "",
+        includeTrashed: Bool = false,
+        allowedDocumentIDs: Set<UUID>? = nil,
+    ) throws -> [LibraryDocument] {
         try prepareRoot(rootURL)
         issues = []
         let words = normalized(query).split(whereSeparator: \.isWhitespace)
@@ -126,6 +131,9 @@ public actor DocumentLibrary {
         for folder in try documentFolders(in: rootURL) {
             do {
                 let metadata = try readMetadata(folder)
+                if let allowedDocumentIDs, !allowedDocumentIDs.contains(metadata.id) {
+                    continue
+                }
                 if !includeTrashed, metadata.trashedAt != nil {
                     continue
                 }
@@ -193,15 +201,15 @@ public actor DocumentLibrary {
         )
     }
 
-    public func rename(_ id: UUID, title: String) throws -> LibraryDocument {
+    public func rename(_ id: UUID, title: String, expectedMetadataRevision: String? = nil) throws -> LibraryDocument {
         let title = try validatedTitle(title)
-        return try updateMetadata(id) { $0.title = title
+        return try updateMetadata(id, expectedRevision: expectedMetadataRevision) { $0.title = title
             $0.modifiedAt = now()
         }
     }
 
-    public func trash(_ id: UUID) throws -> LibraryDocument {
-        try updateMetadata(id) {
+    public func trash(_ id: UUID, expectedMetadataRevision: String? = nil) throws -> LibraryDocument {
+        try updateMetadata(id, expectedRevision: expectedMetadataRevision) {
             if $0.trashedAt == nil {
                 $0.trashedAt = now()
                 $0.modifiedAt = now()
@@ -209,8 +217,8 @@ public actor DocumentLibrary {
         }
     }
 
-    public func restore(_ id: UUID) throws -> LibraryDocument {
-        try updateMetadata(id) { $0.trashedAt = nil
+    public func restore(_ id: UUID, expectedMetadataRevision: String? = nil) throws -> LibraryDocument {
+        try updateMetadata(id, expectedRevision: expectedMetadataRevision) { $0.trashedAt = nil
             $0.modifiedAt = now()
         }
     }
@@ -511,7 +519,7 @@ public actor DocumentLibrary {
             .joined(separator: " ")
         let snippet = String((prose.isEmpty ? preview : prose).split(whereSeparator: \.isWhitespace)
             .joined(separator: " ").prefix(180))
-        return LibraryDocument(
+        return try LibraryDocument(
             id: metadata.id,
             title: metadata.title,
             createdAt: metadata.createdAt,
@@ -528,7 +536,16 @@ public actor DocumentLibrary {
                 (try? folder.appendingPathComponent(Self.metadataName)
                     .resourceValues(forKeys: [.ubiquitousItemHasUnresolvedConflictsKey])
                     .ubiquitousItemHasUnresolvedConflicts) == true,
+            metadataRevision: metadataRevision(metadata, folder: folder),
         )
+    }
+
+    private func metadataRevision(_ metadata: Metadata, folder: URL) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        var data = Data(folder.standardizedFileURL.path.utf8)
+        try data.append(encoder.encode(metadata))
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     private func validatedTitle(_ title: String) throws -> String {
@@ -548,7 +565,11 @@ public actor DocumentLibrary {
         )
     }
 
-    private func updateMetadata(_ id: UUID, _ update: (inout Metadata) -> Void) throws -> LibraryDocument {
+    private func updateMetadata(
+        _ id: UUID,
+        expectedRevision: String? = nil,
+        _ update: (inout Metadata) -> Void,
+    ) throws -> LibraryDocument {
         let folder = try folder(for: id)
         let metadata = try CoordinatedFileAccess.write(folder.appendingPathComponent(Self.metadataName)) { url in
             if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) ==
@@ -568,6 +589,9 @@ public actor DocumentLibrary {
                 throw LibraryError.invalidMetadata
             }
             _ = try sourceURL(metadata, in: folder)
+            if let expectedRevision, try metadataRevision(metadata, folder: folder) != expectedRevision {
+                throw DocumentStorageError.externalChange
+            }
             update(&metadata)
             try JSONEncoder().encode(metadata).write(to: url, options: .atomic)
             return metadata

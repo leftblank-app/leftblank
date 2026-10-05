@@ -18,6 +18,7 @@ public struct DocumentRevision: Codable, Identifiable, Equatable, Sendable {
     public enum Reason: String, Codable, Sendable {
         case automatic
         case beforeRestore = "beforeRestore"
+        case beforeAgentEdit = "beforeAgentEdit"
     }
 }
 
@@ -66,6 +67,12 @@ public actor DocumentHistory {
     public func preserveBeforeRestore(_ source: String, key: String, at date: Date) throws -> DocumentRevision {
         let entries = try revisions(for: key)
         return try append(source, key: key, at: date, reason: .beforeRestore, entries: entries)
+    }
+
+    /// Agent preimages bypass the automatic interval, including for non-Typst UTF-8 project files.
+    @discardableResult
+    public func preserveBeforeAgentEdit(_ source: String, key: String, at date: Date) throws -> DocumentRevision {
+        try append(source, key: key, at: date, reason: .beforeAgentEdit, entries: revisions(for: key))
     }
 
     public func source(for revision: DocumentRevision, key: String) throws -> String {

@@ -77,7 +77,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             }
         }
         workspace.startService()
-        Task { await workspace.library.start() }
+        Task {
+            await workspace.library.start()
+            await workspace.agentConnection.resume()
+        }
         NSApp.activate(ignoringOtherApps: true)
         #if LEFTBLANK_PREVIEW
             previewUpdater.start()

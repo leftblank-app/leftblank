@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 source scripts/environment.sh
 python3 scripts/test-icloud-profile.py
 scripts/bootstrap.sh
+scripts/build-mcp.sh
 swift build --build-tests --enable-code-coverage -Xswiftc -warnings-as-errors
 coverage_dir="$(swift build --show-bin-path)/codecov"
 mkdir -p "$coverage_dir"
