@@ -22,28 +22,24 @@ public struct StructuredObject: Equatable, Sendable {
         else {
             return nil
         }
-        var index = 0
-        while index < scanner.units.count {
-            if let end = scanner.ignored(at: index) {
-                index = end
-                continue
-            }
-            guard scanner.units[index] == 35,
-                  let call = scanner.call(at: index + 1),
-                  ["table", "image", "figure", "align"].contains(call.name)
+        var found: Self?
+        _ = scanner.scan(from: 0, frames: []) { index in
+            guard let call = scanner.call(at: index + 1), ["table", "image", "figure", "align"].contains(call.name)
             else {
-                index += 1
-                continue
+                return nil
             }
             let range = NSRange(location: index, length: call.end - index)
-            if selection.location >= index, NSMaxRange(selection) <= call.end,
+            // An attached content block is one more argument. Keep such calls in source mode.
+            if call.end == scanner.units.count || scanner.units[call.end] != 91,
+               selection.location >= index, NSMaxRange(selection) <= call.end,
                let object = parse(scanner.text(range), range: range)
             {
-                return object
+                found = object
+                return scanner.units.count
             }
-            index = call.end
+            return call.end
         }
-        return nil
+        return found
     }
 
     private static func parse(_ original: String, range: NSRange) -> Self? {
@@ -236,6 +232,11 @@ private struct ObjectScanner {
         let end: Int
     }
 
+    enum Mode { case markup, code, math }
+    struct Frame { let closer: UInt16
+        let mode: Mode
+    }
+
     let units: [UInt16]
     init(_ text: String) {
         units = Array(text.utf16)
@@ -247,11 +248,12 @@ private struct ObjectScanner {
         String(decoding: units[range.location ..< NSMaxRange(range)], as: UTF16.self)
     }
 
-    func ignored(at index: Int) -> Int? {
+    /// Escapes, raw text, comments, and (outside markup) strings, which hide every delimiter.
+    func ignored(at index: Int, mode: Mode) -> Int? {
         if units[index] == 92 {
             return min(index + 2, units.count)
         }
-        if units[index] == 34 {
+        if units[index] == 34, mode != .markup {
             var end = index + 1
             while end < units.count {
                 if units[end] == 92 {
@@ -309,29 +311,101 @@ private struct ObjectScanner {
     }
 
     func balanced(at start: Int) -> Int? {
-        let closing: [UInt16: UInt16] = [40: 41, 91: 93, 123: 125]
-        guard let first = closing[units[start]] else {
+        guard let frame = Self.frame(units[start], in: .code) else {
             return nil
         }
-        var stack = [first], index = start + 1
+        return scan(from: start + 1, frames: [frame])
+    }
+
+    /// Walks the source with each open delimiter's lexical mode: `"` starts a string only in code
+    /// and math, and `#` starts embedded code in markup and math. With open `frames`, returns the
+    /// index after the outermost one closes, or nil for unbalanced or unsupported input. Without
+    /// frames it leniently scans a whole document and offers each embedded `#` to `visit`, which
+    /// may return the index to continue from.
+    func scan(from start: Int, frames initial: [Frame], visit: (Int) -> Int? = { _ in nil }) -> Int? {
+        let strict = !initial.isEmpty
+        var frames = initial, index = start
         while index < units.count {
-            if let end = ignored(at: index) {
+            let mode = frames.last?.mode ?? .markup, unit = units[index]
+            if let end = ignored(at: index, mode: mode) {
                 index = end
                 continue
             }
-            if let end = closing[units[index]] {
-                stack.append(end)
-            } else if [41, 93, 125].contains(units[index]) {
-                guard stack.popLast() == units[index] else {
+            if unit == frames.last?.closer || unit == 59 && frames.last?.closer == 10 {
+                frames.removeLast()
+                index += 1
+                if strict, frames.isEmpty {
+                    return index
+                }
+                continue
+            }
+            if mode != .code, unit == 35 {
+                if let end = visit(index) {
+                    index = end
+                    continue
+                }
+                guard let end = embedded(at: index + 1, frames: &frames, strict: strict) else {
                     return nil
                 }
-                if stack.isEmpty {
-                    return index + 1
+                index = end
+                continue
+            }
+            if let frame = Self.frame(unit, in: mode) {
+                frames.append(frame)
+            } else if [41, 93, 125].contains(unit) {
+                guard !strict else {
+                    return nil
+                }
+                // Recover from prose such as "1)" by closing back to the matching delimiter.
+                if let match = frames.lastIndex(where: { $0.closer == unit }) {
+                    frames.removeSubrange(match...)
                 }
             }
             index += 1
         }
-        return nil
+        return strict ? nil : units.count
+    }
+
+    /// Consumes the start of the code after a markup `#`: a string, an identifier chain, and an
+    /// attached delimiter. Statements such as `#let` run to the end of the line; inside content
+    /// they stay in source mode.
+    private func embedded(at start: Int, frames: inout [Frame], strict: Bool) -> Int? {
+        guard start < units.count else {
+            return start
+        }
+        if units[start] == 34 {
+            return ignored(at: start, mode: .code)
+        }
+        var index = start
+        while index < units.count, (48 ... 57).contains(units[index]) || (65 ... 90).contains(units[index])
+            || (97 ... 122).contains(units[index]) || [45, 46, 95].contains(units[index])
+        {
+            index += 1
+        }
+        let name = text(NSRange(location: start, length: index - start))
+        if ["let", "set", "show", "import", "include", "if", "for", "while", "return", "context"].contains(name) {
+            guard !strict else {
+                return nil
+            }
+            frames.append(Frame(closer: 10, mode: .code))
+            return index
+        }
+        if index < units.count, [40, 91, 123].contains(units[index]), let frame = Self.frame(units[index], in: .code) {
+            frames.append(frame)
+            return index + 1
+        }
+        return index
+    }
+
+    /// Parentheses and braces keep the surrounding mode; brackets hold markup and `$` math.
+    static func frame(_ unit: UInt16, in mode: Mode) -> Frame? {
+        switch unit {
+        case 40: Frame(closer: 41, mode: mode)
+        case 91: Frame(closer: 93, mode: .markup)
+        case 123: Frame(closer: 125, mode: mode)
+        case 36: Frame(closer: 36, mode: .math)
+        default: nil
+        }
     }
 
     func call(at start: Int) -> Call? {
@@ -348,11 +422,11 @@ private struct ObjectScanner {
         var args: [String] = [], from = index + 1
         index += 1
         while index < end - 1 {
-            if let ignored = ignored(at: index) {
+            if let ignored = ignored(at: index, mode: .code) {
                 index = ignored
                 continue
             }
-            if [40, 91, 123].contains(units[index]), let nested = balanced(at: index) {
+            if [36, 40, 91, 123].contains(units[index]), let nested = balanced(at: index) {
                 index = nested
                 continue
             }

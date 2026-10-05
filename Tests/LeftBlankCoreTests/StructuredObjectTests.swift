@@ -85,4 +85,79 @@ struct StructuredObjectTests {
         object.width = "80%); read(\"secret\")"
         #expect(throws: ObjectEditError.self) { try object.replacement(in: source) }
     }
+
+    @Test func quotesInMarkupArePlainTextAndCodeStringsStayOpaque() throws {
+        let table = #"#table(columns: 2, [Model], [Size], [A], [13"], [B], [15"])"#
+        for prose in ["", #"A 13" screen. "#, #"Two "quoted" words. "#] {
+            let source = prose + table
+            let object = try #require(StructuredObject.at(
+                NSRange(location: prose.utf16.count + 3, length: 0),
+                in: source,
+            ))
+            #expect(object.rows == [["Model", "Size"], ["A", #"13""#], ["B", #"15""#]])
+        }
+        let odd = try #require(StructuredObject.at(
+            NSRange(location: 3, length: 0),
+            in: #"#table(columns: 2, [A], [13"], [B], [x])"#,
+        ))
+        #expect(odd.rows == [["A", #"13""#], ["B", "x"]])
+        let nested = try #require(StructuredObject.at(
+            NSRange(location: 3, length: 0),
+            in: #"#table(columns: 1, [#text("]")], [b])"#,
+        ))
+        #expect(nested.rows == [[#"#text("]")"#], ["b"]])
+        for (prefix, path) in [
+            (#"He said "hi. "#, "a.png"), (#"#text("a\"b") "#, "b.png"),
+            (#"#let note = [#image("c.png")]"# + "\n", "c.png"),
+            (#"#let s = "13\" (["; #text("]") "# + "\n", "d.png"),
+        ] {
+            let source = prefix + #"#image("\#(path)")"#
+            let object = StructuredObject.at(NSRange(location: source.utf16.count - 3, length: 0), in: source)
+            #expect(object?.path == path, "\(source)")
+        }
+        let escaped = try #require(StructuredObject.at(NSRange(location: 2, length: 0), in: #"#image("a\"].png")"#))
+        #expect(escaped.path == #"a"].png"#)
+        // Strings that span cell delimiters, statements in cells, and code strings are never parsed as objects.
+        for source in [
+            #"#table(columns: 2, [#"a], [b"])"#, #"#table(columns: 2, [$"], ["$])"#,
+            #"#table(columns: 1, [#let x = "]"])"#, ##"#let s = "#image(\"a.png\")""##,
+        ] {
+            #expect(StructuredObject.at(NSRange(location: source.utf16.count - 4, length: 0), in: source) == nil)
+        }
+    }
+
+    @Test func quoteTypedIntoCellAppliesAndDeletionsKeepEveryCell() throws {
+        let source = "#table(columns: 1, [A])"
+        var typed = try #require(StructuredObject.at(NSRange(location: 2, length: 0), in: source))
+        typed.rows[0][0] = #"13" "wide""#
+        let applied = try typed.replacement(in: source).text
+        #expect(StructuredObject.at(NSRange(location: 2, length: 0), in: applied)?.rows == [[#"13" "wide""#]])
+        let table = #"#table(columns: 2, [Model], [Size], [A], [13"], [B], [15"])"#
+        let original = try #require(StructuredObject.at(NSRange(location: 3, length: 0), in: table))
+        var column = original
+        for row in column.rows.indices {
+            column.rows[row].remove(at: 1)
+        }
+        let narrowed = try TextEditing.applying([column.replacement(in: table)], to: table)
+        #expect(StructuredObject.at(NSRange(location: 3, length: 0), in: narrowed)?.rows == [["Model"], ["A"], ["B"]])
+        var row = original
+        row.rows.remove(at: 1)
+        let shortened = try TextEditing.applying([row.replacement(in: table)], to: table)
+        #expect(StructuredObject.at(NSRange(location: 3, length: 0), in: shortened)?.rows
+            == [["Model", "Size"], ["B", #"15""#]])
+    }
+
+    @Test func attachedContentBlockKeepsTheCallInSourceMode() throws {
+        let source = "#table(columns: 1, [a])[b]"
+        for location in [3, source.utf16.count - 2] {
+            #expect(StructuredObject.at(NSRange(location: location, length: 0), in: source) == nil)
+        }
+        let spaced = "#table(columns: 1, [a]) [b]"
+        #expect(StructuredObject.at(NSRange(location: 3, length: 0), in: spaced)?.rows == [["a"]])
+        let wrapped = "#align(center)[#table(columns: 1, [a])]"
+        #expect(StructuredObject.at(NSRange(location: 3, length: 0), in: wrapped) == nil)
+        let inner = try #require(StructuredObject.at(NSRange(location: 20, length: 0), in: wrapped))
+        #expect(inner.range == NSRange(location: 15, length: 23))
+        #expect(inner.rows == [["a"]])
+    }
 }
