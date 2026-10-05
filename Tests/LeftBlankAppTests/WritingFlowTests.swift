@@ -512,6 +512,11 @@ final class WritingFixture {
         while !condition(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(30))
         }
+        if !condition() {
+            let log = workspace.stateDirectory.appendingPathComponent("Logs/events.jsonl")
+            let events = (try? String(contentsOf: log, encoding: .utf8)) ?? "No operation log"
+            print("Native UI timeout diagnostics:\n" + events.suffix(12000))
+        }
         try #require(
             condition(),
             "App feature did not reach its expected state before timeout. Status: \(workspace.serviceStatus), message: \(workspace.message ?? "none")",

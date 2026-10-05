@@ -1821,8 +1821,11 @@ extension Workspace {
             else {
                 return nil
             }
-            return LanguageAssistance.hover(result)
+            let help = LanguageAssistance.hover(result)
+            recordOperation("hover.response", ["hasHelp": String(help != nil)])
+            return help
         } catch {
+            recordOperation("hover.failed", ["error": error.localizedDescription])
             // Passive help never interrupts writing with connection/error messages.
             return nil
         }
