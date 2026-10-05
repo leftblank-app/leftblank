@@ -3,11 +3,14 @@ import Foundation
 public enum DocumentStorageError: LocalizedError {
     case externalChange
     case invalidUTF8
+    case readOnlyPackage
     public var errorDescription: String? {
         switch self {
         case .externalChange: L10n
             .text("Another app changed this file. Your work is safe; reload from disk or save a copy.")
         case .invalidUTF8: L10n.text("This file's text encoding is unsupported. Please use UTF-8.")
+        case .readOnlyPackage: L10n
+            .text("Package source is read-only. Save a copy outside the package folder to edit it.")
         }
     }
 }
@@ -31,9 +34,13 @@ public enum DocumentStorage {
         }
     }
 
-    public static func write(_ text: String, to url: URL, baseline: DiskBaseline?) throws -> DiskBaseline {
+    public static func write(
+        _ text: String, to url: URL, baseline: DiskBaseline?, packageCache: URL? = nil,
+    ) throws -> DiskBaseline {
+        try PackageSource.requireWritable(url, packageCache: packageCache)
         try LibraryCloudEnvironment.requestDownloadIfNeeded(url)
         return try CoordinatedFileAccess.write(url) { coordinatedURL in
+            try PackageSource.requireWritable(coordinatedURL, packageCache: packageCache)
             if let baseline {
                 let disk = try? Data(contentsOf: coordinatedURL)
                 guard disk == baseline.data else {

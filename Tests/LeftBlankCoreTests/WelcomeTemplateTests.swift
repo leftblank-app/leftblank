@@ -5,13 +5,18 @@ import PDFKit
 import Testing
 
 @Test(.enabled(if: ProcessInfo.processInfo.environment["LEFTBLANK_INTEGRATION"] == "1"))
-func bundledWelcomeCompilesWithFreshPackagesAndBlockedRegistry() throws {
+func bundledWelcomeCompilesWithRepairedPackagesAndBlockedRegistry() throws {
     let root = TestPaths.temporaryDirectory.appendingPathComponent("welcome-offline-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent()
     let cache = root.appendingPathComponent("packages")
+    try BundledPackages.prepare(in: cache, resources: repo.appendingPathComponent("Resources/Packages"))
+    // Reproduce package files accidentally edited through diagnostic navigation.
+    try Data("= Accidentally pasted document".utf8)
+        .write(to: cache.appendingPathComponent("preview/cetz/0.5.2/src/draw/shapes.typ"))
+    try Data().write(to: cache.appendingPathComponent("preview/cetz/0.5.2/src/anchor.typ"))
     try BundledPackages.prepare(in: cache, resources: repo.appendingPathComponent("Resources/Packages"))
     try WelcomeDocument.prepareAssets(in: root)
     #expect(try Data(contentsOf: root.appendingPathComponent(WelcomeDocument.markFilename)) ==

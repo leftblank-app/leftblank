@@ -31,7 +31,7 @@ struct ManuscriptView: NSViewRepresentable {
         storage.delegate = context.coordinator
         editor.isRichText = false
         editor.registerForDraggedTypes(ResourcePasteboard.types)
-        editor.isEditable = true
+        editor.isEditable = workspace.editorIsEditable
         editor.isSelectable = true
         editor.allowsUndo = true
         editor.isAutomaticQuoteSubstitutionEnabled = false
@@ -68,6 +68,7 @@ struct ManuscriptView: NSViewRepresentable {
             return
         }
         workspace.editor = editor
+        editor.isEditable = workspace.editorIsEditable
         editor.setAccessibilityLabel(L10n.text("Document Editor"))
         if editor.workspaceRevision != workspace.revision, !editor.hasMarkedText() {
             editor.load(
@@ -467,7 +468,7 @@ final class ManuscriptTextView: NSTextView {
     }
 
     func insertSnippet(_ snippet: Snippet, replacing range: NSRange, focus: Bool = true) {
-        guard range.location >= 0, range.location <= string.utf16.count,
+        guard workspace?.canEditSource != false, range.location >= 0, range.location <= string.utf16.count,
               range.length >= 0, range.length <= string.utf16.count - range.location
         else {
             return
@@ -494,6 +495,9 @@ final class ManuscriptTextView: NSTextView {
     }
 
     override func shouldChangeText(in affectedCharRange: NSRange, replacementString: String?) -> Bool {
+        guard workspace?.canEditSource != false else {
+            return false
+        }
         let accepted = super.shouldChangeText(in: affectedCharRange, replacementString: replacementString)
         if accepted {
             observeUndoManager()

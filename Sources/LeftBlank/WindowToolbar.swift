@@ -15,9 +15,11 @@ final class WindowToolbar: NSObject, NSToolbarDelegate {
     init(workspace: Workspace) {
         self.workspace = workspace
         super.init()
-        Publishers.CombineLatest(workspace.$managedTitle, workspace.$fileURL)
+        Publishers.CombineLatest3(workspace.$managedTitle, workspace.$fileURL, workspace.$isPackageSource)
             .receive(on: RunLoop.main).sink { [weak self] _ in self?.resizeTitle() }.store(in: &subscriptions)
         NotificationCenter.default.publisher(for: NSWindow.didResizeNotification, object: workspace.window)
+            .sink { [weak self] _ in self?.resizeTitle() }.store(in: &subscriptions)
+        NotificationCenter.default.publisher(for: .leftblankLanguageChanged)
             .sink { [weak self] _ in self?.resizeTitle() }.store(in: &subscriptions)
         resizeTitle()
     }
@@ -30,7 +32,10 @@ final class WindowToolbar: NSObject, NSToolbarDelegate {
         // Reserve traffic lights, native toolbar spacing and the fixed actions.
         // A short title hugs its content; long names can use the remaining space.
         let available = max(120, (workspace.window?.frame.width ?? 820) - 340)
-        let width = min(available, max(160, ceil(textWidth) + 64))
+        let badgeWidth = workspace.isPackageSource ?
+            (L10n.text("Read-only") as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 10)])
+            .width + 36 : 0
+        let width = min(available, max(160, ceil(textWidth + badgeWidth) + 64))
         if titleSize.width != width {
             titleSize.width = width
         }
@@ -94,24 +99,57 @@ private struct DocumentTitle: View {
         HStack(spacing: 8) {
             QuietButton(icon: "files", help: L10n.text("Your writing"), shortcut: "⌘O") { workspace.openLibrary() }
                 .accessibilityIdentifier("toolbar.library")
-            EditableDocumentName(
-                title: workspace.title,
-                documentID: workspace.managedDocumentID,
-                onOpen: { workspace.openLibrary() },
-                onRename: { [id = workspace.managedDocumentID] title in
-                    guard let id else {
-                        return
-                    }
-                    workspace.library.perform { try await workspace.library.rename(id, title: title) }
-                },
-                onFinish: { workspace.editor?.window?.makeFirstResponder(workspace.editor) },
-            )
-            .frame(height: 16).frame(height: 30)
-            .learningHelp(L10n.text("Click to rename. Double-click to open your writing."))
+            if workspace.isPackageSource {
+                Text(workspace.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1).truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help(workspace.fileURL?.path ?? workspace.title)
+                ReadOnlyPackageBadge()
+            } else {
+                EditableDocumentName(
+                    title: workspace.title,
+                    documentID: workspace.managedDocumentID,
+                    onOpen: { workspace.openLibrary() },
+                    onRename: { [id = workspace.managedDocumentID] title in
+                        guard let id else {
+                            return
+                        }
+                        workspace.library.perform { try await workspace.library.rename(id, title: title) }
+                    },
+                    onFinish: { workspace.editor?.window?.makeFirstResponder(workspace.editor) },
+                )
+                .frame(height: 16).frame(height: 30)
+                .learningHelp(L10n.text("Click to rename. Double-click to open your writing."))
+            }
             if workspace.text != workspace.savedText, workspace.fileURL != nil {
                 Circle().fill(Theme.accent).frame(width: 5, height: 5).accessibilityLabel(L10n.text("Unsaved"))
             }
         }.frame(height: 30).foregroundStyle(Theme.text)
+    }
+}
+
+struct ReadOnlyPackageBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "lock")
+                .font(.system(size: 10, weight: .medium))
+                .accessibilityHidden(true)
+            Text(L10n.text("Read-only"))
+                .font(.system(size: 10, weight: .medium))
+        }
+        .foregroundStyle(Theme.secondary)
+        .padding(.horizontal, 7).padding(.vertical, 3)
+        .background(Theme.secondary.opacity(0.08), in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.border.opacity(0.7), lineWidth: 0.5))
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L10n.text("Read-only Package"))
+        .accessibilityIdentifier("toolbar.read-only")
+        .learningHelp(
+            L10n.text("Read-only Package"),
+            detail: L10n.text("You can view and copy package source. Save a copy to edit it."),
+        )
     }
 }
 

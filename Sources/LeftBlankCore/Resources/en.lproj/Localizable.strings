@@ -810,3 +810,9 @@
 "The iCloud account changed. Your writing is preserved. Check iCloud settings before continuing sync." = "The iCloud account changed. Your writing is preserved. Check iCloud settings before continuing sync.";
 
 "Close other windows before changing iCloud Sync." = "Close other windows before changing iCloud Sync.";
+
+"Read-only Package" = "Read-only Package";
+"Close Document" = "Close Document";
+"Package source is read-only. Save a copy outside the package folder to edit it." = "Package source is read-only. Save a copy outside the package folder to edit it.";
+"Read-only" = "Read-only";
+"You can view and copy package source. Save a copy to edit it." = "You can view and copy package source. Save a copy to edit it.";

@@ -237,8 +237,7 @@ final class LibraryController: ObservableObject {
         defer {
             if wasActive {
                 workspace.documentTransitionInProgress = false
-                workspace.editor?.isEditable = !workspace.isLibraryHome && workspace.layout != .preview && !workspace
-                    .paletteOpen
+                workspace.editor?.isEditable = workspace.editorIsEditable
             }
         }
         if wasActive {
@@ -419,7 +418,7 @@ final class LibraryController: ObservableObject {
         workspace.editor?.isEditable = false
         defer {
             workspace.documentTransitionInProgress = false
-            workspace.editor?.isEditable = workspace.layout != .preview && !workspace.paletteOpen
+            workspace.editor?.isEditable = workspace.editorIsEditable
         }
         let report = try await store.setICloudEnabled(enabled)
         cloudEnabled = report.isICloud

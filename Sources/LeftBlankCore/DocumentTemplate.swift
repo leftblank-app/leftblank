@@ -59,17 +59,32 @@ public enum BundledPackages {
         ] {
             let path = "preview/\(name)/\(version)"
             let destination = cache.appendingPathComponent(path)
-            guard !manager.fileExists(atPath: destination.path) else {
-                continue
-            }
+            let bundled = source.appendingPathComponent(path)
             try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let staging = destination.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString)")
-            defer { try? manager.removeItem(at: staging) }
-            try manager.copyItem(at: source.appendingPathComponent(path), to: staging)
-            // Two windows/processes may reach this once. A completed version wins.
-            do { try manager.moveItem(at: staging, to: destination) }
-            catch {
-                if !manager.fileExists(atPath: destination.path) {
+            // Serialize validation and replacement across windows/processes.
+            try CoordinatedFileAccess.write(destination) { destination in
+                guard !manager.contentsEqual(atPath: bundled.path, andPath: destination.path) else {
+                    return
+                }
+                let staging = destination.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString)")
+                defer { try? manager.removeItem(at: staging) }
+                try manager.copyItem(at: bundled, to: staging)
+                var backup: URL?
+                if manager.fileExists(atPath: destination.path) {
+                    let saved = cache.deletingLastPathComponent()
+                        .appendingPathComponent("PackageBackups/\(UUID().uuidString)/\(path)")
+                    try manager.createDirectory(
+                        at: saved.deletingLastPathComponent(),
+                        withIntermediateDirectories: true,
+                    )
+                    try manager.moveItem(at: destination, to: saved)
+                    backup = saved
+                }
+                do { try manager.moveItem(at: staging, to: destination) }
+                catch {
+                    if let backup {
+                        try? manager.moveItem(at: backup, to: destination)
+                    }
                     throw error
                 }
             }

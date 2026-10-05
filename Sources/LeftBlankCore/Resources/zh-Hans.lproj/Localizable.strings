@@ -810,3 +810,9 @@
 "The iCloud account changed. Your writing is preserved. Check iCloud settings before continuing sync." = "iCloud 账户已更改。你的文稿已保留。请检查 iCloud 设置后再继续同步。";
 
 "Close other windows before changing iCloud Sync." = "请先关闭其他窗口，再更改 iCloud 同步设置。";
+
+"Read-only Package" = "扩展包源码（只读）";
+"Close Document" = "关闭当前文件";
+"Package source is read-only. Save a copy outside the package folder to edit it." = "扩展包源码为只读。如需编辑，请将副本保存到扩展包目录之外。";
+"Read-only" = "只读";
+"You can view and copy package source. Save a copy to edit it." = "可查看和复制扩展包源码。另存副本后可编辑。";
