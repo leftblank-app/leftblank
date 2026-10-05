@@ -45,10 +45,16 @@ jobs:
           swift --version
       - name: Functional integration tests and 80% coverage gate
         run: scripts/test.sh
-      - name: Upload application coverage to Codecov
+      - name: Download and verify Codecov CLI
+        id: codecov-cli
         if: ${{ !cancelled() && hashFiles('build/coverage/codecov.lcov') != '' }}
+        run: scripts/prepare-codecov.sh
+      - name: Upload application coverage to Codecov
+        if: ${{ !cancelled() && steps.codecov-cli.outcome == 'success' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
+          # prepare-codecov.sh verifies the pinned SHA-256 before execution.
+          binary: .tools/codecov
           # Fork PRs use Codecov's public-repository tokenless upload support.
           use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           files: build/coverage/codecov.lcov
@@ -411,10 +417,15 @@ jobs:
           python3 scripts/ipad_coverage.py --minimum 80 --result \
             build/iPad-results/ipad-writing-11-inch-light/11-inch.xcresult \
             build/iPad-results/ipad-writing-13-inch-dark/13-inch.xcresult
-      - name: Upload iPad application coverage to Codecov
+      - name: Download and verify Codecov CLI
+        id: codecov-cli
         if: ${{ !cancelled() && hashFiles('build/iPad-coverage/codecov.lcov') != '' }}
+        run: scripts/prepare-codecov.sh
+      - name: Upload iPad application coverage to Codecov
+        if: ${{ !cancelled() && steps.codecov-cli.outcome == 'success' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
+          binary: .tools/codecov
           use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           files: build/iPad-coverage/codecov.lcov
           flags: ipad
