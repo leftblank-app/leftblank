@@ -280,8 +280,16 @@ final class WritingTests: XCTestCase {
         waitForExpectations(timeout: 30)
         app.buttons["Done"].tap()
         app.terminate()
-        let writer = startWriting()
-        expect(writer.textViews["manuscript"].exists) == true
+        launchInLandscape(app)
+        app.buttons["layout-writing"].tap()
+        let editor = app.textViews["manuscript"]
+        expect(editor.waitForExistence(timeout: 10)) == true
+        let original = editor.value as? String ?? ""
+        let addition = "\nPurchased access survives relaunch.\n"
+        editor.tap()
+        editor.typeKey(.downArrow, modifierFlags: .command)
+        editor.typeText(addition)
+        expect(editor.value as? String) == original + addition
     }
 
     func testSubscriptionLegalLinks() throws {
