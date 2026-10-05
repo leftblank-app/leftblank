@@ -659,6 +659,7 @@ final class WritingTests: XCTestCase {
         let search = app.textFields["universe.search"]
         expect(search.waitForExistence(timeout: 10)) == true
         expect(search.placeholderValue) == "Find a resume, paper, presentation…"
+        waitForStableControl(search, in: app)
         search.tap()
         search.typeText("basic-resume")
         let resume = app.descendants(matching: .any)["universe.result.basic-resume"].firstMatch
@@ -693,6 +694,7 @@ final class WritingTests: XCTestCase {
         app.buttons["Writing tools"].tap()
         expect(search.placeholderValue) == "Try diagrams, plots, code blocks…"
         capture("Packages landscape")
+        waitForStableControl(search, in: app)
         search.tap()
         search.typeText("cetz")
         let package = app.descendants(matching: .any)["universe.result.cetz"].firstMatch
