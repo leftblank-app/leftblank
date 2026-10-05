@@ -65,6 +65,28 @@ catalog; narrower windows show detail with a back-to-results action. Selection
 and search survive rotation across this breakpoint. The action bar stays visible
 below the scrollable detail content.
 
+## Editing parity
+
+Mac and iPad share the typing-context scanner, completion selection model, object
+parser and form, and preview reading script. Each platform keeps native editor
+focus, IME, keyboard, touch or pointer behavior, and undo integration.
+
+- Completion appears inline after typing pauses. Hardware keyboards can select
+  candidates with arrows and Tab. Touch targets are at least 44 points on iPad.
+  Multiline function calls receive parameter help. Escape dismisses assistance.
+- **Edit Table or Image…** updates a supported object at the cursor. Table rows,
+  columns, cells, TSV paste, and image resource/width/caption/alignment editing
+  use the same validation on both platforms. Unsupported syntax stays in source.
+- Preview controls provide **Follow Writing**, **Return to Reading**, and zoom.
+  User scrolling pauses follow mode. Page-relative anchors survive scale and
+  layout changes, but do not track paragraph identity through document reflow.
+
+Shared tests cover UTF-16 ranges, stale snapshots, parsing limits, and reading
+state. Mac tests use AppKit and the real Tinymist process. iPad tests use UIKit,
+the embedded engine, and native undo. Both clients test reading anchors in real
+WKWebViews. iPad UI tests cover automatic suggestions, existing-table editing,
+undo/redo and compilation on both supported simulator sizes in main CI.
+
 ## Build and validation
 
 Run from an SSD-backed worktree under `/Volumes/SSD/Developer`:
@@ -100,41 +122,58 @@ xcodebuild -project iPad/LeftBlank.xcodeproj -scheme LeftBlank-iPad \
 ```
 
 Mac and iPad share one `.github/workflows/ci.yml` workflow. Mac regression and
-Mac App Store validation (main only) run alongside the iPad engine/simulator/device
-build matrix. After those iPad prerequisites pass, two UI jobs run the full suite on
-11-inch and 13-inch devices on separate standard macOS runners. The existing
-`build and test` check aggregates Mac and iPad results and rejects failed,
-cancelled or unexpectedly skipped prerequisites. PRs expect the main-only
-App Store check to be skipped; main requires it to pass. Mac regression tests remain in
-`scripts/test.sh`. Platform build/release boundaries, engine
-tradeoffs and the feature-gap inventory are in [ipad-architecture.md](ipad-architecture.md).
+Mac App Store validation (main only) run alongside the iPad engine, device and
+simulator builds. The simulator build produces the tests every UI job runs.
+iPad validation has two depths:
+
+- **Smoke** (pull requests, or `workflow_dispatch` with `ipad_suite=smoke`):
+  one 11-inch/light UI job runs every native unit test plus the curated UI
+  scenarios in `SMOKE_TESTS` (`scripts/ipad_simulator.py`): writing, split
+  view, autosave, preview, rotation, Welcome rendering and PDF sharing. The
+  whole pull-request workflow is designed to finish within ten minutes.
+- **Full** (main, or `workflow_dispatch` with the default `ipad_suite=full`):
+  11-inch/light and 13-inch/dark UI jobs run every UI scenario and record
+  memory metrics. Separate Address Sanitizer and Thread Sanitizer jobs compile
+  their own products and run the native unit tests in parallel, and the 80%
+  iPad application coverage gate merges both UI results.
+
+The existing `build and test` check aggregates Mac and iPad results and rejects
+failed, cancelled or unexpectedly skipped prerequisites. Smoke runs require the
+full-only coverage and sanitizer jobs to be skipped; full runs require them to
+pass. PRs expect the main-only App Store check to be skipped;
+main requires it to pass. Mac regression tests remain in `scripts/test.sh`.
+Platform build/release boundaries, engine tradeoffs and the feature-gap
+inventory are in [ipad-architecture.md](ipad-architecture.md).
 
 ```mermaid
 flowchart LR
     mac[Mac regression] --> gate[build and test]
     store[Mac App Store validation - main only] --> gate
-    builds[iPad engine and simulator/device builds] --> small[11-inch UI]
-    builds --> large[13-inch UI]
-    small --> gate
-    large --> gate
+    checks[iPad engine and device builds] --> gate
+    build[iPad simulator build] --> ui[11-inch UI; full adds 13-inch] --> gate
+    ui --> coverage[Full: 80% coverage] --> gate
+    build --> memory[Full: Address and Thread Sanitizers] --> gate
 ```
 
 Successful compilation is cached before UI testing, so a failed UI test does not
 discard the Rust build. Cache uploads are bounded and optional. The simulator
-build produces an `.xctestrun` bundle once. Its Products directory is transferred
-in a compressed tar archive, preserving executable permissions and symlinks.
-The intermediate artifact is retained for one day. Both UI runners consume this
-same build without resolving or rebuilding packages. Each invocation of
-`scripts/ipad_simulator.py --size <11-inch|13-inch>` selects and boots only its
-requested size on the newest available iOS runtime, then shuts it down after
-testing. The two sizes cannot compete for resources on the same machine.
+build produces an `.xctestrun` bundle once. Its Products directory is
+transferred in a compressed tar archive, preserving executable permissions and
+symlinks. The intermediate artifact is retained for one day. UI runners
+consume this same build without resolving or rebuilding packages. Each
+invocation of `scripts/ipad_simulator.py --size <11-inch|13-inch>` selects and
+boots only its requested size on the newest available iOS runtime, then shuts it
+down after testing. The two sizes cannot compete for resources on the same
+machine. A disposable simulator boots, receives its appearance, shuts down and
+boots again before testing: an iOS 26 first boot can leave rotation broken and
+ran tests measurably slower.
 Each UI runner selects Xcode 26.3 system-wide as well as through `DEVELOPER_DIR`
 before contacting CoreSimulator. Its first device query has a three-minute
 limit for service initialization and runtime mounting; later inventory checks
 retain a 30-second limit. This is an upper bound, not a fixed wait.
-Boot readiness is limited to four minutes, UI execution to twelve minutes per
-device, and shutdown to one minute. Each UI step is limited to 23 minutes and
-its job to 35 minutes, including artifact transfer and result upload.
+Boot readiness is limited to four minutes, test startup to ten minutes, UI
+execution to 25 minutes for the full suite and ten for smoke, and shutdown to
+two minutes.
 Boot monitoring prints migration progress. Failures include bounded device,
 memory, process, Xcode and CoreSimulator service diagnostics, including failures
 during initial device discovery; results are saved separately for each size.
@@ -144,8 +183,13 @@ Xcode verbose test diagnostics are disabled because automatic sysdiagnose can
 add a ten-minute wait after a failure. Test reports, recordings and attachments
 remain in the result bundle; the helper collects the bounded diagnostics above.
 Tests retain 150/180-second default/maximum per-test allowances. Each case stops
-at its first failure; the suite still runs all six cases and terminates the app
-after each one.
+at its first failure; the suite still runs every selected case and terminates
+the app after each one.
+
+UI scenarios launch with `-iPadOpenTemplate <blank|welcome>`, which opens a fresh
+built-in document directly. Template discovery still starts from New Document
+and the real gallery. Waits poll five times per second rather than through
+XCTest's once-per-second predicate expectations.
 
 ## Current evidence and remaining work
 

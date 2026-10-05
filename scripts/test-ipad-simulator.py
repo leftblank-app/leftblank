@@ -100,6 +100,20 @@ class SimulatorContracts(unittest.TestCase):
                 self.assertEqual(create[-2:], ['iPad-Air-13-inch', 'com.apple.CoreSimulator.SimRuntime.iOS-26-2'])
                 self.assertEqual(run.call_args.args[0], ['xcrun', 'simctl', 'delete', identifier])
 
+    def test_every_fresh_device_suite_cold_starts(self):
+        self.prepare_bundle()
+        devices = {'com.apple.CoreSimulator.SimRuntime.iOS-26-2': [dict(DEVICES[0][1], deviceTypeIdentifier='x')]}
+        identifier = '12345678-1234-1234-1234-123456789abc'
+        for suite in ('all', 'smoke', 'unit'):
+            with self.subTest(suite=suite), \
+                 patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'}), \
+                 patch.object(runner, '__file__', str(self.root / 'scripts/ipad_simulator.py')), \
+                 patch.object(runner, 'inventory', return_value=devices), \
+                 patch.object(runner, 'run', return_value=subprocess.CompletedProcess([], 0, stdout=identifier)), \
+                 patch.object(runner, 'test_device', return_value=True) as tests:
+                self.assertEqual(runner.main(['--size', '11-inch', '--fresh-device', '--suite', suite]), 0)
+            self.assertTrue(tests.call_args.kwargs['cold_start'])
+
     def test_fresh_device_rejects_local_default_device_storage(self):
         with patch.dict(os.environ, {'GITHUB_ACTIONS': 'false'}), \
              patch.object(runner, 'inventory') as inventory, contextlib.redirect_stderr(io.StringIO()):
@@ -184,7 +198,7 @@ class SimulatorContracts(unittest.TestCase):
             self.assertTrue(passed)
             self.assertEqual(events, [(operation, device['udid']) for operation in ('bootstatus', 'test', 'shutdown')])
 
-    def test_memory_tests_select_unit_target_and_performance_diagnostics(self):
+    def test_memory_validation_keeps_the_requested_unit_target(self):
         with patch.object(runner, 'run', return_value=subprocess.CompletedProcess([], 0)) as run, \
              patch.object(runner, 'verify_result') as verify, patch.object(runner, 'export_coverage'), \
              patch.object(runner, 'configure_coverage'):
@@ -194,8 +208,24 @@ class SimulatorContracts(unittest.TestCase):
         self.assertIn('-only-testing:LeftBlankTabletTests', command)
         self.assertIn('-derivedDataPath', command)
         self.assertEqual(command[command.index('-enableCodeCoverage') + 1], 'YES')
-        self.assertEqual(command[command.index('-enablePerformanceTestsDiagnostics') + 1], 'YES')
+        self.assertNotIn('-enablePerformanceTestsDiagnostics', command)
         verify.assert_called_once_with(self.root / '11-inch.xcresult', self.root, memory=True)
+
+    def test_full_ui_suite_retains_memory_validation_and_coverage(self):
+        with patch.object(runner, 'run', return_value=subprocess.CompletedProcess([], 0)) as run, \
+             patch.object(runner, 'verify_result') as verify, patch.object(runner, 'export_coverage') as coverage, \
+             patch.object(runner, 'configure_coverage'):
+            self.assertTrue(runner.test_device('11-inch', DEVICES[0][1], self.root / 'test.xctestrun',
+                                             self.root, memory=True))
+        call = next(call for call in run.call_args_list if call.args[0][0] == 'xcodebuild')
+        command = call.args[0]
+        self.assertFalse(any(arg.startswith('-only-testing:') for arg in command))
+        self.assertEqual(command[command.index('-enableCodeCoverage') + 1], 'YES')
+        self.assertNotIn('-enablePerformanceTestsDiagnostics', command)
+        self.assertEqual(call.args[1], 1500)
+        self.assertEqual(call.kwargs['startup_timeout'], 600)
+        verify.assert_called_once_with(self.root / '11-inch.xcresult', self.root, memory=True)
+        coverage.assert_called_once()
 
     def test_custom_memory_products_do_not_reuse_coverage_build(self):
         bundle = self.root / 'build/iPad-memory/address/Build/Products/memory.xctestrun'
@@ -274,6 +304,8 @@ class SimulatorContracts(unittest.TestCase):
 
             def command(args, timeout, **_options):
                 operation = args[2] if args[0] == 'xcrun' else 'test'
+                if operation == 'shutdown':
+                    self.assertEqual(timeout, 120)
                 if operation == 'bootstatus':
                     operation = 'second boot' if 'first boot' in events else 'first boot'
                 if operation == 'ui':
@@ -294,6 +326,55 @@ class SimulatorContracts(unittest.TestCase):
             self.assertEqual(events.count('test'), 1 if failure is None else 0)
             if failure is None:
                 self.assertEqual(events[4:], ['appearance', 'test', 'shutdown'])
+
+    def test_warm_setup_boots_once_before_appearance_verification_and_tests(self):
+        for failure in (None, 'boot', 'appearance'):
+            events = []
+
+            def command(args, timeout, **_options):
+                operation = args[2] if args[0] == 'xcrun' else 'test'
+                if operation == 'bootstatus':
+                    operation = 'boot'
+                if operation == 'ui':
+                    operation = 'set appearance' if len(args) == 6 else 'appearance'
+                events.append(operation)
+                if operation == failure:
+                    raise subprocess.TimeoutExpired(args, timeout)
+                return subprocess.CompletedProcess(args, 0, stdout='Dark\n')
+
+            with self.subTest(failure=failure), patch.object(runner, 'run', side_effect=command), \
+                 patch.object(runner, 'configure_coverage'), patch.object(runner, 'export_coverage'), \
+                 patch.object(runner, 'verify_result'), patch.object(runner, 'diagnostics'):
+                passed = runner.test_device('11-inch', DEVICES[0][1], self.root / 'tests.xctestrun',
+                                            self.root, appearance='dark')
+            self.assertEqual(passed, failure is None)
+            self.assertEqual(events.count('boot'), 1)
+            self.assertEqual(events[-1], 'shutdown')
+            self.assertEqual(events.count('shutdown'), 1)
+            if failure is None:
+                self.assertEqual(events, ['boot', 'set appearance', 'appearance', 'test', 'shutdown'])
+
+    def test_smoke_suite_selects_native_tests_and_curated_ui_scenarios(self):
+        with patch.object(runner, 'run', return_value=subprocess.CompletedProcess([], 0)) as run, \
+             patch.object(runner, 'verify_result'), patch.object(runner, 'export_coverage') as coverage, \
+             patch.object(runner, 'configure_coverage') as configure:
+            self.assertTrue(runner.test_device('13-inch', DEVICES[1][1], self.root / 'test.xctestrun',
+                                             self.root, suite='smoke', coverage=False))
+        call = next(call for call in run.call_args_list if call.args[0][0] == 'xcodebuild')
+        command = call.args[0]
+        selected = [arg.split(':', 1)[1] for arg in command if arg.startswith('-only-testing:')]
+        self.assertEqual(selected, ['LeftBlankTabletTests', *runner.SMOKE_TESTS])
+        self.assertTrue(2 <= len(runner.SMOKE_TESTS) <= 3)
+        scenarios = (Path(__file__).resolve().parent.parent / 'iPad/UITests/WritingTests.swift').read_text()
+        for test in runner.SMOKE_TESTS:
+            target, case, name = test.split('/')
+            self.assertEqual((target, case), ('LeftBlankUITests', 'WritingTests'))
+            self.assertIn(f'func {name}()', scenarios)
+        self.assertEqual(command[command.index('-enableCodeCoverage') + 1], 'NO')
+        self.assertEqual(call.args[1], 600)
+        self.assertEqual(call.kwargs['startup_timeout'], 600)
+        coverage.assert_not_called()
+        configure.assert_not_called()
 
     def test_memory_validation_rejects_missing_workload_metrics(self):
         summary = {'result': 'Passed', 'passedTests': 2, 'failedTests': 0}
@@ -392,6 +473,20 @@ class SimulatorContracts(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'execution timed out'):
             runner.run([sys.executable, '-c', program], 0.3, startup_timeout=3)
         self.assertLess(time.monotonic() - started, 4)
+
+    def test_phased_timeout_allows_result_finalization(self):
+        report = self.root / 'finalized.txt'
+        program = ("import signal, sys, time\n"
+                   "from pathlib import Path\n"
+                   "def finalize(_signum, _frame):\n"
+                   " Path(sys.argv[1]).write_text('failure attachments saved')\n"
+                   " raise SystemExit(0)\n"
+                   "signal.signal(signal.SIGINT, finalize)\n"
+                   "print(\"Test Suite 'All tests' started at now\", flush=True)\n"
+                   "time.sleep(30)\n")
+        with self.assertRaisesRegex(RuntimeError, 'execution timed out'):
+            runner.run([sys.executable, '-c', program, str(report)], 0.3, startup_timeout=3)
+        self.assertEqual(report.read_text(), 'failure attachments saved')
 
     def test_phased_command_failure_is_not_success(self):
         with self.assertRaises(subprocess.CalledProcessError) as failure:

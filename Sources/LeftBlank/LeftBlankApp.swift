@@ -154,27 +154,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             owner.addItem(entry)
         }
         func commandItem(_ id: String, in menu: NSMenu) {
-            guard let command = WritingCommand.all.first(where: { $0.id == id }),
-                  let shortcut = command.shortcuts.first
+            guard let command = WritingCommand.all.first(where: { $0.id == id })
             else {
                 return
             }
+            let shortcut = command.shortcuts.first
             let entry = NSMenuItem(
                 title: command.title,
                 action: #selector(runWritingCommand(_:)),
-                keyEquivalent: shortcut.key,
+                keyEquivalent: shortcut?.key ?? "",
             )
             var flags: NSEvent.ModifierFlags = []
-            if shortcut.modifiers.contains(.command) {
+            if shortcut?.modifiers.contains(.command) == true {
                 flags.insert(.command)
             }
-            if shortcut.modifiers.contains(.shift) {
+            if shortcut?.modifiers.contains(.shift) == true {
                 flags.insert(.shift)
             }
-            if shortcut.modifiers.contains(.option) {
+            if shortcut?.modifiers.contains(.option) == true {
                 flags.insert(.option)
             }
-            if shortcut.modifiers.contains(.control) {
+            if shortcut?.modifiers.contains(.control) == true {
                 flags.insert(.control)
             }
             entry.keyEquivalentModifierMask = flags
@@ -253,6 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         for id in [
             "quickHelp",
             "contextActions",
+            "editObject",
             "definition",
             "navigateBack",
             "indent",

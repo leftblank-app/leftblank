@@ -5,18 +5,21 @@ import WebKit
 struct PreviewView: NSViewRepresentable {
     let url: URL
     let zoom: CGFloat
+    var maxPageWidth: CGFloat?
     var dark = false
+    @ObservedObject var readingSession = PreviewReadingSession()
     var onLoading: () -> Void = {}
     var onReady: () -> Void = {}
     var onError: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onLoading: onLoading, onReady: onReady, onError: onError)
+        Coordinator(readingSession: readingSession, onLoading: onLoading, onReady: onReady, onError: onError)
     }
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.userContentController.add(context.coordinator, name: "leftblankPreviewReady")
+        config.userContentController.add(context.coordinator, name: "leftblankPreviewReading")
         let css = PreviewScripts.setup(
             canvas: PreviewWebView.chromeColor(for: NSApp.effectiveAppearance),
             scheme: PreviewWebView.chromeScheme(for: NSApp.effectiveAppearance),
@@ -27,7 +30,10 @@ struct PreviewView: NSViewRepresentable {
             forMainFrameOnly: true,
         ))
         let view = PreviewWebView(frame: .zero, configuration: config)
-        view.onWillLoad = { [weak coordinator = context.coordinator] in coordinator?.onLoading() }
+        view.onWillLoad = { [weak coordinator = context.coordinator] in
+            coordinator?.readingSession.prepareReload()
+            coordinator?.onLoading()
+        }
         view.navigationDelegate = context.coordinator
         view.applyChromeAppearance()
         view.setAccessibilityLabel(L10n.text("Document Preview"))
@@ -37,16 +43,25 @@ struct PreviewView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: WKWebView, context: Context) {
+        context.coordinator.readingSession = readingSession
         context.coordinator.onLoading = onLoading
         context.coordinator.onReady = onReady
         view.setAccessibilityLabel(L10n.text("Document Preview"))
         context.coordinator.zoom = zoom
+        context.coordinator.maxPageWidth = maxPageWidth
         context.coordinator.dark = dark
         if context.coordinator.loadedURL != url {
             context.coordinator.loadedURL = url
             view.load(URLRequest(url: url))
         }
         context.coordinator.applyZoom(to: view)
+        context.coordinator.restoreReading(in: view)
+    }
+
+    static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) {
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "leftblankPreviewReady")
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "leftblankPreviewReading")
+        view.navigationDelegate = nil
     }
 
     @MainActor final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
@@ -58,19 +73,25 @@ struct PreviewView: NSViewRepresentable {
             }
         }
 
+        var readingSession: PreviewReadingSession
+        private var restoringID: UUID?
         var zoom: CGFloat = 1
+        var maxPageWidth: CGFloat?
         var dark = false
         private var appliedZoom: CGFloat?
+        private var appliedMaxPageWidth: CGFloat?
         private var appliedDark: Bool?
         private var recoveredTermination = false
         let onError: (String) -> Void
         var onLoading: () -> Void
         var onReady: () -> Void
         init(
+            readingSession: PreviewReadingSession = .init(),
             onLoading: @escaping () -> Void = {},
             onReady: @escaping () -> Void = {},
             onError: @escaping (String) -> Void,
         ) {
+            self.readingSession = readingSession
             self.onLoading = onLoading
             self.onReady = onReady
             self.onError = onError
@@ -80,33 +101,81 @@ struct PreviewView: NSViewRepresentable {
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage,
         ) {
-            if message.name == "leftblankPreviewReady", message.frameInfo.isMainFrame,
-               message.frameInfo.request.url?.port == loadedURL?.port
-            {
+            guard message.frameInfo.isMainFrame, message.frameInfo.request.url == loadedURL else {
+                return
+            }
+            if message.name == "leftblankPreviewReady" {
                 onReady()
+                if let view = message.webView {
+                    restoreReading(in: view)
+                }
+            } else if message.name == "leftblankPreviewReading", let body = message.body as? [String: Any] {
+                receiveReading(body)
             }
         }
 
+        func receiveReading(_ body: [String: Any]) {
+            if body["kind"] as? String == "manualScroll" {
+                readingSession.pauseFollowing()
+            }
+            if let value = body["anchor"],
+               let anchor = PreviewReadingAnchor(message: value)
+            {
+                readingSession.observe(anchor)
+            }
+        }
+
+        func restoreReading(in view: WKWebView) {
+            guard !view.isLoading, let request = readingSession.restore, restoringID != request.id else {
+                return
+            }
+            restoringID = request.id
+            view
+                .evaluateJavaScript("window.leftblankRestoreReading?.(\(request.anchor.javaScript)) ?? false") { [
+                    weak self,
+                ] result, _ in
+                    guard let self, restoringID == request.id else {
+                        return
+                    }
+                    restoringID = nil
+                    if result as? Bool == true {
+                        readingSession.didRestore(request.id)
+                    }
+                }
+        }
+
         func applyZoom(to view: WKWebView) {
-            guard !view.isLoading, appliedZoom != zoom || appliedDark != dark else {
+            guard !view.isLoading,
+                  appliedZoom != zoom || appliedMaxPageWidth != maxPageWidth || appliedDark != dark
+            else {
                 return
             }
             // Tinymist fits pages to this container; browser pageZoom is cancelled by that fit.
+            // Limit the default reading width, while allowing explicit zoom to enlarge it.
             let script = """
             (() => {
                 const container = document.getElementById('typst-container');
                 if (!container) return false;
-                container.style.width = '\(zoom * 100)%';
+                const width = '\(zoom * 100)%';
+                const maxWidth = '\(maxPageWidth.map { "\($0 * zoom)px" } ?? "none")';
+                if (container.style.width !== width || container.style.maxWidth !== maxWidth) {
+                    window.leftblankPrepareResize?.();
+                }
+                container.style.width = width;
+                container.style.maxWidth = maxWidth;
+                container.style.marginInline = 'auto';
                 if (window.leftblankSetDark) window.leftblankSetDark(\(dark ? "true" : "false"));
                 window.dispatchEvent(new Event('resize'));
                 return true;
             })()
             """
             let requestedZoom = zoom
+            let requestedMaxPageWidth = maxPageWidth
             let requestedDark = dark
             view.evaluateJavaScript(script) { [weak self] result, _ in
                 if result as? Bool == true {
                     self?.appliedZoom = requestedZoom
+                    self?.appliedMaxPageWidth = requestedMaxPageWidth
                     self?.appliedDark = requestedDark
                 }
             }
@@ -117,6 +186,7 @@ struct PreviewView: NSViewRepresentable {
             appliedDark = nil
             (webView as? PreviewWebView)?.applyChromeAppearance()
             applyZoom(to: webView)
+            restoreReading(in: webView)
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation?) {
@@ -214,5 +284,31 @@ final class PreviewWebView: WKWebView {
     override func reload() -> WKNavigation? {
         onWillLoad?()
         return super.reload()
+    }
+}
+
+struct PreviewReadingControls: View {
+    @ObservedObject var session: PreviewReadingSession
+    var showFollow = true
+    var onReturn: () -> Void
+
+    var body: some View {
+        if showFollow {
+            Toggle(isOn: $session.followsWriting) {
+                Label(L10n.text("Follow Writing"), systemImage: "cursorarrow.motionlines")
+            }
+            .labelStyle(.iconOnly)
+            .toggleStyle(.button)
+            .accessibilityIdentifier("preview-follow")
+            .help(L10n.text("Pause automatically when you scroll the preview."))
+        }
+        Button { session.returnToReading()
+            onReturn()
+        } label: {
+            Label(L10n.text("Return to Reading"), systemImage: "arrow.uturn.backward")
+        }
+        .labelStyle(.iconOnly)
+        .accessibilityIdentifier("preview-return")
+        .disabled(session.returnAnchor == nil)
     }
 }

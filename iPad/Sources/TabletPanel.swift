@@ -31,6 +31,7 @@ struct TabletPanel: View {
                 case .files: TabletProjectFiles(workspace: workspace)
                 case .projectEntry: TabletProjectEntryPicker(workspace: workspace)
                 case .assistance: TabletAssistanceView(workspace: workspace)
+                case .objectEditor: TabletObjectEditor(workspace: workspace)
                 }
             }
             .navigationTitle(title)
@@ -52,6 +53,7 @@ struct TabletPanel: View {
         case .files: L10n.text("Project Files")
         case .projectEntry: L10n.text("Choose Main File")
         case .assistance: L10n.text("Writing Assistance")
+        case .objectEditor: L10n.text("Edit Table or Image…")
         }
     }
 

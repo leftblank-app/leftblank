@@ -32,8 +32,9 @@ extension JSONValue {
 
 /// A slow or stopped language server must never block native key dispatch.
 /// FIFO preserves didChange/request ordering. A bounded queue prevents a stalled
-/// peer from retaining unlimited document snapshots. Only queue work uses the
-/// handle; the lock protects cancellation and accounting, never blocking I/O.
+/// peer from retaining unlimited document snapshots. The queue owns a duplicate
+/// descriptor so transport shutdown cannot close a handle during a write.
+/// The lock protects cancellation and accounting, never blocking I/O.
 final class JSONRPCWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.leftblank.rpc.write", qos: .userInitiated)
     private let handle: FileHandle
@@ -43,15 +44,20 @@ final class JSONRPCWriter: @unchecked Sendable {
     private var pendingBytes = 0
     private var pendingCount = 0
 
-    init(handle: FileHandle, onFailure: @escaping @Sendable (Error) -> Void) {
-        self.handle = handle
-        self.onFailure = onFailure
+    init(handle: FileHandle, onFailure: @escaping @Sendable (Error) -> Void) throws {
+        let descriptor = fcntl(handle.fileDescriptor, F_DUPFD_CLOEXEC, 0)
+        guard descriptor >= 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EINVAL)
+        }
         // A service can exit between isRunning and the queued write. Keep that
         // broken pipe as an EPIPE error instead of terminating the whole editor.
-        if fcntl(handle.fileDescriptor, F_SETNOSIGPIPE, 1) == -1 {
-            closed = true
-            onFailure(POSIXError(POSIXErrorCode(rawValue: errno) ?? .EINVAL))
+        if fcntl(descriptor, F_SETNOSIGPIPE, 1) == -1 {
+            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EINVAL)
+            Darwin.close(descriptor)
+            throw error
         }
+        self.handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        self.onFailure = onFailure
     }
 
     func send(_ message: JSONValue) throws {

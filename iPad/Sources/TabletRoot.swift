@@ -260,6 +260,7 @@ struct TabletRoot: View {
                     TabletEditor(workspace: workspace)
                         .frame(width: reading ? 0 : sideBySide ? geometry.size.width / 2 : geometry.size.width)
                         .clipped().opacity(reading ? 0 : 1).accessibilityHidden(reading)
+                        .allowsHitTesting(!reading)
                     ZStack {
                         TabletPreview(workspace: workspace)
                         if !workspace.previewReady {
@@ -268,6 +269,28 @@ struct TabletRoot: View {
                                 icon: "file-text",
                                 detail: workspace.previewIssue ?? L10n.text(workspace.serviceStatus),
                             )
+                        }
+                    }.overlay(alignment: .bottomTrailing) {
+                        if reading || sideBySide {
+                            HStack(spacing: 10) {
+                                TabletPreviewReadingControls(session: workspace.previewReading) {
+                                    workspace.layout = workspace.previewReturnLayout == .split && detailWidth >= 800
+                                        ? .split : .preview
+                                }
+                                Button { workspace.previewZoom = max(0.5, workspace.previewZoom - 0.1) } label: {
+                                    Image(systemName: "minus.magnifyingglass")
+                                        .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                                }.accessibilityLabel(L10n.text("Zoom Out")).accessibilityIdentifier("preview-zoom-out")
+                                    .disabled(workspace.previewZoom <= 0.5)
+                                Text("\(Int((workspace.previewZoom * 100).rounded()))%")
+                                    .font(.caption.monospacedDigit())
+                                Button { workspace.previewZoom = min(2, workspace.previewZoom + 0.1) } label: {
+                                    Image(systemName: "plus.magnifyingglass")
+                                        .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                                }.accessibilityLabel(L10n.text("Zoom In")).accessibilityIdentifier("preview-zoom-in")
+                                    .disabled(workspace.previewZoom >= 2)
+                            }.padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                                .padding(8)
                         }
                     }.overlay(alignment: .top) {
                         if workspace.serviceStatus == "Document Needs Attention" {
@@ -288,13 +311,19 @@ struct TabletRoot: View {
                         }
                     }.frame(width: reading ? geometry.size.width : sideBySide ? geometry.size.width / 2 : 0)
                         .clipped().opacity(reading || sideBySide ? 1 : 0).accessibilityHidden(!reading && !sideBySide)
+                        .allowsHitTesting(reading || sideBySide)
                 }
                 HStack {
                     Text(L10n.text(workspace.saveStatus)).accessibilityIdentifier("save-status")
                     Text(L10n.text(workspace.serviceStatus)).accessibilityIdentifier("engine-status")
-                        .accessibilityValue(workspace.previewReady ? L10n.text("Preview Updated") : L10n
+                        .accessibilityValue(workspace.previewReady ? L10n.text(workspace.serviceStatus) : L10n
                             .text("Waiting for Typesetting"))
                     Spacer()
+                    if !reading, !sideBySide {
+                        TabletPreviewReadingControls(session: workspace.previewReading, showFollow: false) {
+                            workspace.layout = .preview
+                        }
+                    }
                     let position = workspace.metrics.position(at: workspace.selection.location)
                     Text("\(position.line + 1):\(position.character + 1)")
                         .accessibilityIdentifier("source-position")
@@ -302,8 +331,9 @@ struct TabletRoot: View {
                     Text(L10n.format("%@ words", String(workspace.metrics.wordCount)))
                     Button { workspace.panel = .checks } label: {
                         TabletIcon(name: workspace.diagnostics.isEmpty ? "check" : "warning-circle", size: 14)
+                            .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                     }
-                    .accessibilityLabel(L10n.text("Check Source")).frame(minWidth: 44, minHeight: 44)
+                    .accessibilityLabel(L10n.text("Check Source"))
                     .accessibilityIdentifier("check-source")
                 }.font(.system(size: 11)).foregroundStyle(.secondary).padding(.horizontal, 14)
                     .background(TabletTheme.background)
@@ -369,6 +399,9 @@ struct TabletRoot: View {
                     Button(L10n.text("Outline")) { workspace.panel = .outline }.keyboardShortcut("4")
                     Button(L10n.text("Project Files")) { workspace.showProjectFiles() }
                         .accessibilityIdentifier("project-files")
+                    Button(L10n.text("Edit Table or Image…")) { workspace.editObjectAtCursor() }
+                        .disabled(!workspace.canWrite || workspace.busy)
+                        .accessibilityIdentifier("edit-object")
                     Menu(L10n.text("Writing Assistance")) {
                         Button(L10n.text("Complete at Cursor")) { workspace.requestAssistance(.completion) }
                         Button(L10n.text("Explain at Cursor")) { workspace.requestAssistance(.help) }

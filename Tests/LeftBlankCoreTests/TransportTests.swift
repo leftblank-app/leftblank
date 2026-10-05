@@ -6,7 +6,7 @@ import Testing
 @Test func stalledPipeDoesNotBlockInputAndPreservesMessageOrder() async throws {
     let pipe = Pipe()
     let received = TransportResults()
-    let writer = JSONRPCWriter(handle: pipe.fileHandleForWriting) { error in received.append(.failure(error)) }
+    let writer = try JSONRPCWriter(handle: pipe.fileHandleForWriting) { error in received.append(.failure(error)) }
     let reader = JSONRPCReader { received.append($0) }
     defer { writer.close()
         pipe.fileHandleForReading.readabilityHandler = nil
@@ -51,7 +51,7 @@ import Testing
 @Test func transportRejectsUnboundedSnapshotsAndInvalidFrames() async throws {
     let pipe = Pipe()
     let results = TransportResults()
-    let writer = JSONRPCWriter(handle: pipe.fileHandleForWriting) { error in results.append(.failure(error)) }
+    let writer = try JSONRPCWriter(handle: pipe.fileHandleForWriting) { error in results.append(.failure(error)) }
     defer { writer.close() }
     #expect(throws: ServiceError.self) { try writer.send(.string(String(repeating: "x", count: 64 * 1024 * 1024))) }
     #expect(throws: EncodingError.self) { try JSONValue(foundation: URL(fileURLWithPath: "/unsupported")) }
@@ -73,7 +73,7 @@ import Testing
 @Test func exitedServiceReportsBrokenPipeWithoutTerminatingEditor() async throws {
     let pipe = Pipe()
     let results = TransportResults()
-    let writer = JSONRPCWriter(handle: pipe.fileHandleForWriting) { results.append(.failure($0)) }
+    let writer = try JSONRPCWriter(handle: pipe.fileHandleForWriting) { results.append(.failure($0)) }
     defer { writer.close() }
     try pipe.fileHandleForReading.close()
     try writer.send(JSONValue(foundation: ["method": "change", "params": ["text": "Still writing"]]))
@@ -89,6 +89,44 @@ import Testing
         return false
     })
     #expect(throws: ServiceError.self) { try writer.send(.null) }
+}
+
+@Test func writerOwnsItsDescriptorUntilQueuedWritesFinish() async throws {
+    let pipe = Pipe()
+    let results = TransportResults()
+    let writer = try JSONRPCWriter(handle: pipe.fileHandleForWriting) { results.append(.failure($0)) }
+    let reader = JSONRPCReader { results.append($0) }
+    defer {
+        writer.close()
+        pipe.fileHandleForReading.readabilityHandler = nil
+    }
+    // EmbeddedTinymist closes the transport handle on stop. A queued write
+    // must still own a valid handle, even if shutdown won that race.
+    try pipe.fileHandleForWriting.close()
+    pipe.fileHandleForReading.readabilityHandler = { handle in
+        let data = handle.availableData
+        if data.isEmpty {
+            handle.readabilityHandler = nil
+            results.append(.success(.null))
+        } else {
+            reader.append(data)
+        }
+    }
+    let message = JSONValue.string(String(repeating: "Queued 中文😀", count: 10000))
+    try writer.send(message)
+    let deadline = ContinuousClock.now + .seconds(5)
+    while results.values.isEmpty, deadline > .now {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(try results.values.first?.get().string == message.string)
+    writer.close()
+    while deadline > .now, results.values.count < 2 {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(results.values.count == 2)
+    if case .null = try results.values.last?.get() {} else {
+        Issue.record("Closing the writer must release its descriptor and deliver EOF")
+    }
 }
 
 private final class TransportResults: @unchecked Sendable {

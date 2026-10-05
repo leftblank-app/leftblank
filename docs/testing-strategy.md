@@ -62,13 +62,14 @@ need separate representative workloads and measured runner baselines.
 
 ## iPad safety checks
 
-Pull requests and main run the iPad simulator unit and UI suites, the separate
-80% application coverage gate, and three memory jobs. The lifecycle job reuses
-the normal simulator products and checks ownership release after repeated
-workspace/editor/engine lifecycles. XCTest memory metrics and performance
-diagnostics are retained in its result bundle. Address Sanitizer and Thread
+Pull requests run the native iPad unit suite and a few curated UI smoke
+scenarios on the 11-inch simulator. Main (and full manual dispatches) run the
+complete UI suite on both sizes, the separate 80% application coverage gate,
+and two sanitizer jobs. The native suite checks ownership release after
+repeated workspace/editor/engine lifecycles; full runs also require its XCTest
+memory metrics, retained in the result bundle. Address Sanitizer and Thread
 Sanitizer each compile separate Swift test products and run the hosted unit
-suite; these tools are mutually exclusive. The compiler treats warnings as
+suite in parallel with UI testing; these tools are mutually exclusive. The compiler treats warnings as
 errors, applies complete Swift concurrency checking, and enables actor runtime
 checks. The normal scheme retains Main Thread Checker. A successful process
 exit with zero executed tests, failed tests, or recorded runtime safety warnings

@@ -293,7 +293,7 @@ public struct WritingCommand: Identifiable, Sendable {
         "outdent": "text-outdent",
         "comment": "chat-text",
         "completion": "magic-wand",
-        "quickHelp": "question", "contextActions": "lightbulb",
+        "quickHelp": "question", "contextActions": "lightbulb", "editObject": "gear",
         "definition": "arrow-elbow-up-right", "navigateBack": "arrow-left",
         "writing": "pencil-simple",
         "split": "sidebar-simple",
@@ -1084,6 +1084,12 @@ public struct WritingCommand: Identifiable, Sendable {
             "Explain at Cursor",
             "Read documentation and function parameters at the cursor.",
             "help hover signature parameters 说明 参数 帮助",
+            isInsertion: false,
+        ),
+        .init(
+            "editObject", "code", "e", "Edit Table or Image…",
+            "Change the table or image at the cursor.",
+            "edit table image rows columns caption 修改 表格 图片 行 列 题注",
             isInsertion: false,
         ),
         .init(

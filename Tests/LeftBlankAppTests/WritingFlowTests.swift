@@ -139,6 +139,19 @@ struct WritingFlowTests {
         #expect(editor.string.contains("#table("))
     }
 
+    @Test func editingBackToSavedContentRestoresSavedStatus() async throws {
+        let original = "= Original\nSaved 中文😀\n"
+        let app = try WritingFixture(text: original)
+        defer { app.close() }
+        try await app.ready()
+        app.workspace.edited("Temporary replacement")
+        app.workspace.edited(original)
+        app.workspace.save()
+        #expect(app.workspace.saveStatus == "Saved")
+        #expect(app.workspace.savedText == original)
+        #expect(try String(contentsOf: app.document, encoding: .utf8) == original)
+    }
+
     @Test func documentSaveConflictReloadAndRecovery() async throws {
         let app = try WritingFixture(text: "= Original\n")
         defer { app.close() }
@@ -494,7 +507,7 @@ final class WritingFixture {
         #expect(workspace.editor != nil)
     }
 
-    func wait(_ condition: () -> Bool) async throws {
+    func wait(sourceLocation: Testing.SourceLocation = #_sourceLocation, _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(15)
         while !condition(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(30))
@@ -502,6 +515,7 @@ final class WritingFixture {
         try #require(
             condition(),
             "App feature did not reach its expected state before timeout. Status: \(workspace.serviceStatus), message: \(workspace.message ?? "none")",
+            sourceLocation: sourceLocation,
         )
     }
 

@@ -25,6 +25,7 @@ struct TabletEditor: UIViewRepresentable {
         view.textContainerInset = UIEdgeInsets(top: 18, left: 24, bottom: 18, right: 24)
         view.accessibilityLabel = L10n.text("Writing")
         view.accessibilityIdentifier = "manuscript"
+        workspace.assistance.onInvalidate = { [weak view] in view?.dismissTypingAssistance() }
         workspace.editor = view
         return view
     }
@@ -32,6 +33,7 @@ struct TabletEditor: UIViewRepresentable {
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.workspace = workspace
         (view as? TabletTextView)?.workspace = workspace
+        workspace.assistance.onInvalidate = { [weak view] in (view as? TabletTextView)?.dismissTypingAssistance() }
         guard view.markedTextRange == nil else {
             return
         }
@@ -52,6 +54,9 @@ struct TabletEditor: UIViewRepresentable {
         let editable = workspace.canWrite && !workspace.busy && workspace.layout != .preview
         if view.isEditable != editable {
             view.isEditable = editable
+            if !editable {
+                workspace.assistance.invalidate()
+            }
         }
         let syntaxReady = workspace.highlightedText == workspace.text
         let syntaxChanged = syntaxReady && coordinator.styledText != workspace.highlightedText
@@ -107,6 +112,7 @@ struct TabletEditor: UIViewRepresentable {
                 return
             }
             workspace.edited(textView.text, selection: textView.selectedRange)
+            (textView as? TabletTextView)?.scheduleTypingAssistance()
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
@@ -119,6 +125,7 @@ struct TabletEditor: UIViewRepresentable {
                 workspace.assistance.invalidate()
                 workspace.selection = textView.selectedRange
             }
+            (textView as? TabletTextView)?.scheduleTypingAssistance()
         }
     }
 }
@@ -126,6 +133,23 @@ struct TabletEditor: UIViewRepresentable {
 @MainActor final class TabletTextView: UITextView, UIDropInteractionDelegate {
     weak var workspace: TabletWorkspace?
     var snippet: SnippetNavigation?
+    var typingTask: Task<Void, Never>?
+    var typingRequestID = UUID()
+    var typingOverlay: UIView?
+    var typingList = CompletionList(items: [], prefix: "")
+    var typingSignature: LanguageSignature?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        positionTypingAssistance()
+    }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if presses.contains(where: { $0.key?.keyCode == .keyboardEscape }) {
+            cancelPendingTypingAssistance()
+        }
+        super.pressesBegan(presses, with: event)
+    }
 
     func clearSnippet() {
         snippet = nil
@@ -236,8 +260,24 @@ struct TabletEditor: UIViewRepresentable {
             command.discoverabilityTitle = L10n.text(title)
             return command
         }
+        // Only visible suggestions take Escape. Pending requests are cancelled in pressesBegan.
+        if typingOverlay != nil, markedTextRange == nil {
+            let bindings: [(String, Selector)] = [
+                (UIKeyCommand.inputEscape, #selector(dismissTypingFromKeyboard)),
+                (UIKeyCommand.inputDownArrow, #selector(nextTypingCompletion)),
+                (UIKeyCommand.inputUpArrow, #selector(previousTypingCompletion)),
+                ("\t", #selector(acceptTypingFromKeyboard)),
+            ]
+            for (input, action) in bindings where input == UIKeyCommand.inputEscape || typingList.selected != nil {
+                let command = UIKeyCommand(input: input, modifierFlags: [], action: action)
+                command.wantsPriorityOverSystemBehavior = true
+                commands.append(command)
+            }
+        }
         if snippet?.current != nil, markedTextRange == nil {
-            for flags in [UIKeyModifierFlags(), UIKeyModifierFlags.shift] {
+            for flags in [UIKeyModifierFlags(), UIKeyModifierFlags.shift]
+                where flags == .shift || typingList.selected == nil
+            {
                 let command = UIKeyCommand(input: "\t", modifierFlags: flags, action: #selector(nextPlaceholder(_:)))
                 command.wantsPriorityOverSystemBehavior = true
                 commands.append(command)
@@ -247,6 +287,11 @@ struct TabletEditor: UIViewRepresentable {
     }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if [#selector(dismissTypingFromKeyboard), #selector(nextTypingCompletion),
+            #selector(previousTypingCompletion), #selector(acceptTypingFromKeyboard)].contains(action)
+        {
+            return markedTextRange == nil && isEditable && typingOverlay != nil
+        }
         if [#selector(completeSource), #selector(explainSource), #selector(sourceActions), #selector(definition)]
             .contains(action)
         {
@@ -318,126 +363,6 @@ struct TabletEditor: UIViewRepresentable {
         selectedRange = range
         workspace?.selection = range
         scrollRangeToVisible(range)
-    }
-}
-
-struct TabletPreview: UIViewRepresentable {
-    @AppStorage("iPadPreviewDark") private var previewDark = false
-    @ObservedObject var workspace: TabletWorkspace
-    @Environment(\.colorScheme) private var scheme
-
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.userContentController.add(context.coordinator, name: "leftblankPreviewReady")
-        config.userContentController.add(context.coordinator, name: "leftblankPreviewError")
-        config.userContentController.addUserScript(WKUserScript(
-            source: PreviewScripts.setup(
-                canvas: scheme == .dark ? "#171a1d" : "#fafafa",
-                scheme: scheme == .dark ? "dark" : "light",
-            ),
-            injectionTime: .atDocumentEnd, forMainFrameOnly: true,
-        ))
-        config.userContentController.addUserScript(WKUserScript(
-            source: """
-            const report = error => window.webkit.messageHandlers.leftblankPreviewError.postMessage(String(error).slice(0, 400));
-            window.addEventListener('error', event => report(event.message));
-            window.addEventListener('unhandledrejection', event => report(event.reason));
-            """,
-            injectionTime: .atDocumentStart, forMainFrameOnly: true,
-        ))
-        let view = TabletPreviewWebView(frame: .zero, configuration: config)
-        view.navigationDelegate = context.coordinator
-        view.isOpaque = false
-        view.backgroundColor = TabletTheme.nativeEditor
-        view.accessibilityLabel = L10n.text("Document Preview")
-        view.accessibilityIdentifier = "document-preview"
-        return view
-    }
-
-    func updateUIView(_ view: WKWebView, context: Context) {
-        context.coordinator.workspace = workspace
-        if context.coordinator.url != workspace.previewURL {
-            context.coordinator.url = workspace.previewURL
-            if let url = workspace.previewURL {
-                view.load(URLRequest(url: url))
-            } else {
-                view.loadHTMLString("", baseURL: nil)
-            }
-        }
-        if !view.isLoading {
-            let dark = scheme == .dark
-            view.evaluateJavaScript(
-                "window.leftblankSetChrome?.('\(dark ? "#171a1d" : "#fafafa")', '\(dark ? "dark" : "light")'); window.leftblankSetDark?.(\(previewDark ? "true" : "false"));",
-                completionHandler: nil,
-            )
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(workspace)
-    }
-
-    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
-        view.configuration.userContentController.removeScriptMessageHandler(forName: "leftblankPreviewReady")
-        view.configuration.userContentController.removeScriptMessageHandler(forName: "leftblankPreviewError")
-        view.navigationDelegate = nil
-    }
-
-    @MainActor final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
-        var workspace: TabletWorkspace
-        var url: URL?
-        private var recovered = false
-        init(_ workspace: TabletWorkspace) {
-            self.workspace = workspace
-        }
-
-        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.frameInfo.isMainFrame, message.frameInfo.request.url?.port == url?.port else {
-                return
-            }
-            if message.name == "leftblankPreviewReady" {
-                workspace.previewReady = true
-                workspace.previewIssue = nil
-                workspace.sendPendingPreviewNavigation()
-            } else if let error = message.body as? String {
-                workspace.previewIssue = error
-            }
-        }
-
-        func webView(
-            _ view: WKWebView,
-            didFailProvisionalNavigation navigation: WKNavigation?,
-            withError error: Error,
-        ) {
-            workspace.previewIssue = error.localizedDescription
-        }
-
-        func webView(_ view: WKWebView, didFail navigation: WKNavigation?, withError error: Error) {
-            workspace.previewIssue = error.localizedDescription
-        }
-
-        func webViewWebContentProcessDidTerminate(_ view: WKWebView) {
-            if !recovered {
-                recovered = true
-                view.reload()
-            } else {
-                workspace.previewIssue = L10n.text("Preview stopped unexpectedly. Reconnect typesetting to try again.")
-            }
-        }
-    }
-}
-
-@MainActor final class TabletPreviewWebView: WKWebView {
-    private var lastSize = CGSize.zero
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        guard bounds.width > 0, bounds.height > 0, lastSize != bounds.size else {
-            return
-        }
-        lastSize = bounds.size
-        // Hidden panes begin with no viewport; resizing must refit the actual
-        // SVG page when preview is revealed or the iPad window changes size.
-        evaluateJavaScript("window.dispatchEvent(new Event('resize'));", completionHandler: nil)
     }
 }
 

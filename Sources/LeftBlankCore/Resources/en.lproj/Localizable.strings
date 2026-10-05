@@ -810,3 +810,63 @@
 "The iCloud account changed. Your writing is preserved. Check iCloud settings before continuing sync." = "The iCloud account changed. Your writing is preserved. Check iCloud settings before continuing sync.";
 
 "Close other windows before changing iCloud Sync." = "Close other windows before changing iCloud Sync.";
+
+"Edit Table or Image…" = "Edit Table or Image…";
+
+"Change the table or image at the cursor." = "Change the table or image at the cursor.";
+
+"Follow Writing" = "Follow Writing";
+
+"Return to Reading" = "Return to Reading";
+
+"Pause automatically when you scroll the preview." = "Pause automatically when you scroll the preview.";
+
+"Edit Table" = "Edit Table";
+
+"Edit Image" = "Edit Image";
+
+"Alignment" = "Alignment";
+
+"Default" = "Default";
+
+"Left" = "Left";
+
+"Center" = "Center";
+
+"Right" = "Right";
+
+"Complex objects stay in source editing. Apply creates one undo step." = "Complex objects stay in source editing. Apply creates one undo step.";
+
+"Image path" = "Image path";
+
+"Width" = "Width";
+
+"Caption" = "Caption";
+
+"Include Caption" = "Include Caption";
+
+"First row is a header" = "First row is a header";
+
+"Column %d" = "Column %d";
+
+"Cell %d, %d" = "Cell %d, %d";
+
+"Delete Row" = "Delete Row";
+
+"Add Row" = "Add Row";
+
+"Add Column" = "Add Column";
+
+"Cells contain Typst content. Paste TSV below to replace all rows." = "Cells contain Typst content. Paste TSV below to replace all rows.";
+
+"Tab-separated data" = "Tab-separated data";
+
+"Use Pasted Data" = "Use Pasted Data";
+
+"Edit Object" = "Edit Object";
+
+"Place the cursor in a literal table or image. Complex objects use source editing." = "Place the cursor in a literal table or image. Complex objects use source editing.";
+
+"The document changed. Open the object editor again." = "The document changed. Open the object editor again.";
+
+"Use a rectangular table, balanced cell content, and a numeric image width such as 80%." = "Use a rectangular table, balanced cell content, and a numeric image width such as 80%.";

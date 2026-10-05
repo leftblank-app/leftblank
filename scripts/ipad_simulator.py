@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the full native UI suite on one requested iPad size."""
+"""Run native and UI tests on one iPad simulator."""
 
 import argparse
 import codecs
@@ -16,6 +16,13 @@ import subprocess
 import sys
 import time
 import uuid
+
+
+# Pull requests run every native unit test plus these UI scenarios: writing,
+# split view, autosave, preview, rotation, rendering and PDF sharing. Main and
+# full dispatches run the complete UI suite.
+SMOKE_TESTS = ('LeftBlankUITests/WritingTests/testEditingPersistsAcrossPreviewAndRotation',
+               'LeftBlankUITests/WritingTests/testWelcomePreviewAndPDFExport')
 
 
 def wait_for_tests(process, startup_timeout, execution_timeout):
@@ -67,7 +74,16 @@ def run(command, timeout, *, capture=False, check=True, startup_timeout=None):
             wait_for_tests(process, startup_timeout, timeout)
             output = None
     except BaseException:
-        # xcodebuild can leave test workers behind if only its parent is killed.
+        # Let Xcode finalize failure attachments before removing its workers.
+        # A hung process group still has a bounded, unconditional cleanup.
+        if startup_timeout is not None:
+            try:
+                os.killpg(process.pid, signal.SIGINT)
+                output, _ = process.communicate(timeout=30)
+                if output:
+                    print(output, end='', flush=True)
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                pass
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
@@ -139,7 +155,9 @@ def diagnostics(path, device=None):
 
 
 def shutdown(device):
-    result = run(['xcrun', 'simctl', 'shutdown', device['udid']], 60, check=False)
+    # Cold iOS 26 services can outlast 60 seconds while completing migration.
+    # Use the same bounded allowance as appearance setup; never retry tests.
+    result = run(['xcrun', 'simctl', 'shutdown', device['udid']], 120, check=False)
     if result.returncode:
         # A failed boot can already be shut down; verify rather than hiding errors.
         states = [entry['state'] for entries in inventory().values()
@@ -241,8 +259,9 @@ def test_device(size, device, bundle, results, *, suite='all', memory=False, cov
         if cold_start:
             # iOS 26 can crash/respring SpringBoard during first-boot setup and
             # then acknowledge orientation events without rotating even Settings.
-            # Finish migration/preferences before a full boot of the initialized
-            # device. This is setup, not a retry of failed application tests.
+            # A first-boot device also runs tests measurably slower and failed
+            # timing-sensitive WebKit tests. Finish migration/preferences before a
+            # full boot of the initialized device. This is setup, not a retry.
             shutdown(device)
             run(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b', '-d'], 240)
         if appearance:
@@ -251,9 +270,10 @@ def test_device(size, device, bundle, results, *, suite='all', memory=False, cov
                 raise RuntimeError('Simulator appearance differs from the requested ' + appearance)
         # Xcode's verbose sysdiagnose can spend ten minutes after a test failure.
         # Keep the test report and attachments, then collect our bounded diagnostics.
-        selection = ['-only-testing:LeftBlankTabletTests'] if suite == 'unit' else []
-        if memory:
-            selection += ['-enablePerformanceTestsDiagnostics', 'YES']
+        selection = []
+        if suite != 'all':
+            selection = ['-only-testing:' + test for test in
+                         ('LeftBlankTabletTests', *(SMOKE_TESTS if suite == 'smoke' else ()))]
         started = time.time()
         run(['xcodebuild', '-xctestrun', str(bundle),
              '-derivedDataPath', str(bundle.parent.parent.parent),
@@ -265,8 +285,8 @@ def test_device(size, device, bundle, results, *, suite='all', memory=False, cov
              '-collect-test-diagnostics', 'never',
              '-enableCodeCoverage', 'YES' if coverage else 'NO',
              '-resultBundlePath', str(results / f'{size}.xcresult'),
-             *selection, 'test-without-building'], 1080,
-            startup_timeout=600 if suite == 'all' else None)
+             *selection, 'test-without-building'], {'all': 1500, 'smoke': 600}.get(suite, 1080),
+            startup_timeout=None if suite == 'unit' else 600)
         verify_result(results / f'{size}.xcresult', results, memory=memory)
         if coverage:
             export_coverage(bundle, device, results, size, started)
@@ -287,7 +307,8 @@ def test_device(size, device, bundle, results, *, suite='all', memory=False, cov
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--size', choices=('11-inch', '13-inch'), required=True)
-    parser.add_argument('--suite', choices=('all', 'unit'), default='all')
+    parser.add_argument('--suite', choices=('all', 'smoke', 'unit'), default='all',
+                        help='smoke runs the native unit tests and the curated SMOKE_TESTS UI scenarios')
     parser.add_argument('--derived-data', type=Path, default=Path('build/iPad'))
     parser.add_argument('--results', type=Path, default=Path('build/iPad-writing'))
     parser.add_argument('--memory', action='store_true')
@@ -327,7 +348,7 @@ def main(argv=None):
     finally:
         print('::endgroup::', flush=True)
     options = {}
-    if args.fresh_device and args.suite == 'all':
+    if args.fresh_device:
         options['cold_start'] = True
     if args.appearance:
         options['appearance'] = args.appearance

@@ -262,6 +262,36 @@ struct TabletSubscriptionTests {
         #expect(workspace.text == "Preserved manuscript")
     }
 
+    @Test func editingBackToSavedContentFinishesAutosave() async throws {
+        let service = PurchaseFixture()
+        service.current = .subscribed(until: Date().addingTimeInterval(3600))
+        let subscription = TabletSubscription(service: service)
+        await subscription.refresh()
+        let root = TestPaths.temporaryDirectory.appendingPathComponent("save-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = TabletWorkspace(subscription: subscription, stateDirectory: root)
+        let original = "= Original\nSaved 中文😀\n"
+        let document = try await workspace.library.create(text: original)
+        let read = try await workspace.library.read(document.id)
+        workspace.document = document
+        workspace.activeSourceURL = document.sourceURL
+        workspace.text = original
+        workspace.savedText = original
+        workspace.baseline = read.baseline
+        workspace.edited("Temporary replacement", selection: NSRange(location: 0, length: 0))
+        workspace.edited(original, selection: NSRange(location: 0, length: 0))
+        let deadline = ContinuousClock.now + .seconds(3)
+        while workspace.saveStatus != "Saved", ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(workspace.saveStatus == "Saved")
+        #expect(workspace.savedText == original)
+        #expect(try DocumentStorage.read(document.sourceURL).0 == original)
+        let recovery = try JSONDecoder().decode(RecoverySnapshot.self, from: Data(contentsOf: workspace.recoveryURL))
+        #expect(recovery.text == original)
+        #expect(recovery.savedText == original)
+    }
+
     @Test func expiredWorkspaceExportsSavedSourceAndEveryProjectAsset() async throws {
         let fixture = PurchaseFixture()
         fixture.current = .subscribed(until: Date().addingTimeInterval(3600))

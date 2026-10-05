@@ -810,3 +810,63 @@
 "The iCloud account changed. Your writing is preserved. Check iCloud settings before continuing sync." = "iCloud 账户已更改。你的文稿已保留。请检查 iCloud 设置后再继续同步。";
 
 "Close other windows before changing iCloud Sync." = "请先关闭其他窗口，再更改 iCloud 同步设置。";
+
+"Edit Table or Image…" = "编辑表格或图片…";
+
+"Change the table or image at the cursor." = "修改光标所在的表格或图片。";
+
+"Follow Writing" = "跟随写作";
+
+"Return to Reading" = "返回阅读位置";
+
+"Pause automatically when you scroll the preview." = "手动滚动预览时自动暂停跟随。";
+
+"Edit Table" = "编辑表格";
+
+"Edit Image" = "编辑图片";
+
+"Alignment" = "对齐方式";
+
+"Default" = "默认";
+
+"Left" = "左对齐";
+
+"Center" = "居中";
+
+"Right" = "右对齐";
+
+"Complex objects stay in source editing. Apply creates one undo step." = "复杂内容请使用源码编辑。应用后可一次撤销。";
+
+"Image path" = "图片路径";
+
+"Width" = "宽度";
+
+"Caption" = "题注";
+
+"Include Caption" = "添加题注";
+
+"First row is a header" = "首行为表头";
+
+"Column %d" = "第 %d 列";
+
+"Cell %d, %d" = "第 %d 行，第 %d 列";
+
+"Delete Row" = "删除行";
+
+"Add Row" = "添加行";
+
+"Add Column" = "添加列";
+
+"Cells contain Typst content. Paste TSV below to replace all rows." = "单元格支持 Typst 内容。在下方粘贴制表符分隔的数据，可替换所有行。";
+
+"Tab-separated data" = "制表符分隔的数据";
+
+"Use Pasted Data" = "使用粘贴的数据";
+
+"Edit Object" = "编辑表格或图片";
+
+"Place the cursor in a literal table or image. Complex objects use source editing." = "请将光标放入表格或图片代码中。复杂内容请使用源码编辑。";
+
+"The document changed. Open the object editor again." = "文稿已变更。请重新打开表格或图片编辑器。";
+
+"Use a rectangular table, balanced cell content, and a numeric image width such as 80%." = "各行的列数必须一致，单元格内的括号必须配对。图片宽度请使用 80% 等数值。";

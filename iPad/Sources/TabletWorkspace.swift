@@ -9,12 +9,18 @@ final class TabletWorkspace: ObservableObject {
     enum Panel: String,
         Identifiable
     { case commands, outline, checks, history, settings, universe, trash, subscription, files,
-           projectEntry, assistance
+           projectEntry, assistance, objectEditor
         var id: String {
             rawValue
         }
     }
 
+    @Published var objectEditSession: ObjectEditSession?
+    let previewReading = PreviewReadingSession()
+    var previewFollowTask: Task<Void, Never>?
+    var followingPreviewNavigation = false
+    var previewReturnLayout: Layout?
+    @Published var previewZoom: CGFloat = 1
     @Published var trashedDocuments: [LibraryDocument] = []
     @Published var documents: [LibraryDocument] = []
     @Published var document: LibraryDocument?
@@ -57,9 +63,33 @@ final class TabletWorkspace: ObservableObject {
     }
 
     private(set) var metrics = DocumentMetrics("")
-    @Published var selection = NSRange(location: 0, length: 0)
-    @Published var layout: Layout = .split
-    @Published var panel: Panel?
+    @Published var selection = NSRange(location: 0, length: 0) {
+        didSet {
+            if selection != oldValue {
+                schedulePreviewFollow()
+            }
+        }
+    }
+
+    @Published var layout: Layout = .split {
+        didSet {
+            if layout != oldValue {
+                assistance.invalidate()
+            }
+            if layout != .split {
+                previewFollowTask?.cancel()
+            }
+        }
+    }
+
+    @Published var panel: Panel? {
+        didSet {
+            if panel != nil, panel != .assistance {
+                assistance.invalidate()
+            }
+        }
+    }
+
     @Published var previewURL: URL?
     @Published var previewReady = false
     @Published var previewIssue: String?
@@ -67,7 +97,15 @@ final class TabletWorkspace: ObservableObject {
     @Published var serviceStatus = "Connecting"
     @Published var saveStatus = "Saved"
     @Published var message: String?
-    @Published var busy = false
+    @Published var busy = false {
+        didSet {
+            if busy {
+                assistance.invalidate()
+                previewFollowTask?.cancel()
+            }
+        }
+    }
+
     @Published var revisions: [DocumentRevision] = []
     @Published var outline: [JSONValue] = []
     @Published var diagnostics: [JSONValue] = []
@@ -157,11 +195,16 @@ final class TabletWorkspace: ObservableObject {
             }
             cloudEnabled = await library.isICloud
             try await reloadLibrary()
-            if documents.isEmpty {
+            // UI tests pass `-iPadOpenTemplate <name>` to start from a fresh
+            // built-in document instead of navigating the template gallery.
+            let seeded = UserDefaults.standard.string(forKey: "iPadOpenTemplate")
+                .flatMap(BuiltInTemplate.init(rawValue:))
+            if documents.isEmpty || seeded != nil {
+                let template = seeded ?? .welcome
                 let item = try await library.create(
-                    title: BuiltInTemplate.welcome.title,
-                    text: BuiltInTemplate.welcome.source,
-                    assets: WelcomeDocument.assets(),
+                    title: template.title,
+                    text: template.source,
+                    assets: template == .welcome ? WelcomeDocument.assets() : [:],
                 )
                 try await reloadLibrary()
                 await open(item)
@@ -227,6 +270,10 @@ final class TabletWorkspace: ObservableObject {
             generation = UUID()
             debounce?.cancel()
             client.stop()
+            previewFollowTask?.cancel()
+            previewReading.reset()
+            previewReturnLayout = nil
+            followingPreviewNavigation = false
             document = result.document
             activeSourceURL = result.document.sourceURL
             projectSources = sources
@@ -266,6 +313,8 @@ final class TabletWorkspace: ObservableObject {
             guard let self, generation == session, let target = SourceLocation(params) else {
                 return
             }
+            previewReturnLayout = layout
+            previewReading.rememberReturnPosition()
             Task { await self.jump(to: target) }
         }
         client.onDisconnect = { [weak self] error in
@@ -338,6 +387,7 @@ final class TabletWorkspace: ObservableObject {
         let previous = text
         text = source
         version += 1
+        schedulePreviewFollow()
         assistance.invalidate()
         saveStatus = "Saving"
         persistRecovery()
@@ -405,6 +455,8 @@ final class TabletWorkspace: ObservableObject {
                 return true
             }
             guard savedText != source else {
+                saveStatus = text == source ? "Saved" : "Saving"
+                persistRecovery()
                 return true
             }
             do {
