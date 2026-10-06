@@ -6,6 +6,74 @@ import SwiftUI
 import Testing
 
 extension WritingFlowTests {
+    @Test(arguments: [false, true])
+    func blankCreationReturnsToWriting(closeFirst: Bool) async throws {
+        let app = try WritingFixture(text: "= Preserve this document\n", startService: false)
+        defer { app.close() }
+        await app.workspace.library.start()
+        let delegate = AppDelegate(workspace: app.workspace)
+        let previousMenu = NSApp.mainMenu, previousWindowsMenu = NSApp.windowsMenu
+        defer { NSApp.mainMenu = previousMenu
+            NSApp.windowsMenu = previousWindowsMenu
+        }
+        delegate.installMenu()
+        app.window.delegate = delegate
+        defer { app.window.delegate = nil }
+        let menu = try #require(NSApp.mainMenu)
+        app.window.orderFront(nil)
+        if closeFirst {
+            #expect(menu.performKeyEquivalent(with: app.key("w", code: 13, modifiers: .command)))
+            await app.layout()
+        }
+        #expect(app.workspace.isLibraryHome == closeFirst)
+        app.workspace.openDiscovery(.templates)
+        await app.layout()
+        #expect(app.workspace.libraryOpen == !closeFirst)
+        if !closeFirst {
+            try await app.wait { app.window.attachedSheet != nil }
+        }
+        let browserWindow = app.window.attachedSheet ?? app.window
+        func blankButton(in view: NSView) -> HelpAnchor? {
+            if let anchor = view as? HelpAnchor, anchor.title == L10n.text("Start with a blank page") {
+                return anchor
+            }
+            return view.subviews.lazy.compactMap { blankButton(in: $0) }.first
+        }
+        let view = try #require(browserWindow.contentView)
+        let button = try #require(blankButton(in: view))
+        let point = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            try browserWindow.sendEvent(#require(NSEvent.mouseEvent(
+                with: type,
+                location: point,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: browserWindow.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 1,
+                pressure: 1,
+            )))
+        }
+        try await app.wait {
+            app.workspace.managedDocumentID != nil && app.workspace.discoveryMode == nil &&
+                app.window.attachedSheet == nil
+        }
+        await app.layout()
+        #expect(!app.workspace.isLibraryHome)
+        #expect(!app.workspace.libraryOpen)
+        #expect(app.window.isVisible)
+        #expect(app.workspace.discoveryMode == nil)
+        let documents = try await app.workspace.library.store.list()
+        #expect(documents.count == 1)
+        let document = try #require(documents.first)
+        #expect(app.workspace.managedDocumentID == document.id)
+        #expect(app.workspace.fileURL == document.sourceURL)
+        #expect(app.workspace.editor?.string == DocumentTemplate.blank.source)
+        #expect(app.workspace.editor?.isEditable == true)
+        #expect(try String(contentsOf: app.document, encoding: .utf8) == "= Preserve this document\n")
+    }
+
     @Test func newDocumentDiscoversTemplatesWithoutCreatingOrReplacingWriting() async throws {
         let app = try WritingFixture(text: "= My unfinished idea\n", startService: false)
         defer { app.close() }

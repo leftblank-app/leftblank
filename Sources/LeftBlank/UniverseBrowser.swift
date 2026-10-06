@@ -128,11 +128,7 @@ struct UniverseBrowser: View {
             }
             Spacer(minLength: 0)
             QuietButton(icon: "x", help: L10n.text("Close discovery"), shortcut: "Esc") {
-                if let onClose {
-                    onClose()
-                } else {
-                    dismiss()
-                }
+                close()
             }
             .keyboardShortcut(.cancelAction).disabled(isApplying)
         }.padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 22)
@@ -300,7 +296,7 @@ struct UniverseBrowser: View {
                 actionTask = Task {
                     defer { isApplying = false }
                     do { try await onAddSample(.sicp)
-                        dismiss()
+                        close()
                     } catch where Task.isCancelled {}
                     catch is CancellationError {}
                     catch { actionError = error.localizedDescription }
@@ -487,6 +483,16 @@ struct UniverseBrowser: View {
         return "package"
     }
 
+    private func close() {
+        // Inline discovery lives in the main window; dismissing that window
+        // would close the document that the action just opened.
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+        }
+    }
+
     private func apply(_ template: BuiltInTemplate) {
         guard !isApplying, let onCreateBuiltIn else {
             return
@@ -496,7 +502,7 @@ struct UniverseBrowser: View {
         actionTask = Task {
             defer { isApplying = false }
             do { try await onCreateBuiltIn(template)
-                dismiss()
+                close()
             } catch where Task.isCancelled {}
             catch is CancellationError {}
             catch { actionError = error.localizedDescription }
@@ -516,14 +522,14 @@ struct UniverseBrowser: View {
             actionTask = Task { @MainActor in
                 defer { isApplying = false }
                 do { try await onCreate(package)
-                    dismiss()
+                    close()
                 } catch where Task.isCancelled {}
                 catch is CancellationError {}
                 catch { actionError = error.localizedDescription }
             }
         } else {
             do { try onImport(package)
-                dismiss()
+                close()
             } catch { actionError = error.localizedDescription }
         }
     }
