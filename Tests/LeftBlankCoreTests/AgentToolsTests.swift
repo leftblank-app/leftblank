@@ -390,6 +390,29 @@ struct AgentToolsTests {
         #expect(dispatcher.gate.shared == 0 && !dispatcher.gate.exclusive && dispatcher.compiles.waiters.isEmpty)
     }
 
+    @Test func everyToolParameterHasAMeaningfulDescription() {
+        func undescribed(_ schema: JSONValue, name: String) -> [String] {
+            let description = schema["description"].string ?? ""
+            var missing = description.isEmpty || description == name.components(separatedBy: ".").last ? [name] : []
+            for (key, field) in schema["properties"].objectValues.sorted(by: { $0.key < $1.key }) {
+                missing += undescribed(field, name: name + "." + key)
+            }
+            if case .object = schema["items"] {
+                missing += undescribed(schema["items"], name: name + "[]")
+            }
+            if case .object = schema["additionalProperties"] {
+                missing += undescribed(schema["additionalProperties"], name: name + "{}")
+            }
+            return missing
+        }
+        for tool in AgentTools.definitions {
+            #expect(!tool.description.isEmpty, "\(tool.name) needs a description")
+            let missing = tool.inputSchema["properties"].objectValues.sorted { $0.key < $1.key }
+                .flatMap { undescribed($0.value, name: tool.name + "." + $0.key) }
+            #expect(missing.isEmpty, "Describe \(missing.joined(separator: ", "))")
+        }
+    }
+
     @Test func lineLimitsHandleCRLFAndLargeCombiningSequences() async throws {
         let fixture = try AgentFixture()
         defer { fixture.close() }
