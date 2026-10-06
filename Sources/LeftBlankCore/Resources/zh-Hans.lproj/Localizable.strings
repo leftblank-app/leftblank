@@ -908,6 +908,9 @@
 "Selected document" = "已授权的文稿";
 "Prompt copied. Paste it into your coding agent on this Mac." = "提示词已复制，请粘贴到这台 Mac 上的编程智能体。";
 "Could not start the coding agent connection. Enable it again in Settings." = "无法启动编程智能体连接，请在设置中重新启用。";
+"Port %@ is used by another app. Quit that app, or use a new port and give your coding agent the setup prompt again." = "端口 %@ 被其他应用占用。请退出该应用，或使用新端口并重新把设置提示词发给编程智能体。";
+"Use a New Port" = "使用新端口";
+"The connection now uses a new port. Copy the setup prompt into your coding agent again." = "连接已改用新端口。请把设置提示词重新复制给编程智能体。";
 "The connection stopped, but its saved permission could not be removed. Try disconnecting again." = "连接已停止，但无法移除已保存的授权。请再次尝试停用。";
 "Read-only Package" = "扩展包源码（只读）";
 "Close Document" = "关闭当前文件";

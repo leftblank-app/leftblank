@@ -908,6 +908,9 @@
 "Selected document" = "Selected document";
 "Prompt copied. Paste it into your coding agent on this Mac." = "Prompt copied. Paste it into your coding agent on this Mac.";
 "Could not start the coding agent connection. Enable it again in Settings." = "Could not start the coding agent connection. Enable it again in Settings.";
+"Port %@ is used by another app. Quit that app, or use a new port and give your coding agent the setup prompt again." = "Port %@ is used by another app. Quit that app, or use a new port and give your coding agent the setup prompt again.";
+"Use a New Port" = "Use a New Port";
+"The connection now uses a new port. Copy the setup prompt into your coding agent again." = "The connection now uses a new port. Copy the setup prompt into your coding agent again.";
 "The connection stopped, but its saved permission could not be removed. Try disconnecting again." = "The connection stopped, but its saved permission could not be removed. Try disconnecting again.";
 "Read-only Package" = "Read-only Package";
 "Close Document" = "Close Document";

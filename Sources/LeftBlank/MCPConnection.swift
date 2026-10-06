@@ -35,6 +35,7 @@ final class MCPConnection: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var isEnabled = false
     @Published private(set) var failureMessage: String?
+    @Published private(set) var portInUse = false
     var allowsEditing: Bool {
         configuration?.canWrite ?? false
     }
@@ -62,8 +63,39 @@ final class MCPConnection: ObservableObject {
         do {
             let value = try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: file))
             try await start(value)
-        } catch {
+        } catch where !portInUse {
             failureMessage = L10n.text("Could not start the coding agent connection. Enable it again in Settings.")
+        } catch {}
+    }
+
+    /// Keeps the saved permission and token but lets the helper pick a free port.
+    func useNewPort() async throws {
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent("port.json"))
+        let file = directory.appendingPathComponent("access.json")
+        if let value = try? JSONDecoder().decode(Configuration.self, from: Data(contentsOf: file)) {
+            try await start(value)
+        } else {
+            try await enable()
+        }
+    }
+
+    static func canListen(on port: Int) -> Bool {
+        let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        guard socket >= 0 else {
+            return true
+        }
+        defer { close(socket) }
+        // Match the helper's listener, which reuses addresses left in TIME_WAIT.
+        var reuse: Int32 = 1
+        setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = in_port_t(UInt16(port).bigEndian)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        return withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(socket, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+            }
         }
     }
 
@@ -110,6 +142,18 @@ final class MCPConnection: ObservableObject {
         guard (0 ... 65535).contains(port) else {
             throw ServiceError.unavailable
         }
+        // Agents are configured with this port, so explain a conflict instead of silently moving.
+        guard port == 0 || Self.canListen(on: port) else {
+            portInUse = true
+            let message = L10n.format(
+                "Port %@ is used by another app. Quit that app, or use a new port and give your coding agent the setup prompt again.",
+                // A port is an identifier, so never group its digits.
+                String(port),
+            )
+            failureMessage = message
+            throw AgentToolError("port_in_use", message)
+        }
+        portInUse = false
         configuration = value
         dispatcher = AgentToolDispatcher(
             library: workspace.library.store,

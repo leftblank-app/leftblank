@@ -130,6 +130,49 @@ extension WritingFlowTests {
         #expect(content?["data"].string.flatMap { Data(base64Encoded: $0) } == png)
     }
 
+    @Test func mcpPortConflictIsExplainedAndANewPortCanBeChosen() async throws {
+        let app = try WritingFixture(text: "= Port\n", startService: false)
+        defer { app.close() }
+        // Another app listening on the port the agent was configured with.
+        let other = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(other) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        try withUnsafeMutablePointer(to: &address) { pointer in
+            try pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                try #require(bind(other, $0, length) == 0 && listen(other, 1) == 0)
+                try #require(getsockname(other, $0, &length) == 0)
+            }
+        }
+        let taken = Int(UInt16(bigEndian: address.sin_port))
+        #expect(!MCPConnection.canListen(on: taken))
+        let directory = app.workspace.stateDirectory.appendingPathComponent("MCP")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(taken).write(to: directory.appendingPathComponent("port.json"))
+        let checkout = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let connection = MCPConnection(
+            workspace: app.workspace,
+            helperURL: checkout.appendingPathComponent(".tools/leftblank-mcp"),
+        )
+        defer { connection.disable() }
+        await #expect(throws: AgentToolError.self) { try await connection.enable() }
+        #expect(connection.portInUse && !connection.isRunning)
+        #expect(connection.failureMessage?.contains(String(taken)) == true)
+        try await connection.useNewPort()
+        #expect(connection.isRunning && !connection.portInUse && connection.failureMessage == nil)
+        let descriptor = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: connection.descriptorURL))
+        let url = try #require(descriptor["url"].string.flatMap(URLComponents.init(string:)))
+        #expect(url.port != nil && url.port != taken)
+        #expect(try JSONDecoder().decode(
+            Int.self,
+            from: Data(contentsOf: directory.appendingPathComponent("port.json")),
+        )
+            == url.port)
+    }
+
     @Test func agentCompileUsesFreshSnapshotAndReportsUnpinnedInputs() async throws {
         let app = try WritingFixture(text: "= Compile fixture\n", startService: false)
         defer { app.close() }
