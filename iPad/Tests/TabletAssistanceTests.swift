@@ -553,22 +553,29 @@ extension TabletAssistanceTests {
         let textRange = try #require(editor.textRange(from: start, to: end))
         var viewport: CGRect?
         var rect = CGRect.zero
+        var stableSince = ContinuousClock.now
         // A cold simulator may finish keyboard layout after hover starts,
         // cancelling the request. Replay pointer movement at the new geometry
         // only when the viewport changes; a stable viewport gets one request.
         try await waitFor {
+            window.layoutIfNeeded()
+            rect = editor.firstRect(for: textRange)
             if viewport != editor.bounds {
+                // Deliver the viewport change before the next pointer movement,
+                // including a change whose UIKit scroll callback is still pending.
+                editor.delegate?.scrollViewDidScroll?(editor)
                 viewport = editor.bounds
-                rect = editor.firstRect(for: textRange)
+                stableSince = .now
                 let point = CGPoint(x: rect.midX, y: rect.midY)
                 #expect(editor.sourceHover.offset(at: point) == 2)
                 editor.sourceHover.move(to: point)
             }
-            return editor.sourceHover.host != nil
+            return editor.sourceHover.host != nil && stableSince.duration(to: .now) >= .milliseconds(500)
         }
         #expect(editor.selectedRange == selection && workspace.text == source)
         #expect(editor.isFirstResponder)
         let host = try #require(editor.sourceHover.host)
+        #expect(editor.bounds == viewport)
         editor.delegate?.scrollViewDidScroll?(editor)
         #expect(editor.sourceHover.host === host, "An unchanged layout callback must not dismiss hover")
         let parent = try #require(host.view.superview)
