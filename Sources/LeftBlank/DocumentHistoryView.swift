@@ -59,7 +59,9 @@ struct DocumentHistoryView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(revision.createdAt.formatted(date: .abbreviated, time: .shortened))
                                 .font(.system(size: 12, weight: .medium))
-                            Text(L10n.text(revision.reason == .beforeRestore ? "Before restore" : "Automatic snapshot"))
+                            Text(L10n
+                                .text(revision.reason == .beforeRestore ? "Before restore" : revision
+                                    .reason == .beforeAgentEdit ? "Before agent edit" : "Automatic snapshot"))
                                 .font(.system(size: 10)).foregroundStyle(Theme.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
                             .background(

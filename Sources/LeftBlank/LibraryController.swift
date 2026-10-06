@@ -98,7 +98,7 @@ final class LibraryController: ObservableObject {
     }
 
     func perform(_ action: @escaping @MainActor () async throws -> Void) {
-        guard !busy else {
+        guard !busy, workspace?.agentMetadataChangeInProgress != true else {
             return
         }
         busy = true
@@ -401,6 +401,9 @@ final class LibraryController: ObservableObject {
     func setCloudEnabled(_ enabled: Bool) async throws {
         guard let workspace else {
             return
+        }
+        guard !workspace.agentMetadataChangeInProgress else {
+            throw AgentToolError("busy", "An agent is updating the document library. Try again after it finishes.")
         }
         if enabled == cloudEnabled {
             try Data(enabled ? "icloud".utf8 : "local".utf8).write(to: locationURL, options: .atomic)

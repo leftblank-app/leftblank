@@ -48,6 +48,25 @@ Xcode evaluates both manifests on a Mac. `scripts/test-package-graphs.py`
 evaluates both real manifests in standard and preview modes without dependency
 downloads, and verifies the iPad project and dependency lock against this boundary.
 
+## Agent tools and the macOS MCP boundary
+
+The [MCP design and implementation status](mcp-design.md) separates shared Swift
+business tools from macOS transport. Tool schemas, document operations, revision
+checks, patches and history live in `LeftBlankCore` without any MCP SDK import.
+The iPad test target also runs their shared core tests. A future embedded agent
+can call this dispatcher directly through a UIKit workspace adapter; neither app
+currently contains model inference or an agent loop.
+
+`MCPConnection`, its Settings section, the Rust `rmcp` helper, HTTP listener,
+private IPC, credentials and setup prompt belong to the Mac target and packaging
+scripts only. iPad must not resolve, compile, link or bundle them. Package graph
+checks and the post-build iPad artifact check enforce this boundary. The existing
+Tinymist Rust static library remains unchanged; this is not a ban on Rust or Tokio.
+
+A future iPad agent must stop scheduling new steps when suspended, preserve
+applied edits and recheck revisions and uncertain operation results on resume.
+It does not require a localhost MCP service or a persistent background daemon.
+
 ## Why Mac still runs an engine process
 
 iPad embeds Tinymist as a Rust static library. Its background worker and pipes

@@ -110,6 +110,7 @@ struct WritingSettingsView: View {
     var body: some View {
         Form {
             LanguageSettingsSection()
+            MCPSettingsSection(workspace: workspace, connection: workspace.agentConnection)
             Section {
                 Picker(L10n.text("Appearance"), selection: $workspace.appearance) {
                     Text(L10n.text("Follow System")).tag(AppAppearance.system)

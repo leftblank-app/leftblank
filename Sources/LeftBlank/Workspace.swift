@@ -54,6 +54,7 @@ final class Workspace: ObservableObject {
     @Published var historyOpen = false
     @Published var historyInterval: HistoryInterval = .hourly
     lazy var history = DocumentHistoryController(workspace: self)
+    lazy var agentConnection = MCPConnection(workspace: self)
     @Published var saveStatus = "Draft"
     @Published var serviceStatus = "Connecting"
     @Published var serviceReady = false
@@ -135,6 +136,7 @@ final class Workspace: ObservableObject {
     @Published var managedDocumentID: UUID?
     @Published var managedTitle: String?
     @Published var documentTransitionInProgress = false
+    var agentMetadataChangeInProgress = false
     @Published var previewStale = true
     @Published var hasSuccessfulPreview = false
     @Published var outline: [OutlineItem] = [] {
@@ -691,6 +693,9 @@ final class Workspace: ObservableObject {
     }
 
     @discardableResult func open(_ url: URL, preservingMain: Bool = false, rememberSource: Bool = true) -> Bool {
+        guard !agentMetadataChangeInProgress else {
+            return false
+        }
         recordOperation("document.open", ["preservingMain": String(preservingMain)])
         do {
             guard preserveCurrent() else {
@@ -1724,6 +1729,7 @@ final class Workspace: ObservableObject {
     }
 
     func shutdown() {
+        agentConnection.stop()
         dismissAssistance()
         previewFollowTask?.cancel()
         recordOperation("session.end")
