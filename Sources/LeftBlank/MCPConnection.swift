@@ -251,9 +251,13 @@ final class MCPConnection: ObservableObject {
                 state["mcp"] = .object(["transport": .string("streamable-http"), "connected": .bool(true)])
                 value = .object(state)
             }
+            let images: [JSONValue] = result.images.map { image in .object([
+                "data": .string(image.data.base64EncodedString()),
+                "mime_type": .string(image.mimeType),
+            ]) }
             do { try pipe?.send(.object([
                 "id": .number(Double(id)),
-                "result": .object(["value": value, "is_error": .bool(result.isError)]),
+                "result": .object(["value": value, "is_error": .bool(result.isError), "images": .array(images)]),
             ])) } catch { fail() }
         }
     }

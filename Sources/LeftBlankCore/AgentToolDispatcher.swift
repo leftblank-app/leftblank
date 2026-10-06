@@ -270,6 +270,22 @@ public final class AgentToolDispatcher {
                 args: args,
                 access: access,
             ))
+        case "read_image":
+            let path = args.string("path")
+            _ = try AgentProjectFiles.url(path, in: document.folderURL)
+            guard let data = snapshot.files[path] else {
+                throw AgentToolError("unavailable", "The file is unavailable or still downloading.")
+            }
+            let prepared = try AgentImage.prepare(data)
+            return AgentToolResult(.object([
+                "path": .string(path),
+                "revision": .string(revision(data, document: document, path: path)),
+                "mime_type": .string(prepared.image.mimeType),
+                "bytes": .number(Double(prepared.image.data.count)),
+                "width": .number(Double(prepared.width)),
+                "height": .number(Double(prepared.height)),
+                "converted": .bool(prepared.converted),
+            ]), images: [prepared.image])
         case "search_text": return try AgentToolResult(search(snapshot, document: document, args: args, access: access))
         case "get_diagnostics":
             let values = host.agentDiagnostics(in: document).filter { item in

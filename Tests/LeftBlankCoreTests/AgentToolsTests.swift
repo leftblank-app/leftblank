@@ -1,7 +1,9 @@
+import CoreGraphics
 import Foundation
 @testable import LeftBlankCore
 import LeftBlankTestSupport
 import Testing
+import UniformTypeIdentifiers
 
 @MainActor
 struct AgentToolsTests {
@@ -266,6 +268,39 @@ struct AgentToolsTests {
         #expect(partial.value["files"].array.count == 1)
     }
 
+    @Test func readImageReturnsViewableImagesAndConvertsOtherFormats() async throws {
+        let fixture = try AgentFixture()
+        defer { fixture.close() }
+        let document = try await fixture.library.create(title: "Images", text: "#image(\"a.png\")\n")
+        let png = try #require(testImage(width: 3, height: 2, type: .png))
+        try png.write(to: document.folderURL.appendingPathComponent("a.png"))
+        try #require(testImage(width: 4, height: 4, type: .tiff))
+            .write(to: document.folderURL.appendingPathComponent("b.tiff"))
+        try #require(testImage(width: 3000, height: 1000, type: .png))
+            .write(to: document.folderURL.appendingPathComponent("wide.png"))
+        func read(_ path: String) async -> AgentToolResult {
+            await fixture.call("read_image", ["document_id": .string(document.id.uuidString), "path": .string(path)])
+        }
+        let original = await read("a.png")
+        #expect(original.images == [AgentToolImage(data: png, mimeType: "image/png")])
+        #expect(original.value["mime_type"].string == "image/png")
+        #expect(original.value["width"].int == 3 && original.value["height"].int == 2)
+        #expect(original.value["converted"].foundationValue as? Bool == false)
+        #expect(original.value["revision"].string?.isEmpty == false)
+        let tiff = await read("b.tiff")
+        #expect(tiff.images.first?.mimeType == "image/png")
+        #expect(tiff.value["converted"].foundationValue as? Bool == true)
+        #expect(tiff.images.first.flatMap { try? AgentImage.prepare($0.data) }?.width == 4)
+        let wide = await read("wide.png")
+        #expect(wide.value["converted"].foundationValue as? Bool == true)
+        #expect(wide.value["width"].int == AgentImage.maximumEdge)
+        #expect((wide.value["height"].int ?? .max) < 700)
+        #expect(await read("main.typ").value["error"]["code"].string == "not_image")
+        #expect(await read("missing.png").value["error"]["code"].string == "unavailable")
+        #expect(await read("../a.png").value["error"]["code"].string == "unsafe_path")
+        #expect(await read("main.typ").images.isEmpty)
+    }
+
     @Test func lineLimitsHandleCRLFAndLargeCombiningSequences() async throws {
         let fixture = try AgentFixture()
         defer { fixture.close() }
@@ -300,6 +335,25 @@ struct AgentToolsTests {
             sources: ["a.typ": "A"],
         ).first?.text == "B")
     }
+}
+
+private func testImage(width: Int, height: Int, type: UTType) -> Data? {
+    guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(
+              data: nil,
+              width: width,
+              height: height,
+              bitsPerComponent: 8,
+              bytesPerRow: 0,
+              space: space,
+              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+          )
+    else {
+        return nil
+    }
+    context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    return context.makeImage().flatMap { AgentImage.encode($0, type: type, quality: 1) }
 }
 
 @MainActor

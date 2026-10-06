@@ -143,7 +143,7 @@ impl ServerHandler for Bridge {
         };
         call.finished = true;
         let payload = value.get("value").cloned().unwrap_or(Value::Null);
-        let result = if value
+        let mut result = if value
             .get("is_error")
             .and_then(Value::as_bool)
             .unwrap_or(true)
@@ -152,6 +152,21 @@ impl ServerHandler for Bridge {
         } else {
             CallToolResult::structured(payload)
         };
+        // Swift prepares viewable images; the bridge only forwards known image types.
+        for image in value
+            .get("images")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let (Some(data), Some(mime_type)) = (
+                image.get("data").and_then(Value::as_str),
+                image.get("mime_type").and_then(Value::as_str),
+            ) && ["image/png", "image/jpeg", "image/gif", "image/webp"].contains(&mime_type)
+            {
+                result.content.push(ContentBlock::image(data, mime_type));
+            }
+        }
         Ok(result.into())
     }
 }

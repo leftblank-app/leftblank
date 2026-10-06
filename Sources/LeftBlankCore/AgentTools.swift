@@ -30,9 +30,12 @@ public struct AgentToolError: Error, LocalizedError, Sendable {
 public struct AgentToolResult: Sendable {
     public let value: JSONValue
     public let isError: Bool
-    public init(_ value: JSONValue, isError: Bool = false) {
+    /// Viewable content returned alongside the structured value, such as a project image.
+    public let images: [AgentToolImage]
+    public init(_ value: JSONValue, isError: Bool = false, images: [AgentToolImage] = []) {
         self.value = value
         self.isError = isError
+        self.images = images
     }
 }
 
@@ -159,6 +162,12 @@ public enum AgentTools {
                 ["document_id", "path"],
                 ["start_line", "max_lines", "version_id", "cursor"],
                 fields: ["start_line": integer(1, 2_097_152), "max_lines": integer(1, 1000)],
+            ),
+            tool(
+                "read_image",
+                "View a project image as image content. PNG, JPEG, GIF and WebP are returned as is; " +
+                    "other formats and images over 2048 px or about 3.75 MiB are downscaled to PNG or JPEG.",
+                ["document_id", "path"],
             ),
             tool(
                 "search_text",

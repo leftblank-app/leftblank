@@ -85,6 +85,51 @@ extension WritingFlowTests {
         #expect(status == 0, Comment(rawValue: (try? String(contentsOf: output, encoding: .utf8)) ?? "Hurl failed"))
     }
 
+    @Test func mcpHelperReturnsProjectImagesAsImageContent() async throws {
+        let app = try WritingFixture(text: "= Images\n", startService: false)
+        defer { app.close() }
+        let document = try await app.workspace.library.store.create(title: "Figure", text: "#image(\"dot.png\")\n")
+        let image = NSImage(size: NSSize(width: 2, height: 2), flipped: false) { rect in
+            NSColor.systemBlue.setFill()
+            rect.fill()
+            return true
+        }
+        let png = try #require(image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:))?
+            .representation(using: .png, properties: [:]))
+        try png.write(to: document.folderURL.appendingPathComponent("dot.png"))
+        let checkout = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let connection = MCPConnection(
+            workspace: app.workspace,
+            helperURL: checkout.appendingPathComponent(".tools/leftblank-mcp"),
+        )
+        defer { connection.disable() }
+        try await connection.enable(documentIDs: [document.id], canWrite: false)
+        let descriptor = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: connection.descriptorURL))
+        var request = try URLRequest(url: #require(descriptor["url"].string.flatMap(URL.init(string:))))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
+        request.setValue("2025-11-25", forHTTPHeaderField: "MCP-Protocol-Version")
+        try request.setValue(
+            "Bearer " + #require(descriptor["authentication"]["token"].string),
+            forHTTPHeaderField: "Authorization",
+        )
+        request.httpBody = try JSONEncoder().encode(JSONValue.object([
+            "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("tools/call"),
+            "params": .object(["name": .string("read_image"), "arguments": .object([
+                "document_id": .string(document.id.uuidString), "path": .string("dot.png"),
+            ])]),
+        ]))
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let result = try JSONDecoder().decode(JSONValue.self, from: data)["result"]
+        #expect(result["isError"].foundationValue as? Bool == false)
+        #expect(result["structuredContent"]["mime_type"].string == "image/png")
+        let content = result["content"].array.first { $0["type"].string == "image" }
+        #expect(content?["mimeType"].string == "image/png")
+        #expect(content?["data"].string.flatMap { Data(base64Encoded: $0) } == png)
+    }
+
     @Test func agentCompileUsesFreshSnapshotAndReportsUnpinnedInputs() async throws {
         let app = try WritingFixture(text: "= Compile fixture\n", startService: false)
         defer { app.close() }
