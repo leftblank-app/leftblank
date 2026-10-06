@@ -29,7 +29,7 @@ The App Store handles its own updates.
 Preview uses Sparkle 2's native update flow:
 
 - The first launch leaves automatic checking disabled. Sparkle asks permission
-  on the second launch; the app menu also lets users change this preference.
+  on the second launch; Settings → General also lets users change this preference.
 - Automatic checks follow Sparkle's daily schedule. Check for Updates can be
   invoked manually at any time; an in-progress check disables that menu item.
 - Sparkle schedules background reminders around idle time and application
@@ -140,5 +140,12 @@ associate `iCloud.app.leftblank.writer`, and authorize the shared KVS identifier
 `<AppIdentifierPrefix>.app.leftblank.writer`. Generate a Developer ID provisioning
 profile for the preview App ID and signing certificate. Store its base64 contents
 in the GitHub secret `ICLOUD_PREVIEW_PROVISIONING_PROFILE`. The release workflow
-validates and embeds that profile and verifies the signed entitlements. Without
-this secret previews still ship, but iCloud remains unavailable.
+validates and embeds that profile and verifies the signed entitlements. This
+secret is required: a missing or mismatched profile stops publication instead
+of shipping a Preview with iCloud disabled.
+
+On 2026-10-06, `app.leftblank.writer.preview` was registered and associated with
+the existing LeftBlank Documents container. **LeftBlank Preview Developer ID
+iCloud** uses the existing Developer ID certificate; its profile passed the
+release validator for the Preview identity and shared KVS, and was stored in
+`ICLOUD_PREVIEW_PROVISIONING_PROFILE`.

@@ -53,7 +53,6 @@
 "Category" = "Category";
 "Cell" = "Cell";
 "Change the preview colors. Exported PDFs keep the document's original colors." = "Change the preview colors. Exported PDFs keep the document's original colors.";
-"Changes apply immediately. Your writing stays in its original language." = "Changes apply immediately. Your writing stays in its original language.";
 "Check Document" = "Check Document";
 "Check Source" = "Check Source";
 "Choose a new name and location for this document." = "Choose a new name and location for this document.";
@@ -721,6 +720,7 @@
 "LeftBlank" = "LeftBlank";
 "Ink for your thoughts" = "Ink for your thoughts";
 
+"General" = "General";
 "Appearance" = "Appearance";
 
 // Preview distribution and updates.
@@ -889,7 +889,7 @@
 
 "Disconnect Coding Agent" = "Disconnect Coding Agent";
 
-"Allow a local coding agent to read or edit your documents while LeftBlank is running. You can disconnect at any time." = "Allow a local coding agent to read or edit your documents while LeftBlank is running. You can disconnect at any time.";
+"Enable a local coding agent to read and edit all documents in your library while LeftBlank is running. You can disconnect at any time." = "Enable a local coding agent to read and edit all documents in your library while LeftBlank is running. You can disconnect at any time.";
 
 "Read Only" = "Read Only";
 
@@ -904,8 +904,6 @@
 "Coding Agent" = "Coding Agent";
 "Connection enabled" = "Connection enabled";
 "Connection disabled" = "Connection disabled";
-"Current document" = "Current document";
-"Document access" = "Document access";
 "Enable Connection" = "Enable Connection";
 "Selected document" = "Selected document";
 "Prompt copied. Paste it into your coding agent on this Mac." = "Prompt copied. Paste it into your coding agent on this Mac.";
@@ -916,3 +914,6 @@
 "Package source is read-only. Save a copy outside the package folder to edit it." = "Package source is read-only. Save a copy outside the package folder to edit it.";
 "Read-only" = "Read-only";
 "You can view and copy package source. Save a copy to edit it." = "You can view and copy package source. Save a copy to edit it.";
+"Updates" = "Updates";
+"Support" = "Support";
+"Editor" = "Editor";

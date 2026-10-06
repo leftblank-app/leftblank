@@ -48,7 +48,7 @@ extension WritingFlowTests {
             workspace: app.workspace,
             library: app.workspace.library,
         ))
-        settingsView.frame = NSRect(x: 0, y: 0, width: 530, height: 690)
+        settingsView.frame = NSRect(origin: .zero, size: WritingSettingsView.windowSize)
         settingsView.layoutSubtreeIfNeeded()
         #expect(settingsView.fittingSize.height > 0)
 

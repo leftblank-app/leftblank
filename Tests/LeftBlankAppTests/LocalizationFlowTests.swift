@@ -62,8 +62,11 @@ extension WritingFlowTests {
         #expect(editor.string == original)
         #expect(app.workspace.text == original)
         #expect(editor.undoManager?.canUndo == true)
-        let settings = NSHostingView(rootView: Form { LanguageSettingsSection() })
-        settings.frame = NSRect(x: 0, y: 0, width: 500, height: 180)
+        let settings = NSHostingView(rootView: WritingSettingsView(
+            workspace: app.workspace,
+            library: app.workspace.library,
+        ))
+        settings.frame = NSRect(origin: .zero, size: WritingSettingsView.windowSize)
         settings.layoutSubtreeIfNeeded()
         #expect(settings.fittingSize.height > 0)
         localization.select(.english)
