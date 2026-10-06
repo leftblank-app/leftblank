@@ -353,7 +353,7 @@ extension WritingFlowTests {
             library: app.workspace.library,
         ))
         view.layoutSubtreeIfNeeded()
-        #expect(view.fittingSize.width == 530)
+        #expect(view.fittingSize == WritingSettingsView.windowSize)
         await #expect(throws: (any Error).self) { try await app.workspace.library.setCloudEnabled(true) }
         #expect(!app.workspace.library.cloudEnabled)
         #expect(app.workspace.editor?.isEditable == true)

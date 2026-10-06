@@ -18,6 +18,12 @@ extension WritingFlowTests {
         delegate.installMenu()
         let appMenu = try #require(NSApp.mainMenu?.items.first?.submenu)
         #expect(appMenu.title == AppDistribution.current.applicationName)
+        #expect(!appMenu.items.contains { $0.identifier?.rawValue == "preview.automaticChecks" })
+        let documentMenu = try #require(NSApp.mainMenu?.items.first { $0.submenu?.title == L10n.text("Documents") }?
+            .submenu)
+        #expect(!documentMenu.items.contains { $0.title == L10n.text("Recover Draft Copy…") })
+        let viewMenu = try #require(NSApp.mainMenu?.items.first { $0.submenu?.title == L10n.text("View") }?.submenu)
+        #expect(!viewMenu.items.contains { $0.title == L10n.text("Open Diagnostic Logs") })
         let check = appMenu.items.first { $0.identifier?.rawValue == "preview.checkForUpdates" }
         #if LEFTBLANK_PREVIEW
             #expect(AppDistribution.current == .preview)
@@ -33,7 +39,7 @@ extension WritingFlowTests {
     }
 
     #if LEFTBLANK_PREVIEW
-        @Test func sparkleAcceptsIncreasingBuildNumbersWithoutMarketingVersionBumps() throws {
+        @Test func sparkleAcceptsIncreasingBuildNumbersWithoutMarketingVersionBumps() {
             let comparator = SUStandardVersionComparator()
             #expect(comparator.compareVersion("9.1", toVersion: "10.1") == .orderedAscending)
             #expect(comparator.compareVersion("10.1", toVersion: "10.2") == .orderedAscending)
@@ -43,21 +49,8 @@ extension WritingFlowTests {
             let check = updater.makeCheckMenuItem()
             #expect(check.target === updater.controller)
             #expect(check.action == #selector(SPUStandardUpdaterController.checkForUpdates(_:)))
-            let automatic = updater.makeAutomaticChecksMenuItem()
-            #expect(updater.validateMenuItem(automatic))
-            #expect(automatic.state == (updater.controller.updater.automaticallyChecksForUpdates ? .on : .off))
-            let original = updater.controller.updater.automaticallyChecksForUpdates
-            defer { updater.controller.updater.automaticallyChecksForUpdates = original }
-            let action = try #require(automatic.action)
-            #expect(NSApp.sendAction(action, to: automatic.target, from: automatic))
-            #expect(updater.controller.updater.automaticallyChecksForUpdates != original)
-            #expect(updater.validateMenuItem(automatic))
-            #expect(automatic.state == (original ? .off : .on))
-            #expect(NSApp.sendAction(action, to: automatic.target, from: automatic))
-            #expect(updater.controller.updater.automaticallyChecksForUpdates == original)
             updater.start()
             #expect(!updater.controller.updater.sessionInProgress)
-            #expect(!updater.validateMenuItem(check))
         }
     #endif
 }

@@ -53,7 +53,6 @@
 "Category" = "分类";
 "Cell" = "内容";
 "Change the preview colors. Exported PDFs keep the document's original colors." = "切换成稿的阅读配色，PDF 导出保持文档原色。";
-"Changes apply immediately. Your writing stays in its original language." = "立即生效，不会改变文稿的语言和内容。";
 "Check Document" = "检查文稿";
 "Check Source" = "检查源码";
 "Choose a new name and location for this document." = "为文稿选择新的名称和位置。";
@@ -721,6 +720,7 @@
 "LeftBlank" = "留白";
 "Ink for your thoughts" = "此中有真意，欲辨已忘言";
 
+"General" = "通用";
 "Appearance" = "外观";
 
 // Preview distribution and updates.
@@ -889,7 +889,7 @@
 
 "Disconnect Coding Agent" = "断开编程智能体";
 
-"Allow a local coding agent to read or edit your documents while LeftBlank is running. You can disconnect at any time." = "允许本机编程智能体在留白运行时读取或编辑文档。你可以随时断开连接。";
+"Enable a local coding agent to read and edit all documents in your library while LeftBlank is running. You can disconnect at any time." = "启用连接后，本机编程智能体可以在留白运行时读取和编辑文稿库里的全部文稿。你可以随时断开连接。";
 
 "Read Only" = "只读";
 
@@ -904,8 +904,6 @@
 "Coding Agent" = "编程智能体";
 "Connection enabled" = "连接已启用";
 "Connection disabled" = "连接未启用";
-"Current document" = "当前文稿";
-"Document access" = "文稿访问范围";
 "Enable Connection" = "启用连接";
 "Selected document" = "已授权的文稿";
 "Prompt copied. Paste it into your coding agent on this Mac." = "提示词已复制，请粘贴到这台 Mac 上的编程智能体。";
@@ -916,3 +914,6 @@
 "Package source is read-only. Save a copy outside the package folder to edit it." = "扩展包源码为只读。如需编辑，请将副本保存到扩展包目录之外。";
 "Read-only" = "只读";
 "You can view and copy package source. Save a copy to edit it." = "可查看和复制扩展包源码。另存副本后可编辑。";
+"Updates" = "更新";
+"Support" = "支持";
+"Editor" = "编辑器";

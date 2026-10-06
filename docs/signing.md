@@ -14,15 +14,19 @@ Signing in to Xcode locally does not give a GitHub runner signing credentials. T
 | Secret `APP_STORE_CONNECT_KEY_ID` | API key ID |
 | Secret `APP_STORE_CONNECT_ISSUER_ID` | Team API issuer ID |
 | Variable `APPLE_TEAM_ID` | The certificate's developer team ID |
-| Secret `ICLOUD_PROVISIONING_PROFILE` | Base64 Developer ID profile authorizing LeftBlank's iCloud container and KVS |
+| Secret `ICLOUD_PROVISIONING_PROFILE` | Base64 Developer ID profile for `app.leftblank.writer` authorizing the shared iCloud container and KVS |
+| Secret `ICLOUD_PREVIEW_PROVISIONING_PROFILE` | Base64 Developer ID profile for `app.leftblank.writer.preview` authorizing the same container and KVS |
 
 Create the certificate through Xcode → Settings → Apple Accounts → team → Manage Certificates → Developer ID Application. Create the API key under App Store Connect → Users and Access → Integrations, with the least privilege needed for notarization. The private key can be downloaded once; store it in a password manager or protected file, never an issue, PR or chat.
 
 Supply secrets to `gh secret set --repo leftblank-app/leftblank NAME` through stdin rather than expanding values in command arguments or logs. Certificates and private keys do not belong in source or build artifacts.
 
-The previous Sumi testing identity and profile were configured on 2026-10-01. On 2026-10-02, the `app.leftblank.writer` App ID and dedicated `iCloud.app.leftblank.writer` container were registered and associated, and the **LeftBlank Developer ID iCloud** profile was generated with the existing Developer ID certificate. The downloaded profile passed local validation and replaced `ICLOUD_PROVISIONING_PROFILE` in the repository on 2026-10-02. `prepare-icloud-profile.py` checks team, App ID, certificate membership, expiration, distribution scope and required capabilities, then emits only the required entitlements. The release embeds the profile and verifies the signed entitlements. Helper processes do not receive iCloud entitlements. Local development builds remain ad hoc and cannot use iCloud. LeftBlank Preview is Developer ID signed, but intentionally has no production iCloud entitlement or profile.
+The previous Sumi testing identity and profile were configured on 2026-10-01. On 2026-10-02, the `app.leftblank.writer` App ID and dedicated `iCloud.app.leftblank.writer` container were registered and associated, and the **LeftBlank Developer ID iCloud** profile was generated with the existing Developer ID certificate. The downloaded profile passed local validation and replaced `ICLOUD_PROVISIONING_PROFILE` in the repository on 2026-10-02. `prepare-icloud-profile.py` checks team, App ID, certificate membership, expiration, distribution scope and required capabilities, then emits only the required entitlements. The release embeds the profile and verifies the signed entitlements. Helper processes do not receive iCloud entitlements. Local development builds remain ad hoc and cannot use iCloud. LeftBlank Preview requires its own Developer ID profile for `app.leftblank.writer.preview`, with the same production container and KVS. The release never substitutes the standard App ID profile or publishes a Preview without iCloud entitlements.
 
-The new LeftBlank identity still requires CI-secret replacement, a release run and native account/two-Mac verification. The prior notarization result below predates this capability.
+The Preview profile and GitHub secret were configured on 2026-10-06; see
+[Preview iCloud setup](preview-updates.md#icloud-sync). A signed release run and
+native account/two-Mac verification remain the end-to-end sync checks. The prior
+notarization result below predates this capability.
 
 ## Verification and publication
 

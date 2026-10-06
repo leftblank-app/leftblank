@@ -189,7 +189,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         item(L10n.format("About %@", AppDistribution.current.applicationName), #selector(about), "", app, target: self)
         #if LEFTBLANK_PREVIEW
             app.addItem(previewUpdater.makeCheckMenuItem())
-            app.addItem(previewUpdater.makeAutomaticChecksMenuItem())
         #endif
         item(L10n.text("Settings…"), #selector(settings), ",", app, target: self)
         app.addItem(.separator())
@@ -236,7 +235,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         item(L10n.text("Save"), #selector(saveDocument), "s", file, target: self)
         item(L10n.text("Save As…"), #selector(saveAs), "s", file, modifiers: [.command, .shift], target: self)
         item(L10n.text("Document History…"), #selector(documentHistory), "", file, target: self)
-        item(L10n.text("Recover Draft Copy…"), #selector(recoverDraft), "", file, target: self)
         item(L10n.text("Export PDF…"), #selector(exportPDF), "e", file, modifiers: [.command, .shift], target: self)
         file.addItem(.separator())
         item(L10n.text("Print…"), #selector(printDocument), "p", file, target: self)
@@ -268,7 +266,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         let view = section(L10n.text("View"))
         item(L10n.text("Discover Commands"), #selector(palette), workspace.commandKey, view, target: self)
-        item(L10n.text("Open Diagnostic Logs"), #selector(revealLogs), "", view, target: self)
         item(L10n.text("Focus on Writing"), #selector(writing), "1", view, target: self)
         item(L10n.text("Side-by-side Preview"), #selector(split), "2", view, target: self)
         item(L10n.text("Read the Preview"), #selector(preview), "3", view, target: self)
@@ -329,16 +326,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         if settingsWindow == nil {
             let panel = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 530, height: 690),
+                contentRect: NSRect(origin: .zero, size: WritingSettingsView.windowSize),
                 styleMask: [.titled, .closable],
                 backing: .buffered,
                 defer: false,
             )
             panel.isReleasedWhenClosed = false
-            panel.contentView = NSHostingView(rootView: WritingSettingsView(
-                workspace: workspace,
-                library: workspace.library,
-            ))
+            #if LEFTBLANK_PREVIEW
+                let rootView = WritingSettingsView(
+                    workspace: workspace,
+                    library: workspace.library,
+                    updater: previewUpdater,
+                )
+            #else
+                let rootView = WritingSettingsView(
+                    workspace: workspace,
+                    library: workspace.library,
+                )
+            #endif
+            panel.contentView = NSHostingView(rootView: rootView)
             panel.center()
             settingsWindow = panel
         }
@@ -360,10 +366,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     @objc private func openDocument() {
         workspace.openPanel()
-    }
-
-    @objc private func recoverDraft() {
-        workspace.openPanel(recovery: true)
     }
 
     @objc private func saveDocument() {
@@ -388,10 +390,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     @objc private func palette() {
         workspace.togglePalette()
-    }
-
-    @objc private func revealLogs() {
-        workspace.revealLogs()
     }
 
     @objc private func writing() {
@@ -431,7 +429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// Sparkle owns consent, scheduling, download verification and installation UI.
     /// Creating this object performs no network work; startup follows window setup.
     @MainActor
-    final class PreviewUpdater: NSObject, NSMenuItemValidation {
+    final class PreviewUpdater: NSObject {
         let controller: SPUStandardUpdaterController
 
         override init() {
@@ -460,31 +458,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             item.target = controller
             item.identifier = NSUserInterfaceItemIdentifier("preview.checkForUpdates")
             return item
-        }
-
-        func makeAutomaticChecksMenuItem() -> NSMenuItem {
-            let item = NSMenuItem(
-                title: L10n.text("Automatically Check for Updates"),
-                action: #selector(toggleAutomaticChecks(_:)),
-                keyEquivalent: "",
-            )
-            item.target = self
-            item.identifier = NSUserInterfaceItemIdentifier("preview.automaticChecks")
-            return item
-        }
-
-        @objc private func toggleAutomaticChecks(_ sender: NSMenuItem) {
-            // Keep a single source of truth in Sparkle; only explicit user actions
-            // write this preference. Info.plist requires confirmation to install.
-            controller.updater.automaticallyChecksForUpdates.toggle()
-        }
-
-        func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-            guard menuItem.action == #selector(toggleAutomaticChecks(_:)) else {
-                return false
-            }
-            menuItem.state = controller.updater.automaticallyChecksForUpdates ? .on : .off
-            return true
         }
     }
 #endif

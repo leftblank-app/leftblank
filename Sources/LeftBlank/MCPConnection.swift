@@ -67,7 +67,7 @@ final class MCPConnection: ObservableObject {
         }
     }
 
-    func enable(documentIDs: Set<UUID>?, canWrite: Bool) async throws {
+    func enable(documentIDs: Set<UUID>? = nil, canWrite: Bool = true) async throws {
         var bytes = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess
         else {

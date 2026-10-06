@@ -1,11 +1,11 @@
+import Combine
+import Foundation
 import LeftBlankCore
-import SwiftUI
 
 @MainActor
 final class AppLocalization: ObservableObject {
     static let shared = AppLocalization()
     @Published private(set) var language = L10n.language
-    @Published private(set) var generation = 0
     private var observer: NSObjectProtocol?
 
     private init() {
@@ -19,7 +19,6 @@ final class AppLocalization: ObservableObject {
                     return
                 }
                 self?.language = L10n.language
-                self?.generation += 1
             }
         }
     }
@@ -29,27 +28,6 @@ final class AppLocalization: ObservableObject {
             return
         }
         self.language = language
-        generation += 1
         L10n.setLanguage(language)
-    }
-}
-
-/// Embed in the app's Settings form alongside writing, library and agent preferences.
-struct LanguageSettingsSection: View {
-    @ObservedObject private var localization = AppLocalization.shared
-
-    var body: some View {
-        Section {
-            Picker(
-                L10n.text("App Language"),
-                selection: Binding(get: { localization.language }, set: { localization.select($0) }),
-            ) {
-                Text(L10n.text("Follow System")).tag(AppLanguage.system)
-                Text("English").tag(AppLanguage.english)
-                Text("简体中文").tag(AppLanguage.simplifiedChinese)
-            }.accessibilityIdentifier("settings.language")
-            Text(L10n.text("Changes apply immediately. Your writing stays in its original language."))
-                .font(.footnote).foregroundStyle(Theme.secondary)
-        } header: { Text(L10n.text("Language")) }
     }
 }
