@@ -54,6 +54,42 @@ extension WritingFlowTests {
         #expect(editor.sourceHover.panel == nil, "Typing cannot be interrupted by an old hover result")
     }
 
+    @Test func sourceHoverCardSurvivesCrossingTheNextLineOnTheWayIntoIt() async throws {
+        let source = "#rect(width: 20pt)\n#circle(radius: 5pt) and prose\n" + String(
+            repeating: "More writing.\n",
+            count: 20,
+        )
+        let app = try WritingFixture(text: source)
+        defer { app.close() }
+        try await app.ready()
+        let editor = try #require(app.workspace.editor)
+        try await app.hover(over: "rect")
+        try await app.wait { editor.sourceHover.help?.signature?.contains("rect") == true }
+        let first = try #require(editor.sourceHover.panel)
+        try await app.hover(over: "circle")
+        #expect(editor.sourceHover.panel === first, "Another word does not dismiss the card immediately")
+        try await app.wait { editor.sourceHover.help?.signature?.contains("circle") == true }
+        #expect(editor.sourceHover.panel !== first, "Dwelling on the next line's function replaces the card")
+        #expect(first.parent == nil && !first.isVisible)
+
+        try await app.hover(over: "rect")
+        try await app.wait { editor.sourceHover.help?.signature?.contains("rect") == true }
+        let panel = try #require(editor.sourceHover.panel)
+        try await app.hover(over: "prose")
+        #expect(editor.sourceHover.panel === panel)
+        try await app.hover(over: "circle")
+        #expect(editor.sourceHover.panel === panel)
+        editor.sourceHover.enteredCard()
+        try await Task.sleep(for: .milliseconds(650))
+        #expect(editor.sourceHover.panel === panel, "Words crossed on the way into the card keep it readable")
+        #expect(editor.sourceHover.help?.signature?.contains("rect") == true)
+        editor.sourceHover.scheduleDismissal()
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(editor.sourceHover.panel === panel, "A late editor exit cannot hide the card under the pointer")
+        editor.sourceHover.exitedCard()
+        try await app.wait { editor.sourceHover.panel == nil }
+    }
+
     @Test func sourceHoverDismissesForScrollAndInputComposition() async throws {
         let app = try WritingFixture(text: "#rect(width: 20pt)\n" + String(repeating: "More writing.\n", count: 80))
         defer { app.close() }

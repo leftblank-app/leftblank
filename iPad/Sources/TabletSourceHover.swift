@@ -8,10 +8,13 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
     private weak var editor: TabletTextView?
     private var request: Task<Void, Never>?
     private var dismissal: Task<Void, Never>?
+    /// The word under the pointer, pending or shown, and the word whose card is shown.
     private var range: NSRange?
+    private var shown: NSRange?
     private var viewport: CGRect?
     private let logger = Logger(subsystem: "app.leftblank.writer", category: "source-hover")
     private(set) var host: UIHostingController<TabletHoverCard>?
+    private var pointerInCard = false
     private var installed = false
 
     init(editor: TabletTextView) {
@@ -82,11 +85,22 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
             scheduleDismissal()
             return
         }
-        keepVisible()
+        if target == shown, viewport == editor.bounds {
+            abandonPending()
+            keepVisible()
+            return
+        }
         guard range != target || viewport != editor.bounds else {
             return
         }
-        dismiss()
+        if host == nil || viewport != editor.bounds {
+            dismiss()
+        } else {
+            // Reaching a card below crosses the next line's words. Keep it for the
+            // grace period; replace it only if the pointer dwells on another word.
+            request?.cancel()
+            scheduleCardDismissal()
+        }
         range = target
         viewport = editor.bounds
         logger.notice("Hover started")
@@ -102,10 +116,11 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
                 ])
                 logger.notice("Hover response received")
                 guard !Task.isCancelled, workspace.accepts(snapshot), workspace.panel == nil,
-                      range == target, let help = LanguageAssistance.hover(response)
+                      range == target, !pointerInCard, let help = LanguageAssistance.hover(response)
                 else {
                     return
                 }
+                removeCard()
                 present(help, range: target, workspace: workspace)
             } catch { /* Passive help never interrupts editing. */ }
         }
@@ -116,7 +131,34 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
         dismissal = nil
     }
 
+    func enteredCard() {
+        pointerInCard = true
+        abandonPending()
+        keepVisible()
+    }
+
+    func exitedCard() {
+        pointerInCard = false
+        scheduleDismissal()
+    }
+
+    /// The pointer left a word whose help has not arrived; only a shown card remains.
+    private func abandonPending() {
+        guard range != shown else {
+            return
+        }
+        request?.cancel()
+        request = nil
+        range = shown
+    }
+
+    /// The pointer left source help: abandon pending help, then hide the card after a grace period.
     func scheduleDismissal() {
+        abandonPending()
+        scheduleCardDismissal()
+    }
+
+    private func scheduleCardDismissal() {
         guard host != nil else {
             dismiss()
             return
@@ -126,7 +168,19 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
         }
         dismissal = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
-            self?.dismiss()
+            guard let self else {
+                return
+            }
+            dismissal = nil
+            guard !pointerInCard else {
+                return
+            }
+            // A word the pointer still dwells on keeps its pending replacement.
+            if range == shown {
+                dismiss()
+            } else {
+                removeCard()
+            }
         }
     }
 
@@ -146,6 +200,12 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
         request = nil
         keepVisible()
         range = nil
+        removeCard()
+    }
+
+    private func removeCard() {
+        shown = nil
+        pointerInCard = false
         host?.view.removeFromSuperview()
         host = nil
     }
@@ -174,8 +234,8 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
             name: name,
             help: help,
             workspace: workspace,
-            entered: { [weak self] in self?.keepVisible() },
-            exited: { [weak self] in self?.scheduleDismissal() },
+            entered: { [weak self] in self?.enteredCard() },
+            exited: { [weak self] in self?.exitedCard() },
             close: { [weak self] in self?.dismiss() },
         ))
         card.view.backgroundColor = .clear
@@ -191,6 +251,7 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
         )
         parent.addSubview(card.view)
         host = card
+        shown = range
         logger.notice("Hover presented")
     }
 }
