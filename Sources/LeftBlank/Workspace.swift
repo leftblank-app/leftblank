@@ -62,10 +62,14 @@ final class Workspace: ObservableObject {
         didSet {
             if previewURL != oldValue {
                 previewReadyForNavigation = false
+                previewPainted = false
             }
         }
     }
 
+    /// The preview web view stays mounted while Tinymist typesets; this is true
+    /// only after its current page has painted, so the UI can cover a blank pane.
+    @Published private(set) var previewPainted = false
     private var previewReadyForNavigation = false
     private var pendingPreviewNavigation: (
         url: URL,
@@ -1372,6 +1376,9 @@ final class Workspace: ObservableObject {
             return
         }
         previewReadyForNavigation = true
+        if !previewPainted {
+            previewPainted = true
+        }
         recordOperation("preview.ready")
         sendPendingPreviewNavigation()
     }
@@ -1381,6 +1388,7 @@ final class Workspace: ObservableObject {
             return
         }
         previewReadyForNavigation = false
+        previewPainted = false
         recordOperation("preview.loading")
     }
 

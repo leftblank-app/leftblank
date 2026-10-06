@@ -16,6 +16,12 @@ extension Workspace {
         serviceReady && hasSuccessfulPreview && !previewStale && diagnostics.isEmpty
     }
 
+    /// The first typesetting attempt failed, so no page will paint until the source is fixed.
+    var previewNeedsAttention: Bool {
+        serviceReady && !hasSuccessfulPreview
+            && (checkErrors > 0 || serviceStatus == "Document Needs Attention")
+    }
+
     var checkLabel: String {
         if !serviceReady {
             return L10n.text(serviceStatus)
