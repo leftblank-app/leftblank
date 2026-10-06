@@ -19,10 +19,9 @@ extension WritingFlowTests {
         delegate.installMenu()
         app.window.delegate = delegate
         defer { app.window.delegate = nil }
-        let menu = try #require(NSApp.mainMenu)
         app.window.orderFront(nil)
         if closeFirst {
-            #expect(menu.performKeyEquivalent(with: app.key("w", code: 13, modifiers: .command)))
+            #expect(!delegate.windowShouldClose(app.window))
             await app.layout()
         }
         #expect(app.workspace.isLibraryHome == closeFirst)

@@ -238,7 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         file.addItem(.separator())
         item(L10n.text("Print…"), #selector(printDocument), "p", file, target: self)
         file.addItem(.separator())
-        item(L10n.text("Close Document"), #selector(closeDocument), "w", file, target: self)
+        item(L10n.text("Close Document"), #selector(NSWindow.performClose(_:)), "w", file)
         let edit = section(L10n.text("Edit"))
         item(L10n.text("Undo"), Selector(("undo:")), "z", edit)
         item(L10n.text("Redo"), Selector(("redo:")), "z", edit, modifiers: [.command, .shift])
@@ -304,10 +304,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             return
         }
         workspace.execute(command)
-    }
-
-    @objc private func closeDocument() {
-        workspace.closeDocument()
     }
 
     @objc private func about() {
