@@ -424,6 +424,12 @@ extension TabletAssistanceTests {
                 "contents": .string("```typ\n\(code)\n```\n" + suffix),
             ]))?.example)
         }
+        let pasteboard = UIPasteboard.withUniqueName()
+        defer { UIPasteboard.remove(withName: pasteboard.name) }
+        example.copy(to: pasteboard)
+        #expect(pasteboard.string == example.displaySource)
+        try exampleFor(">>> #let x = 1\n#x").copy(to: pasteboard)
+        #expect(pasteboard.string == "#x", "Hidden setup lines stay out of the copied snippet")
         let codeOnly = try exampleFor("#align(center)[Hi]")
         let rendered = try #require(await workspace.exampleRenderer.image(
             for: codeOnly, directory: root, packageCache: workspace.packageCache,
