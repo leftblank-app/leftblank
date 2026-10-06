@@ -303,7 +303,9 @@ public final class AgentToolDispatcher {
             let current = try? await capture(document)
             result["is_current"] = .bool(current
                 .map { self.projectRevision($0, document: document) == projectRevision } ?? false)
-            return AgentToolResult(.object(result), isError: result["status"]?.string != "succeeded")
+            // "unverified" compiled cleanly; only its package and font inputs are not pinned.
+            let compiled = ["succeeded", "unverified"].contains(result["status"]?.string ?? "")
+            return AgentToolResult(.object(result), isError: !compiled)
         default: return try await edit(name, args: args, document: document, snapshot: snapshot)
         }
     }
