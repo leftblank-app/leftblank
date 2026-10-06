@@ -447,7 +447,7 @@ extension WritingFlowTests {
 }
 
 @MainActor
-private func findWebView(_ view: NSView?) -> WKWebView? {
+func findWebView(_ view: NSView?) -> WKWebView? {
     guard let view else {
         return nil
     }
@@ -458,7 +458,7 @@ private func findWebView(_ view: NSView?) -> WKWebView? {
 }
 
 @MainActor
-private func waitForJavaScript(_ web: WKWebView, condition: String) async throws {
+func waitForJavaScript(_ web: WKWebView, condition: String) async throws {
     let deadline = ContinuousClock.now + .seconds(15)
     while ContinuousClock.now < deadline {
         if await (try? web.evaluateJavaScript(condition)) as? Bool == true {

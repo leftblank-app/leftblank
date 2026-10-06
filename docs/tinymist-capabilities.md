@@ -13,7 +13,7 @@ This audit targets the bundled **Tinymist v0.15.8**, not an assumed latest serve
 | Document symbols | The manuscript outline uses `textDocument/documentSymbol`. |
 | Formatting | Explicit document formatting uses the server's formatter, followed by a native undoable replacement. |
 | Syntax context | `tinymist.interactCodeContext` distinguishes markup, code, math and raw text for context-aware insertion. |
-| Preview and source navigation | `tinymist.doStartPreview`, `tinymist.scrollPreview` and source-jump notifications connect the page and editor. Preview starts with partial rendering enabled. |
+| Preview and source navigation | `tinymist.doStartPreview`, `tinymist.scrollPreview` and source-jump notifications connect the page and editor. Preview starts with partial rendering enabled; short documents are painted completely so scrolling never reveals blank pages. |
 | PDF export | `tinymist.exportPdf` renders the current compilation entry and unsaved content. |
 
 Semantic tokens do not replace embedded-language grammars. A real v0.15.8 probe classified a Rust raw block body as `text`, while the Typst `#let` outside it received keyword and number tokens. Typst itself still highlights language-tagged code in the rendered document. LeftBlank uses a local Highlight.js grammar bundle for foreign-language code in its editable source view. See [editor rendering](editor-rendering.md).
