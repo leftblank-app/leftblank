@@ -14,6 +14,8 @@ final class SourceHoverController: NSObject {
     private(set) var examplePreview: HoverExamplePreview?
     private(set) var panel: NSPanel?
     private(set) var help: LanguageHover?
+    /// Tests copy into a private pasteboard instead of the user's clipboard.
+    var pasteboard = NSPasteboard.general
 
     init(editor: ManuscriptTextView) {
         self.editor = editor
@@ -82,6 +84,10 @@ final class SourceHoverController: NSObject {
         }
     }
 
+    func copyExample() {
+        help?.example?.copy(to: pasteboard)
+    }
+
     func dismiss(reason: String = #function) {
         if range != nil || panel != nil {
             editor?.workspace?.recordOperation("hover.dismissed", ["reason": reason])
@@ -117,7 +123,12 @@ final class SourceHoverController: NSObject {
         }
         let name = (editor.string as NSString).substring(with: range)
         let preview = HoverExamplePreview()
-        let host = SourceHoverHost(rootView: SourceHoverCard(name: name, help: help, preview: preview))
+        let host = SourceHoverHost(rootView: SourceHoverCard(
+            name: name,
+            help: help,
+            preview: preview,
+            copyExample: { [weak self] in self?.copyExample() },
+        ))
         host.entered = { [weak self] in self?.keepVisible() }
         host.exited = { [weak self] in self?.scheduleDismissal() }
         let size = host.fittingSize
@@ -206,7 +217,9 @@ private struct SourceHoverCard: View {
     let name: String
     let help: LanguageHover
     @ObservedObject var preview: HoverExamplePreview
+    let copyExample: () -> Void
     @State private var showExample = true
+    @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -288,12 +301,29 @@ private struct SourceHoverCard: View {
             ScrollView {
                 Text(example.displaySource).font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Theme.accent).fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(10).padding(.trailing, 22)
             }.frame(height: min(
                 100,
                 max(38, CGFloat(example.displaySource.components(separatedBy: "\n").count) * 16 + 20),
             ))
             .background(Color(nsColor: Theme.codeBackground), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    copyExample()
+                    copied = true
+                } label: {
+                    PhosphorIcon(name: copied ? "check" : "copy", size: 13)
+                        .foregroundStyle(copied ? Theme.accent : Theme.secondary)
+                        .frame(width: 24, height: 24).contentShape(Rectangle())
+                }.buttonStyle(.plain).padding(4).help(L10n.text("Copy")).accessibilityLabel(L10n.text("Copy"))
+            }
+            .task(id: copied) {
+                guard copied else {
+                    return
+                }
+                do { try await Task.sleep(for: .seconds(1.5)) } catch { return }
+                copied = false
+            }
             if let image = preview.image {
                 Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 160)
                     .padding(8).background(.white, in: RoundedRectangle(cornerRadius: 6))
@@ -312,5 +342,13 @@ private struct SourceHoverCard: View {
                     .font(.system(size: 11)).foregroundStyle(Theme.accent)
             }
         }
+    }
+}
+
+extension HoverExample {
+    /// Copy the snippet the card shows; hidden `>>>` setup lines stay out of the user's source.
+    func copy(to pasteboard: NSPasteboard) {
+        pasteboard.clearContents()
+        pasteboard.setString(displaySource, forType: .string)
     }
 }

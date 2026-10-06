@@ -51,6 +51,29 @@ extension WritingFlowTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
     }
 
+    @Test func hoverExampleCopyButtonCopiesTheDisplayedSnippet() async throws {
+        let source = "#align(center)[Hi]\n"
+        let app = try WritingFixture(text: source)
+        defer { app.close() }
+        try await app.ready()
+        let editor = try #require(app.workspace.editor)
+        let pasteboard = NSPasteboard(name: .init("LeftBlankTests.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        editor.sourceHover.pasteboard = pasteboard
+        try await app.hover(over: "align")
+        try await app.wait { editor.sourceHover.panel != nil }
+        let example = try #require(editor.sourceHover.help?.example)
+        editor.sourceHover.copyExample()
+        #expect(pasteboard.string(forType: .string) == example.displaySource)
+        #expect(editor.string == source && app.workspace.text == source)
+
+        let hidden = try #require(LanguageAssistance.hover(.object([
+            "contents": .string("```typ\n>>> #let x = 1\n#x\n```"),
+        ]))?.example)
+        hidden.copy(to: pasteboard)
+        #expect(pasteboard.string(forType: .string) == "#x", "Hidden setup lines stay out of the copied snippet")
+    }
+
     @Test func exampleRenderingPrefersImagesAndRejectsUnavailableContext() async throws {
         let app = try WritingFixture(text: "= Original", startService: false)
         defer { app.close() }

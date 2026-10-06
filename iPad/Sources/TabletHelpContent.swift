@@ -72,6 +72,7 @@ struct TabletHelpContent: View {
     @State private var showExample = true
     @State private var image: UIImage?
     @State private var loading = true
+    @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -83,8 +84,26 @@ struct TabletHelpContent: View {
             }
             if showExample, let example = help.example {
                 Text(example.displaySource).font(.system(.caption, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(12).padding(.trailing, 32)
                     .background(TabletTheme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(alignment: .topTrailing) {
+                        Button {
+                            example.copy(to: .general)
+                            copied = true
+                        } label: {
+                            TabletIcon(name: copied ? "check" : "copy", size: 16)
+                                .foregroundStyle(copied ? TabletTheme.accent : .secondary)
+                                .frame(width: 44, height: 44).contentShape(Rectangle())
+                        }.buttonStyle(.plain).accessibilityLabel(L10n.text("Copy"))
+                            .accessibilityIdentifier("help-example-copy")
+                    }
+                    .task(id: copied) {
+                        guard copied else {
+                            return
+                        }
+                        do { try await Task.sleep(for: .seconds(1.5)) } catch { return }
+                        copied = false
+                    }
                 if let image {
                     Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 180)
                         .padding(8).background(.white, in: RoundedRectangle(cornerRadius: 8))
@@ -123,5 +142,12 @@ struct TabletHelpContent: View {
             }
             loading = false
         }
+    }
+}
+
+extension HoverExample {
+    /// Copy the snippet the card shows; hidden `>>>` setup lines stay out of the user's source.
+    func copy(to pasteboard: UIPasteboard) {
+        pasteboard.string = displaySource
     }
 }
