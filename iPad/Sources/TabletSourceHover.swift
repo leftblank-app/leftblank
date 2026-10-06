@@ -83,7 +83,7 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
             return
         }
         keepVisible()
-        guard range != target else {
+        guard range != target || viewport != editor.bounds else {
             return
         }
         dismiss()

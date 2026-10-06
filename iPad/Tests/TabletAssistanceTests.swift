@@ -561,9 +561,6 @@ extension TabletAssistanceTests {
             window.layoutIfNeeded()
             rect = editor.firstRect(for: textRange)
             if viewport != editor.bounds {
-                // Deliver the viewport change before the next pointer movement,
-                // including a change whose UIKit scroll callback is still pending.
-                editor.delegate?.scrollViewDidScroll?(editor)
                 viewport = editor.bounds
                 stableSince = .now
                 let point = CGPoint(x: rect.midX, y: rect.midY)
