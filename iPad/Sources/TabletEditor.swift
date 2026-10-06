@@ -10,6 +10,7 @@ struct TabletEditor: UIViewRepresentable {
     func makeUIView(context: Context) -> UITextView {
         let view = TabletTextView()
         view.workspace = workspace
+        view.sourceHover.install()
         view.delegate = context.coordinator
         view.addInteraction(UIDropInteraction(delegate: view))
         view.backgroundColor = TabletTheme.nativeEditor
@@ -25,7 +26,9 @@ struct TabletEditor: UIViewRepresentable {
         view.textContainerInset = UIEdgeInsets(top: 18, left: 24, bottom: 18, right: 24)
         view.accessibilityLabel = L10n.text("Writing")
         view.accessibilityIdentifier = "manuscript"
-        workspace.assistance.onInvalidate = { [weak view] in view?.dismissTypingAssistance() }
+        workspace.assistance.onInvalidate = { [weak view] in view?.dismissTypingAssistance()
+            view?.sourceHover.dismiss()
+        }
         workspace.editor = view
         return view
     }
@@ -33,7 +36,10 @@ struct TabletEditor: UIViewRepresentable {
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.workspace = workspace
         (view as? TabletTextView)?.workspace = workspace
-        workspace.assistance.onInvalidate = { [weak view] in (view as? TabletTextView)?.dismissTypingAssistance() }
+        workspace.assistance.onInvalidate = { [weak view] in
+            (view as? TabletTextView)?.dismissTypingAssistance()
+            (view as? TabletTextView)?.sourceHover.dismiss()
+        }
         guard view.markedTextRange == nil else {
             return
         }
@@ -51,7 +57,7 @@ struct TabletEditor: UIViewRepresentable {
                 length: 0,
             )
         }
-        let editable = workspace.canWrite && !workspace.busy && workspace.layout != .preview
+        let editable = workspace.canEditSource && !workspace.busy && workspace.layout != .preview
         if view.isEditable != editable {
             view.isEditable = editable
             if !editable {
@@ -100,11 +106,15 @@ struct TabletEditor: UIViewRepresentable {
         }
 
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
-            guard workspace.canWrite, !workspace.busy else {
+            guard workspace.canEditSource, !workspace.busy else {
                 return false
             }
             (textView as? TabletTextView)?.snippet?.edit(range, replacement: text)
             return true
+        }
+
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            (scrollView as? TabletTextView)?.sourceHover.viewportChanged()
         }
 
         func textViewDidChange(_ textView: UITextView) {
@@ -132,6 +142,20 @@ struct TabletEditor: UIViewRepresentable {
 
 @MainActor final class TabletTextView: UITextView, UIDropInteractionDelegate {
     weak var workspace: TabletWorkspace?
+    lazy var sourceHover = TabletSourceHover(editor: self)
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        sourceHover.dismiss()
+        super.touchesBegan(touches, with: event)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil {
+            sourceHover.dismiss()
+        }
+    }
+
     var snippet: SnippetNavigation?
     var typingTask: Task<Void, Never>?
     var typingRequestID = UUID()
@@ -145,6 +169,20 @@ struct TabletEditor: UIViewRepresentable {
     }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if markedTextRange == nil, workspace?.serviceReady == true, workspace?.busy == false,
+           presses.contains(where: { press in
+               press.key?.keyCode == .keyboardF12 &&
+                   press.key?.modifierFlags.isDisjoint(with: [.command, .control, .alternate, .shift]) == true
+           })
+        {
+            workspace?.goToDefinition()
+            return
+        }
+        let hadHover = sourceHover.host != nil
+        sourceHover.dismiss()
+        if hadHover, markedTextRange == nil, presses.contains(where: { $0.key?.keyCode == .keyboardEscape }) {
+            return
+        }
         if presses.contains(where: { $0.key?.keyCode == .keyboardEscape }) {
             cancelPendingTypingAssistance()
         }
@@ -249,6 +287,7 @@ struct TabletEditor: UIViewRepresentable {
             ("h", [.control, .alternate], #selector(explainSource), "Explain at Cursor"),
             (".", .command, #selector(sourceActions), "Actions at Cursor"),
             ("j", [.control, .command], #selector(definition), "Go to Definition"),
+            ("w", .command, #selector(closeSource), "Close Document"),
             ("[", [.control, .command], #selector(back), "Navigate Back"),
             ("]", .command, #selector(indentSource), "Indent"),
             ("[", .command, #selector(outdentSource), "Outdent"),
@@ -302,6 +341,9 @@ struct TabletEditor: UIViewRepresentable {
         {
             return isEditable && markedTextRange == nil
         }
+        if action == #selector(closeSource) {
+            return workspace?.document != nil && workspace?.busy == false && markedTextRange == nil
+        }
         if action ==
             #selector(back)
         {
@@ -332,6 +374,10 @@ struct TabletEditor: UIViewRepresentable {
 
     @objc private func definition() {
         workspace?.goToDefinition()
+    }
+
+    @objc private func closeSource() {
+        Task { await workspace?.closeSource() }
     }
 
     @objc private func back() {

@@ -33,6 +33,18 @@ final class TabletWorkspace: ObservableObject {
         activeSourceURL ?? document?.sourceURL
     }
 
+    var packageCache: URL {
+        exportDirectory.deletingLastPathComponent().appendingPathComponent("PackageCache")
+    }
+
+    var isPackageSource: Bool {
+        sourceURL.map { PackageSource.isReadOnly($0, packageCache: packageCache) } ?? false
+    }
+
+    var canEditSource: Bool {
+        canWrite && !isPackageSource
+    }
+
     var entryURL: URL? {
         document?.sourceURL
     }
@@ -52,6 +64,7 @@ final class TabletWorkspace: ObservableObject {
 
     var navigationHistory: [(URL, TextPosition)] = []
     let assistance = TabletAssistance()
+    let exampleRenderer = TabletExampleRenderer()
     @Published var historyInterval = HistoryInterval(
         rawValue: UserDefaults.standard.string(forKey: "iPadHistoryInterval") ?? "hourly",
     ) ?? .hourly {
@@ -159,12 +172,16 @@ final class TabletWorkspace: ObservableObject {
                 commitComposition()
             }
             canWrite = allowed
-            editor?.isEditable = allowed && !busy && layout != .preview
+            editor?.isEditable = canEditSource && !busy && layout != .preview
         }
     }
 
     @discardableResult
     func requireWriting() -> Bool {
+        guard !isPackageSource else {
+            message = L10n.text("Package source is read-only. Save a copy outside the package folder to edit it.")
+            return false
+        }
         guard subscription.canWrite else {
             panel = .subscription
             return false
@@ -219,7 +236,7 @@ final class TabletWorkspace: ObservableObject {
                    $0.sourceURL == (snapshot.mainFileURL ?? file)
                })
             {
-                if snapshot.text != snapshot.savedText {
+                if snapshot.text != snapshot.savedText, !PackageSource.isReadOnly(file, packageCache: packageCache) {
                     // Copy the complete project so recovered chapters retain their assets.
                     let relative = try ProjectSources.relativePath(of: file, in: item.folderURL)
                     let recovered = try await library.importProject(
@@ -377,7 +394,7 @@ final class TabletWorkspace: ObservableObject {
     }
 
     func edited(_ source: String, selection: NSRange) {
-        guard canWrite else {
+        guard canEditSource else {
             return
         }
         self.selection = selection
@@ -444,6 +461,13 @@ final class TabletWorkspace: ObservableObject {
     @discardableResult
     func save() async -> Bool {
         guard let document, let sourceURL else {
+            return true
+        }
+        if isPackageSource {
+            guard text == savedText else {
+                message = L10n.text("Package source is read-only. Save a copy outside the package folder to edit it.")
+                return false
+            }
             return true
         }
         let session = generation
@@ -688,7 +712,7 @@ final class TabletWorkspace: ObservableObject {
             layout = .writing
         }
         panel = nil
-        editor?.isEditable = canWrite && !busy
+        editor?.isEditable = canEditSource && !busy
         editor?.selectedRange = selection
         editor?.scrollRangeToVisible(selection)
         editor?.becomeFirstResponder()
@@ -1012,7 +1036,15 @@ extension TabletWorkspace {
             return false
         }
         do {
-            _ = try ProjectSources.relativePath(of: url, in: document.folderURL)
+            if PackageSource.isReadOnly(url, packageCache: packageCache) {
+                guard url.isFileURL, url.pathExtension.lowercased() == "typ",
+                      try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
+                else {
+                    return false
+                }
+            } else {
+                _ = try ProjectSources.relativePath(of: url, in: document.folderURL)
+            }
             let target = url.standardizedFileURL.resolvingSymlinksInPath()
             if target == sourceURL?.standardizedFileURL.resolvingSymlinksInPath() {
                 return true

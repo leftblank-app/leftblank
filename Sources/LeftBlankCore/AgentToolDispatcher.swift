@@ -96,10 +96,12 @@ public final class AgentToolDispatcher {
                 "The request was cancelled. Check results before retrying writes.",
             )
         } else if let error = error as? DocumentStorageError {
-            issue = AgentToolError(
-                error == .externalChange ? "revision_conflict" : "not_text",
-                error.localizedDescription,
-            )
+            let code = switch error {
+            case .externalChange: "revision_conflict"
+            case .invalidUTF8: "not_text"
+            case .readOnlyPackage: "read_only_package"
+            }
+            issue = AgentToolError(code, error.localizedDescription)
         } else if let error = error as? LibraryError {
             let code = switch error {
             case .notFound: "not_found"

@@ -17,6 +17,7 @@ included:
   - scripts
   - design
 only_rules:
+  - custom_rules
   - accessibility_label_for_image
   - accessibility_trait_for_button
   - array_init
@@ -156,3 +157,15 @@ only_rules:
   - xct_specific_matcher
   - xctfail_message
   - yoda_condition
+
+custom_rules:
+  phosphor_icons_only:
+    name: "Use Phosphor icons"
+    included: '(^|/)(Sources|iPad/Sources)/.*\.swift$'
+    regex: '\b(systemName|systemImage|systemSymbolName)\s*:'
+    match_kinds:
+      - argument
+      - identifier
+      - keyword
+    message: "Use PhosphorIcon (macOS) or TabletIcon (iPad) with bundled Phosphor Regular assets instead of SF Symbols."
+    severity: error

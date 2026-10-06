@@ -580,7 +580,15 @@
 
 "Discover changes available for this heading, equation or selection." = "Discover changes available for this heading, equation or selection.";
 
-"Find the source of a variable, function or reference." = "Find the source of a variable, function or reference.";
+"Find the source of a variable, function, reference or imported module." = "Find the source of a variable, function, reference or imported module.";
+"⌘-click source to go to definition" = "⌘-click source to go to definition";
+"Help for %@" = "Help for %@";
+"View Typst documentation" = "View Typst documentation";
+"Explanation" = "Explanation";
+"Example" = "Example";
+"Rendered example" = "Rendered example";
+"Rendering example…" = "Rendering example…";
+"This example cannot be previewed on its own. See its documentation." = "This example cannot be previewed on its own. See its documentation.";
 
 "Return to your previous writing position." = "Return to your previous writing position.";
 
@@ -903,3 +911,8 @@
 "Prompt copied. Paste it into your coding agent on this Mac." = "Prompt copied. Paste it into your coding agent on this Mac.";
 "Could not start the coding agent connection. Enable it again in Settings." = "Could not start the coding agent connection. Enable it again in Settings.";
 "The connection stopped, but its saved permission could not be removed. Try disconnecting again." = "The connection stopped, but its saved permission could not be removed. Try disconnecting again.";
+"Read-only Package" = "Read-only Package";
+"Close Document" = "Close Document";
+"Package source is read-only. Save a copy outside the package folder to edit it." = "Package source is read-only. Save a copy outside the package folder to edit it.";
+"Read-only" = "Read-only";
+"You can view and copy package source. Save a copy to edit it." = "You can view and copy package source. Save a copy to edit it.";

@@ -19,6 +19,8 @@ The app supports English and Simplified Chinese, with the localized name **留�
 | Import a document | `⇧⌘O` |
 | Save as / export PDF | `⇧⌘S` / `⇧⌘E` |
 | Completion / find | `⌃.` / `⌘F` |
+| Go to definition | `⌘`-click, `F12` (or `fn-F12`), or `⌃⌘J` |
+| Return to previous source position | `⌃⌘[` |
 | Universe packages | `⇧⌘U` |
 
 For example, `⌘J → i → t` opens the table form. Choose the row and column counts, insert, then move between cells with Tab. Select text and press `⌘J → s → b` to make it bold. Each insertion is one undoable edit. You can always write Typst directly.
@@ -26,6 +28,14 @@ For example, `⌘J → i → t` opens the table form. Choose the row and column 
 The command catalog has 110 discoverable commands, including 74 insertion actions. Mathematics has nested categories for basic operations, equation structures and symbols. `⌘J → m → b → f` inserts a fraction, using the appropriate syntax inside an existing equation. Commands show their purpose, example, direct shortcut, discovery path and official reference.
 
 Frequent actions have direct shortcuts as well as discoverable paths. `⌘]` / `⌘[` indent and outdent, `⌘/` toggles comments, and `⌥⇧F` formats the source. Hovering a toolbar button shows a compact action name and shortcut.
+
+Command-click a variable, function, module member, label reference, or the path in an `import` / `include` to go to its definition. **Go to Definition** is also in the editor's context menu and **Editing & Code** commands. Navigation uses Typst's language service, including local modules, import aliases and external packages. Built-in functions without Typst source show contextual help instead.
+
+Rest the pointer on a function or symbol for 400 ms to see its signature and available documentation. The compact card follows the app's light/dark appearance and never moves the caret or takes keyboard focus. Move into the card to scroll longer explanations; move away, type, scroll the editor or press Esc to dismiss it. Built-in types that only provide an official documentation link show that link. Symbols with no help produce no popup. Hover also works in read-only package source; `⌃⌥H` still opens explicit help at the caret.
+
+When documentation includes a Typst example, the hover card opens an **Example** tab with code above its rendered result; **Explanation** shows the signature and full description. An embedded SVG or PNG is preferred. Otherwise the first example is compiled separately, including hidden documentation setup lines. The paper preview stays white in both themes. Results are cached, rendering is cancelled when the card closes, and examples never change the manuscript's preview. Examples that require unavailable files or context keep their source and a documentation link. On Mac, preview compilation uses an isolated directory, cached packages only, a three-second limit and the first output page. On iPad, touch users open **Writing Assistance → Explain at Cursor**; a mouse or trackpad also shows the hover card. Examples render in a separate embedded engine session with a five-second session timeout. Both platforms keep longer examples and explanations scrollable.
+
+**Go Back** restores the previous file and caret, including nested jumps. `⌘W` closes the current file and returns to the previous document; `⌘Q` quits the Mac app. On iPad, `⌘W` returns from a module to the original document, or closes the main document to the library. The original document remains the compilation entry while you inspect dependencies. Your own modules stay editable; package sources display a lock and **Read-only** badge and cannot be overwritten.
 
 The outline appears in the left margin without moving the text. Hover to explore headings, then use the small pin to keep them visible; hovering the pinned control reveals its close action. `⌘4` also pins or dismisses it. The command panel keeps a stable height through searching, selection and parameter entry; its guide stays in the same place.
 

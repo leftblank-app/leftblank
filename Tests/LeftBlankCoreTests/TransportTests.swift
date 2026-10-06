@@ -120,7 +120,10 @@ import Testing
     }
     #expect(try results.values.first?.get().string == message.string)
     writer.close()
-    while deadline > .now, results.values.count < 2 {
+    // EOF is a second asynchronous operation. A busy executor can resume the
+    // message assertion after its deadline; shutdown still needs its own wait.
+    let closeDeadline = ContinuousClock.now + .seconds(5)
+    while closeDeadline > .now, results.values.count < 2 {
         try await Task.sleep(for: .milliseconds(10))
     }
     #expect(results.values.count == 2)

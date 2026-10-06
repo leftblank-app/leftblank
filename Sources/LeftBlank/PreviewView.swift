@@ -295,7 +295,7 @@ struct PreviewReadingControls: View {
     var body: some View {
         if showFollow {
             Toggle(isOn: $session.followsWriting) {
-                Label(L10n.text("Follow Writing"), systemImage: "cursorarrow.motionlines")
+                Label { Text(L10n.text("Follow Writing")) } icon: { PhosphorIcon(name: "crosshair") }
             }
             .labelStyle(.iconOnly)
             .toggleStyle(.button)
@@ -305,7 +305,7 @@ struct PreviewReadingControls: View {
         Button { session.returnToReading()
             onReturn()
         } label: {
-            Label(L10n.text("Return to Reading"), systemImage: "arrow.uturn.backward")
+            Label { Text(L10n.text("Return to Reading")) } icon: { PhosphorIcon(name: "arrow-counter-clockwise") }
         }
         .labelStyle(.iconOnly)
         .accessibilityIdentifier("preview-return")

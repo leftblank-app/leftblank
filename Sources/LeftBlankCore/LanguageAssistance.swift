@@ -2,6 +2,10 @@ import Foundation
 
 public struct LanguageHover: Equatable, Sendable {
     public let text: String
+    public let signature: String?
+    public let documentation: String
+    public let documentationURL: URL?
+    public let example: HoverExample?
 }
 
 public struct LanguageSignature: Equatable, Sendable {
@@ -31,6 +35,32 @@ public struct SourceCompletion: Equatable, Sendable {
 }
 
 public enum LanguageAssistance {
+    public static func hoverRange(at offset: Int, in text: String) -> NSRange? {
+        let source = text as NSString
+        guard offset >= 0, offset < source.length else {
+            return nil
+        }
+        let separators = CharacterSet.alphanumerics.union(.nonBaseCharacters)
+            .union(CharacterSet(charactersIn: "_-")).inverted
+        guard source.rangeOfCharacter(from: separators, range: NSRange(location: offset, length: 1))
+            .location == NSNotFound
+        else {
+            return nil
+        }
+        let before = source.rangeOfCharacter(
+            from: separators,
+            options: .backwards,
+            range: NSRange(location: 0, length: offset),
+        )
+        let after = source.rangeOfCharacter(
+            from: separators,
+            range: NSRange(location: offset, length: source.length - offset),
+        )
+        let start = before.location == NSNotFound ? 0 : NSMaxRange(before)
+        let end = after.location == NSNotFound ? source.length : after.location
+        return NSRange(location: start, length: end - start)
+    }
+
     /// Completion edits remain local; numbered placeholders use the native snippet navigation.
     public static func completions(
         _ response: JSONValue,
@@ -113,7 +143,69 @@ public enum LanguageAssistance {
 
     public static func hover(_ response: JSONValue) -> LanguageHover? {
         let text = documentation(response["contents"])
-        return text.isEmpty ? nil : LanguageHover(text: text)
+        guard !text.isEmpty else {
+            return nil
+        }
+        var parts = response["contents"].array
+        if parts.isEmpty {
+            parts = [response["contents"]]
+        }
+        var signature: String?
+        let first = parts[0]
+        if first["language"].string != nil {
+            signature = first["value"].string.map { String($0.prefix(8000)) }
+            parts.removeFirst()
+        } else if first["kind"].string != "plaintext",
+                  let raw = first.string ?? first["value"].string,
+                  let expression =
+                  try? NSRegularExpression(pattern: #"\A\s*```typc\s*\n([\s\S]*?)\n```\s*(?:---\s*)?"#)
+        {
+            let bounded = String(raw.prefix(256_000)) as NSString
+            if let match = expression.firstMatch(
+                in: bounded as String,
+                range: NSRange(location: 0, length: bounded.length),
+            ) {
+                signature = String(bounded.substring(with: match.range(at: 1)).prefix(8000))
+                parts[0] = .string(bounded.substring(from: NSMaxRange(match.range)))
+            }
+        }
+        var documentationURL: URL?
+        let body = parts.map { hoverDocumentation($0, link: &documentationURL) }
+        return LanguageHover(
+            text: text,
+            signature: signature,
+            documentation: documentation(.array(body)),
+            documentationURL: documentationURL,
+            example: HoverExample.first(in: parts),
+        )
+    }
+
+    /// Only the server's explicit HTTPS Typst documentation link is actionable.
+    /// Other links, including command URIs, remain inert text.
+    private static func hoverDocumentation(_ value: JSONValue, link: inout URL?) -> JSONValue {
+        guard value["kind"].string != "plaintext", value["language"].string == nil,
+              let raw = value.string ?? value["value"].string,
+              let expression =
+              try? NSRegularExpression(pattern: #"\[Open docs\]\((https://typst\.app/docs/[^)\s]*)\)"#)
+        else {
+            return value
+        }
+        let source = String(raw.prefix(16000)) as NSString
+        guard let match = expression.firstMatch(
+            in: source as String,
+            range: NSRange(location: 0, length: source.length),
+        ),
+            let url = URL(string: source.substring(with: match.range(at: 1))),
+            url.scheme == "https", url.host == "typst.app", url.user == nil, url.password == nil
+        else {
+            return value
+        }
+        if link == nil {
+            link = url
+        }
+        let body = source.replacingCharacters(in: match.range, with: "")
+            .replacingOccurrences(of: #"(?m)^[ \t]*---[ \t]*$"#, with: "", options: .regularExpression)
+        return .string(body)
     }
 
     public static func signatureHelp(_ response: JSONValue) -> LanguageSignature? {

@@ -104,9 +104,10 @@ public enum AgentProjectFiles {
     }
 
     public static func write(_ text: String?, path: String, root: URL, expected: Data?) throws {
-        _ = try url(path, in: root)
+        try PackageSource.requireWritable(url(path, in: root))
         try CoordinatedFileAccess.write(root) { directory in
             let destination = try url(path, in: directory)
+            try PackageSource.requireWritable(destination)
             let existing: Data?
             if FileManager.default.fileExists(atPath: destination.path) {
                 let values = try destination.resourceValues(forKeys: [.isRegularFileKey])

@@ -21,7 +21,29 @@ final class Workspace: ObservableObject {
         didSet { textMetrics = nil }
     }
 
-    @Published var fileURL: URL?
+    @Published var fileURL: URL? {
+        didSet { updateSourceAccess() }
+    }
+
+    @Published private(set) var isPackageSource = false
+
+    var packageCache: URL {
+        stateDirectory.appendingPathComponent("PackageCache")
+    }
+
+    var canEditSource: Bool {
+        !isLibraryHome && !isPackageSource
+    }
+
+    var editorIsEditable: Bool {
+        canEditSource && layout != .preview && !paletteOpen && !documentTransitionInProgress
+    }
+
+    private func updateSourceAccess() {
+        isPackageSource = fileURL.map { PackageSource.isReadOnly($0, packageCache: packageCache) } ?? false
+        editor?.isEditable = editorIsEditable
+    }
+
     @Published var mainFileURL: URL?
     @Published var savedText: String?
     @Published var objectEditSession: ObjectEditSession?
@@ -57,7 +79,7 @@ final class Workspace: ObservableObject {
         didSet {
             recordOperation("layout.changed", ["layout": layout.rawValue])
             dismissAssistance()
-            editor?.isEditable = layout != .preview && !paletteOpen && !documentTransitionInProgress
+            editor?.isEditable = editorIsEditable
             if !paletteOpen {
                 editor?.window?.makeFirstResponder(layout == .preview ? nil : editor)
             }
@@ -186,7 +208,7 @@ final class Workspace: ObservableObject {
     @Published private(set) var assistance: WritingAssistance?
     private var assistanceTask: Task<Void, Never>?
     private var assistanceRequest = UUID()
-    private var navigationHistory: [(URL, TextPosition)] = []
+    private var navigationHistory: [(url: URL, position: TextPosition, main: URL?)] = []
     weak var editor: ManuscriptTextView?
     weak var window: NSWindow?
     var onTitleChange: ((String) -> Void)?
@@ -225,7 +247,10 @@ final class Workspace: ObservableObject {
     }
 
     var title: String {
-        isLibraryHome ? L10n
+        if isPackageSource, let fileURL {
+            return fileURL.lastPathComponent
+        }
+        return isLibraryHome ? L10n
             .text("Your writing") :
             (managedTitle ?? fileURL?.deletingPathExtension().lastPathComponent ?? L10n.text("Untitled"))
     }
@@ -337,6 +362,7 @@ final class Workspace: ObservableObject {
             self?.message = message
         }
         client.onShowDocument = { [weak self] params in self?.showDocument(params) }
+        updateSourceAccess()
     }
 
     func startService() {
@@ -410,7 +436,7 @@ final class Workspace: ObservableObject {
     }
 
     func edited(_ newText: String, change: TextReplacement? = nil) {
-        guard !isLibraryHome else {
+        guard canEditSource else {
             return
         }
         history.willEdit(previous: text)
@@ -559,9 +585,13 @@ final class Workspace: ObservableObject {
             saveAs()
             return
         }
+        if isPackageSource {
+            saveStatus = "Read-only Package"
+            return
+        }
         history.flush(current: text)
         do {
-            baseline = try DocumentStorage.write(text, to: fileURL, baseline: baseline)
+            baseline = try DocumentStorage.write(text, to: fileURL, baseline: baseline, packageCache: packageCache)
             savedText = text
             saveStatus = "Saved"
             recordOperation("save.finished")
@@ -595,7 +625,7 @@ final class Workspace: ObservableObject {
         panel.title = L10n.text("Save Document")
         panel.nameFieldStringValue = managedTitle.map { $0.replacingOccurrences(of: "/", with: "-") + ".typ" }
             ?? fileURL?.lastPathComponent ?? L10n.text("Untitled.typ")
-        panel.directoryURL = managedDocumentID == nil ? fileURL?.deletingLastPathComponent() : nil
+        panel.directoryURL = managedDocumentID == nil && !isPackageSource ? fileURL?.deletingLastPathComponent() : nil
         panel.allowedContentTypes = [UTType(filenameExtension: "typ") ?? .plainText]
         present(panel) { [weak self] url in
             guard let self else {
@@ -611,7 +641,13 @@ final class Workspace: ObservableObject {
 
     func save(to url: URL) throws {
         history.flush(current: text)
-        baseline = try DocumentStorage.write(text, to: url, baseline: url == fileURL ? baseline : nil)
+        baseline = try DocumentStorage.write(
+            text,
+            to: url,
+            baseline: url == fileURL ? baseline : nil,
+            packageCache: packageCache,
+        )
+        navigationHistory.removeAll()
         fileURL = url
         mainFileURL = nil
         savedText = text
@@ -656,7 +692,7 @@ final class Workspace: ObservableObject {
         return true
     }
 
-    @discardableResult func open(_ url: URL, preservingMain: Bool = false) -> Bool {
+    @discardableResult func open(_ url: URL, preservingMain: Bool = false, rememberSource: Bool = true) -> Bool {
         guard !agentMetadataChangeInProgress else {
             return false
         }
@@ -667,6 +703,11 @@ final class Workspace: ObservableObject {
             }
             let (content, disk) = try DocumentStorage.read(url)
             let previousMain = compilationURL
+            if preservingMain, rememberSource, url.standardizedFileURL != documentURL.standardizedFileURL {
+                navigationHistory.append((documentURL, metrics.position(at: selection.location), mainFileURL))
+            } else if !preservingMain {
+                navigationHistory.removeAll()
+            }
             mainFileURL = preservingMain && url != previousMain ? previousMain : nil
             fileURL = url
             text = content
@@ -677,7 +718,8 @@ final class Workspace: ObservableObject {
             documentVersion += 1
             selection = NSRange(location: 0, length: 0)
             editor?.load(content, selection: selection)
-            saveStatus = "Saved"
+            editor?.isEditable = editorIsEditable
+            saveStatus = isPackageSource ? "Read-only Package" : "Saved"
             saveRecovery()
             onTitleChange?(title)
             startService()
@@ -710,6 +752,7 @@ final class Workspace: ObservableObject {
 
     /// No replacement draft is created when the last document is trashed.
     func showLibraryHome() {
+        navigationHistory.removeAll()
         dismissAssistance()
         saveTask?.cancel()
         syncTask?.cancel()
@@ -870,7 +913,7 @@ final class Workspace: ObservableObject {
         availableResources = []
         availableLibraryDocuments = []
         commandError = nil
-        editor?.isEditable = layout != .preview && !documentTransitionInProgress
+        editor?.isEditable = editorIsEditable
         if layout != .preview, let editor {
             editor.window?.makeFirstResponder(editor)
         }
@@ -1079,7 +1122,7 @@ final class Workspace: ObservableObject {
     }
 
     func editLines(_ action: LineAction) {
-        guard let editor, !editor.hasMarkedText() else {
+        guard canEditSource, let editor, !editor.hasMarkedText() else {
             return
         }
         let replacement = TextEditing.lines(action, text: text, selection: editor.selectedRange())
@@ -1088,7 +1131,7 @@ final class Workspace: ObservableObject {
     }
 
     func formatDocument() {
-        guard serviceReady, let editor, !editor.hasMarkedText() else {
+        guard canEditSource, serviceReady, let editor, !editor.hasMarkedText() else {
             return
         }
         let caret = editor.selectedRange()
@@ -1145,6 +1188,7 @@ final class Workspace: ObservableObject {
     }
 
     func importPackage(_ package: UniversePackage) throws {
+        try PackageSource.requireWritable(documentURL, packageCache: packageCache)
         guard let editor,
               !editor.hasMarkedText()
         else {
@@ -1224,7 +1268,7 @@ final class Workspace: ObservableObject {
     }
 
     private func insert(_ command: WritingCommand) {
-        guard !applyingCommand, let editor, !editor.hasMarkedText() else {
+        guard canEditSource, !applyingCommand, let editor, !editor.hasMarkedText() else {
             return
         }
         guard serviceReady
@@ -1446,6 +1490,7 @@ final class Workspace: ObservableObject {
     }
 
     func exportPDF(to destination: URL) async throws {
+        try PackageSource.requireWritable(destination, packageCache: packageCache)
         guard serviceReady,
               !exporting
         else {
@@ -1761,6 +1806,37 @@ final class Workspace: ObservableObject {
 }
 
 extension Workspace {
+    func hoverHelp(at offset: Int) async -> LanguageHover? {
+        guard serviceReady, client.supports("hoverProvider"), !paletteOpen, !isLibraryHome,
+              layout != .preview, !documentTransitionInProgress, !applyingCommand,
+              assistance == nil, editor?.hasMarkedText() != true,
+              offset >= 0, offset < text.utf16.count
+        else {
+            return nil
+        }
+        let generation = serviceGeneration, version = documentVersion, url = documentURL, caret = selection
+        do {
+            try flushChanges()
+            let result = try await client.request("textDocument/hover", [
+                "textDocument": ["uri": url.absoluteString],
+                "position": TextPosition(offset: offset, in: text).json,
+            ])
+            guard !Task.isCancelled, generation == serviceGeneration, version == documentVersion,
+                  url == documentURL, caret == selection, assistance == nil, !paletteOpen,
+                  layout != .preview, !documentTransitionInProgress, editor?.hasMarkedText() != true
+            else {
+                return nil
+            }
+            let help = LanguageAssistance.hover(result)
+            recordOperation("hover.response", ["hasHelp": String(help != nil)])
+            return help
+        } catch {
+            recordOperation("hover.failed", ["error": error.localizedDescription])
+            // Passive help never interrupts writing with connection/error messages.
+            return nil
+        }
+    }
+
     func dismissAssistance() {
         editor?.dismissTypingAssistance()
         assistanceRequest = UUID()
@@ -1861,31 +1937,37 @@ extension Workspace {
         } catch { showMessage(error.localizedDescription) }
     }
 
+    var canNavigateSource: Bool {
+        serviceReady && client.supports("definitionProvider") && !paletteOpen && !isLibraryHome &&
+            !documentTransitionInProgress && !applyingCommand && editor?.hasMarkedText() != true
+    }
+
     func goToDefinition() {
-        guard serviceReady, client.supports("definitionProvider"), !paletteOpen,
-              editor?.hasMarkedText() != true
-        else {
+        guard canNavigateSource else {
             return
         }
         dismissAssistance()
+        let requestID = assistanceRequest
         let version = documentVersion, generation = serviceGeneration, url = documentURL, caret = selection,
             origin = position
-        Task {
+        assistanceTask = Task {
             do {
                 try flushChanges()
                 let response = try await client.request(
                     "textDocument/definition",
                     ["textDocument": ["uri": url.absoluteString], "position": origin.json],
                 )
-                guard generation == serviceGeneration, version == documentVersion, caret == selection,
-                      !paletteOpen, editor?.hasMarkedText() != true
+                guard !Task.isCancelled, requestID == assistanceRequest, url == documentURL,
+                      generation == serviceGeneration, version == documentVersion, caret == selection,
+                      canNavigateSource
                 else {
                     return
                 }
                 let destination = response.array.first ?? response
                 guard let uri = destination["uri"].string ?? destination["targetUri"].string,
                       let target = URL(string: uri), target.isFileURL,
-                      target.host == nil || target.host?.isEmpty == true || target.host == "localhost"
+                      target.host == nil || target.host?.isEmpty == true || target.host == "localhost",
+                      target.query == nil, target.fragment == nil
                 else {
                     requestAssistance(.help)
                     return
@@ -1897,17 +1979,15 @@ extension Workspace {
                 else {
                     return
                 }
-                if target != documentURL, !open(target, preservingMain: true) {
+                if target == documentURL {
+                    navigationHistory.append((url, origin, mainFileURL))
+                } else if !open(target, preservingMain: true) {
                     return
-                }
-                navigationHistory.append((url, origin))
-                if navigationHistory.count > 32 {
-                    navigationHistory.removeFirst()
                 }
                 jump(to: TextPosition(line: line, character: column).offset(in: text))
                 recordOperation("navigation.definition")
             } catch {
-                if generation == serviceGeneration {
+                if !Task.isCancelled, requestID == assistanceRequest, generation == serviceGeneration {
                     showMessage(error.localizedDescription)
                 }
             }
@@ -1915,13 +1995,41 @@ extension Workspace {
     }
 
     func navigateBack() {
-        guard let (url, position) = navigationHistory.last else {
+        guard !documentTransitionInProgress, !applyingCommand, editor?.hasMarkedText() != true else {
             return
         }
-        if url != documentURL, !open(url, preservingMain: true) {
+        dismissAssistance()
+        guard let index = navigationHistory.indices.last else {
             return
         }
-        navigationHistory.removeLast()
-        jump(to: position.offset(in: text))
+        restoreNavigation(at: index)
+    }
+
+    private func restoreNavigation(at index: Int) {
+        let destination = navigationHistory[index]
+        if destination.url != documentURL,
+           !open(destination.url, preservingMain: true, rememberSource: false)
+        {
+            return
+        }
+        mainFileURL = destination.main
+        navigationHistory.removeSubrange(index...)
+        jump(to: destination.position.offset(in: text))
+    }
+
+    func closeDocument() {
+        guard !isLibraryHome, !documentTransitionInProgress, !applyingCommand else {
+            return
+        }
+        window?.makeFirstResponder(nil)
+        closePalette()
+        if let index = navigationHistory.lastIndex(where: { $0.url != documentURL }) {
+            restoreNavigation(at: index)
+        } else if let mainFileURL, mainFileURL != documentURL {
+            // A recovered session may have a compilation entry but no in-memory history.
+            _ = open(mainFileURL)
+        } else if preserveCurrent() {
+            showLibraryHome()
+        }
     }
 }

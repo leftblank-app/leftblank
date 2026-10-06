@@ -137,7 +137,7 @@ final class DocumentHistoryController: ObservableObject {
 
     @discardableResult
     func restore(_ revision: DocumentRevision) async -> Bool {
-        guard let workspace, !workspace.isLibraryHome else {
+        guard let workspace, workspace.canEditSource else {
             return false
         }
         let key = workspace.historyKey, source = workspace.text, version = workspace.revision

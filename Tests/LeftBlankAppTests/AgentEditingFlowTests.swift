@@ -6,6 +6,43 @@ import SwiftUI
 import Testing
 
 extension WritingFlowTests {
+    @Test func agentMetadataChangesPreservePackageSourceProtection() async throws {
+        let app = try WritingFixture(text: "= Existing\n", startService: false)
+        defer { app.close() }
+        let workspace = app.workspace
+        let document = try await workspace.library.store.create(title: "Agent", text: "= Draft\n")
+        try await workspace.library.open(document.id)
+        let package = workspace.packageCache.appendingPathComponent("preview/test/1.0.0/lib.typ")
+        try FileManager.default.createDirectory(
+            at: package.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        let source = "#let original = 1\n"
+        try Data(source.utf8).write(to: package)
+        #expect(workspace.open(package, preservingMain: true))
+        let editor = try #require(workspace.editor)
+        let tools = AgentToolDispatcher(
+            library: workspace.library.store,
+            history: workspace.history.store,
+            host: workspace,
+        )
+        let access = AgentToolAccess(documentIDs: [document.id], canWrite: true)
+        let renamed = await tools.call("rename_document", arguments: .object([
+            "document_id": .string(document.id.uuidString), "title": .string("Renamed"),
+            "expected_metadata_revision": .string(document.metadataRevision),
+            "request_id": .string("rename-with-package-open"),
+        ]), access: access)
+        #expect(!renamed.isError)
+        #expect(workspace.documentURL == package && workspace.isPackageSource)
+        #expect(!editor.isEditable && !workspace.documentTransitionInProgress)
+        editor.insertText("overwrite", replacementRange: NSRange(location: 0, length: source.utf16.count))
+        #expect(workspace.text == source && editor.string == source)
+        #expect(try String(contentsOf: package, encoding: .utf8) == source)
+        workspace.navigateBack()
+        #expect(workspace.documentURL == document.sourceURL)
+        #expect(editor.isEditable)
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true"))
     func mcpHurlExercisesRealDocumentWorkflow() async throws {
         let app = try WritingFixture(text: "= Hurl fixture\n", startService: false)

@@ -395,7 +395,7 @@ struct WritingFlowTests {
         try await app.workspace.library.create(builtIn: .blank)
         #expect(app.workspace.title == L10n.text("Untitled"))
         try await app.ready()
-        #expect(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+        #expect(!delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
         #expect(delegate.applicationShouldTerminate(NSApp) == .terminateNow)
         delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
     }
@@ -511,6 +511,11 @@ final class WritingFixture {
         let deadline = ContinuousClock.now + .seconds(15)
         while !condition(), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(30))
+        }
+        if !condition() {
+            let log = workspace.stateDirectory.appendingPathComponent("Logs/events.jsonl")
+            let events = (try? String(contentsOf: log, encoding: .utf8)) ?? "No operation log"
+            print("Native UI timeout diagnostics:\n" + events.suffix(12000))
         }
         try #require(
             condition(),

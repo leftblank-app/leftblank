@@ -22,7 +22,8 @@ import uuid
 # split view, autosave, preview, rotation, rendering and PDF sharing. Main and
 # full dispatches run the complete UI suite.
 SMOKE_TESTS = ('LeftBlankUITests/WritingTests/testEditingPersistsAcrossPreviewAndRotation',
-               'LeftBlankUITests/WritingTests/testWelcomePreviewAndPDFExport')
+               'LeftBlankUITests/WritingTests/testWelcomePreviewAndPDFExport',
+               'LeftBlankUITests/WritingTests/testRenderedFunctionHelpKeepsTheManuscript')
 
 
 def wait_for_tests(process, startup_timeout, execution_timeout):

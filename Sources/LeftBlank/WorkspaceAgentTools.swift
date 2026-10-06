@@ -30,6 +30,7 @@ extension Workspace: AgentToolHost {
         }
         for change in changes {
             let url = try AgentProjectFiles.url(change.path, in: document.folderURL)
+            try PackageSource.requireWritable(url, packageCache: packageCache)
             if !isLibraryHome, documentURL.standardizedFileURL == url.standardizedFileURL {
                 guard change.text != nil
                 else {
@@ -52,6 +53,7 @@ extension Workspace: AgentToolHost {
             )
         }
         let url = try AgentProjectFiles.url(change.path, in: document.folderURL)
+        try PackageSource.requireWritable(url, packageCache: packageCache)
         if !isLibraryHome, documentURL.standardizedFileURL == url.standardizedFileURL {
             guard let replacement = change.text else {
                 throw AgentToolError(
@@ -142,7 +144,7 @@ extension Workspace: AgentToolHost {
         await library.refresh()
         agentMetadataChangeInProgress = false
         documentTransitionInProgress = false
-        editor?.isEditable = !isLibraryHome && layout != .preview && !paletteOpen
+        editor?.isEditable = editorIsEditable
         onTitleChange?(title)
     }
 
