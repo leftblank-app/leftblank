@@ -715,6 +715,9 @@ final class Workspace: ObservableObject {
             baseline = disk
             isLibraryHome = false
             library.associate(url)
+            if let managedDocumentID {
+                library.noteOpened(managedDocumentID)
+            }
             documentVersion += 1
             selection = NSRange(location: 0, length: 0)
             editor?.load(content, selection: selection)
@@ -2029,7 +2032,42 @@ extension Workspace {
             // A recovered session may have a compilation entry but no in-memory history.
             _ = open(mainFileURL)
         } else if preserveCurrent() {
+            closeToRecentDocument()
+        }
+    }
+
+    /// Closing a library document returns to the one opened before it, like closing a tab.
+    /// With nothing left to return to, the template page offers a fresh start.
+    private func closeToRecentDocument() {
+        if let managedDocumentID {
+            library.forgetRecent(managedDocumentID)
+        }
+        let candidates = library.reopenableRecentIDs
+        guard !candidates.isEmpty else {
             showLibraryHome()
+            openDiscovery(.templates)
+            return
+        }
+        recordOperation("document.closeToRecent")
+        if text != savedText {
+            // Already preserved as a draft copy; clear it so the next open cannot copy it twice.
+            showLibraryHome()
+        }
+        documentTransitionInProgress = true
+        editor?.isEditable = false
+        Task { [weak self] in
+            guard let self else {
+                return
+            }
+            let reopened = await library.reopenRecent(candidates)
+            documentTransitionInProgress = false
+            editor?.isEditable = editorIsEditable
+            if !reopened {
+                if !isLibraryHome {
+                    showLibraryHome()
+                }
+                openDiscovery(.templates)
+            }
         }
     }
 }
