@@ -104,6 +104,7 @@ extension WritingFlowTests {
             access: access,
         )
         #expect(compiled.value["status"].string == "unverified")
+        #expect(!compiled.isError)
         #expect(compiled.value["project_sources_compiled"].foundationValue as? Bool == true)
         #expect(compiled.value["is_current"].foundationValue as? Bool == true)
         #expect(compiled.value["compiled_project_revision"].string == metadata.value["project_revision"].string)
@@ -121,6 +122,7 @@ extension WritingFlowTests {
             access: access,
         )
         #expect(broken.value["status"].string == "failed")
+        #expect(broken.isError)
         #expect(broken.value["project_sources_compiled"].foundationValue as? Bool == false)
         #expect(!broken.value["diagnostics"].array.isEmpty || broken.value["engine_message"].string?.isEmpty == false)
     }
