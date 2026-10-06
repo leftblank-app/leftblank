@@ -547,28 +547,32 @@ extension TabletAssistanceTests {
         try #require(editor.becomeFirstResponder())
         controller.view.layoutIfNeeded()
         editor.scrollRangeToVisible(NSRange(location: 2, length: 1))
-        // Focus and keyboard appearance can finish laying out a cold simulator
-        // after layoutIfNeeded returns. Hover starts in the settled viewport.
-        var viewport = editor.bounds
-        var stableSince = ContinuousClock.now
-        try await waitFor {
-            if editor.bounds != viewport {
-                viewport = editor.bounds
-                stableSince = .now
-            }
-            return stableSince.duration(to: .now) >= .milliseconds(500)
-        }
         let selection = editor.selectedRange
         let start = try #require(editor.position(from: editor.beginningOfDocument, offset: 2))
         let end = try #require(editor.position(from: start, offset: 1))
-        let rect = try editor.firstRect(for: #require(editor.textRange(from: start, to: end)))
-        let point = CGPoint(x: rect.midX, y: rect.midY)
-        #expect(editor.sourceHover.offset(at: point) == 2)
-        editor.sourceHover.move(to: point)
-        try await waitFor { editor.sourceHover.host != nil }
+        let textRange = try #require(editor.textRange(from: start, to: end))
+        var viewport: CGRect?
+        var rect = CGRect.zero
+        var stableSince = ContinuousClock.now
+        // A cold simulator may finish keyboard layout after hover starts,
+        // cancelling the request. Replay pointer movement at the new geometry
+        // only when the viewport changes; a stable viewport gets one request.
+        try await waitFor {
+            window.layoutIfNeeded()
+            rect = editor.firstRect(for: textRange)
+            if viewport != editor.bounds {
+                viewport = editor.bounds
+                stableSince = .now
+                let point = CGPoint(x: rect.midX, y: rect.midY)
+                #expect(editor.sourceHover.offset(at: point) == 2)
+                editor.sourceHover.move(to: point)
+            }
+            return editor.sourceHover.host != nil && stableSince.duration(to: .now) >= .milliseconds(500)
+        }
         #expect(editor.selectedRange == selection && workspace.text == source)
         #expect(editor.isFirstResponder)
         let host = try #require(editor.sourceHover.host)
+        #expect(editor.bounds == viewport)
         editor.delegate?.scrollViewDidScroll?(editor)
         #expect(editor.sourceHover.host === host, "An unchanged layout callback must not dismiss hover")
         let parent = try #require(host.view.superview)
