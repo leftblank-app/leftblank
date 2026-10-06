@@ -86,14 +86,18 @@ impl ServerHandler for Bridge {
     async fn list_tools(
         &self,
         request: Option<PaginatedRequestParams>,
-        _: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         if request.and_then(|r| r.cursor).is_some() {
             return Err(ErrorData::invalid_params("Unexpected cursor", None));
         }
-        Ok(ListToolsResult {
-            tools: self.tools.as_ref().clone(),
-            ..Default::default()
+        let result = ListToolsResult::with_all_items(self.tools.as_ref().clone());
+        // 2026-07-28 makes ttlMs and cacheScope required; the tool set depends on the grant.
+        Ok(match context.protocol_version() {
+            Some(version) if version.as_str() >= ProtocolVersion::V_2026_07_28.as_str() => {
+                result.with_ttl_ms(0).with_cache_scope(CacheScope::Private)
+            }
+            _ => result,
         })
     }
     fn get_tool(&self, name: &str) -> Option<Tool> {

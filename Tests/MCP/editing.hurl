@@ -73,6 +73,8 @@ HTTP 200
 [Asserts]
 jsonpath "$.result.tools" count == 16
 jsonpath "$.result.tools[?(@.name == 'str_replace')].inputSchema.properties.old_str" exists
+jsonpath "$.result.ttlMs" not exists
+jsonpath "$.result.cacheScope" not exists
 
 POST {{url}}
 Authorization: Bearer {{token}}
@@ -329,3 +331,57 @@ MCP-Protocol-Version: 2025-11-25
 HTTP 200
 [Asserts]
 jsonpath "$.result.structuredContent.document.trashed" == true
+
+# 2026-07-28 clients skip initialize and require cache hints on list results.
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: server/discover
+{
+  "jsonrpc": "2.0",
+  "id": 17,
+  "method": "server/discover",
+  "params": {
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientInfo": {
+        "name": "leftblank-hurl",
+        "version": "1"
+      },
+      "io.modelcontextprotocol/clientCapabilities": {}
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.supportedVersions" includes "2026-07-28"
+jsonpath "$.result.capabilities.tools" exists
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/list
+{
+  "jsonrpc": "2.0",
+  "id": 18,
+  "method": "tools/list",
+  "params": {
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientInfo": {
+        "name": "leftblank-hurl",
+        "version": "1"
+      },
+      "io.modelcontextprotocol/clientCapabilities": {}
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.tools" count == 16
+jsonpath "$.result.ttlMs" == 0
+jsonpath "$.result.cacheScope" == "private"
