@@ -71,7 +71,7 @@ MCP-Protocol-Version: 2025-11-25
 }
 HTTP 200
 [Asserts]
-jsonpath "$.result.tools" count == 16
+jsonpath "$.result.tools" count == {{tool_count}}
 jsonpath "$.result.tools[?(@.name == 'str_replace')].inputSchema.properties.old_str" exists
 jsonpath "$.result.ttlMs" not exists
 jsonpath "$.result.cacheScope" not exists
@@ -382,6 +382,7 @@ Mcp-Method: tools/list
 }
 HTTP 200
 [Asserts]
-jsonpath "$.result.tools" count == 16
+jsonpath "$.result.tools" count == {{tool_count}}
+jsonpath "$.result.tools[*].name" includes "get_app_state"
 jsonpath "$.result.ttlMs" == 0
 jsonpath "$.result.cacheScope" == "private"
