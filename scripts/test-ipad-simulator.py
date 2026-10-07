@@ -5,6 +5,7 @@ import contextlib
 import io
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -473,6 +474,17 @@ class SimulatorContracts(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'execution timed out'):
             runner.run([sys.executable, '-c', program], 0.3, startup_timeout=3)
         self.assertLess(time.monotonic() - started, 4)
+
+    def test_cleanup_tolerates_a_group_of_exited_processes(self):
+        # A timed-out group can finish exiting before cleanup sends SIGKILL.
+        # Darwin then reports EPERM while its last member awaits reaping.
+        process = subprocess.Popen([sys.executable, '-c', 'pass'], start_new_session=True)
+        try:
+            os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOWAIT)
+            runner.signal_group(process.pid, signal.SIGKILL)
+        finally:
+            process.wait()
+        runner.signal_group(process.pid, signal.SIGKILL)
 
     def test_phased_timeout_allows_result_finalization(self):
         report = self.root / 'finalized.txt'

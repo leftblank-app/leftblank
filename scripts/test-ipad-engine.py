@@ -197,7 +197,9 @@ def verify_immediate_exports(library, scratch):
                 '--task-id=leftblank', '--data-plane-host=127.0.0.1:0',
                 '--control-plane-host=127.0.0.1:0', '--no-open', str(source),
             ]])
-            for version in range(2, 22):
+            # The stale-include race needed a concurrent compile and hit about 1% of
+            # 20-edit runs on loaded CI runners; more edits widen the regression net.
+            for version in range(2, 102):
                 # didClose causes an asynchronous filesystem invalidation. Queue a
                 # reopen/edit/export immediately; do not wait for preview or retry.
                 engine.notify('textDocument/didClose', {'textDocument': {'uri': source.as_uri()}})
