@@ -26,6 +26,17 @@ enum AgentImage {
         let converted: Bool
     }
 
+    /// True when `prepare` can decode the data, so read_image can show it.
+    static func isImage(_ data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) > 0,
+              CGImageSourceGetType(source) != nil,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        else {
+            return false
+        }
+        return properties[kCGImagePropertyPixelWidth] is Int && properties[kCGImagePropertyPixelHeight] is Int
+    }
+
     static func prepare(_ data: Data) throws -> Prepared {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) > 0,
               let type = CGImageSourceGetType(source) as String?,

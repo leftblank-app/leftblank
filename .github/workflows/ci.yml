@@ -71,6 +71,7 @@ jobs:
           export CARGO_HOME="$PWD/.tools/cargo-mcp"
           cargo +1.92.0 fmt --manifest-path Tools/MCPServer/Cargo.toml --check
           cargo +1.92.0 clippy --locked --manifest-path Tools/MCPServer/Cargo.toml --all-targets --no-deps -- -D warnings
+          cargo +1.92.0 test --locked --manifest-path Tools/MCPServer/Cargo.toml
       - name: Functional integration tests and 80% coverage gate
         run: scripts/test.sh
       # Codecov uploads are temporarily disabled while CLI downloads fail TLS handshakes.

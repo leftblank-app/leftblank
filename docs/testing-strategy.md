@@ -146,6 +146,8 @@ The first two were caught by CI and the icon defect by a real-window visual chec
 storage and history; iPad includes this same core test suite. Native Mac tests
 cover unsaved buffers, undo/redo, history and disk conflicts, and launch the real
 Rust helper to validate discovery, authorization, forwarding and revocation.
+Rust unit tests in the helper (`cargo test`, run in CI) cover session expiry after a
+restart and the `subscriptions/listen` tool-list announcement over real loopback HTTP.
 `Tests/MCP/editing.hurl` runs only in GitHub CI against a real `MCPConnection` and
 Swift document services created by the native test fixture. No mock transport or
 alternate HTTP service is used. The pinned Hurl 8.0.1 setup and formatter run in

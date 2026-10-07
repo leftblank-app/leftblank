@@ -60,7 +60,7 @@ public enum AgentPatch {
                 guard let source = sources[path], !body.isEmpty else {
                     throw AgentToolError("invalid_patch", "Update requires an existing UTF-8 file and hunks.")
                 }
-                try changes.append(Change(path: path, text: update(source, body: body)))
+                try changes.append(Change(path: path, text: update(source, body: body, path: path)))
             }
         }
         guard !changes.isEmpty else {
@@ -69,14 +69,15 @@ public enum AgentPatch {
         return changes
     }
 
-    private static func update(_ source: String, body: [String]) throws -> String {
+    private static func update(_ source: String, body: [String], path: String) throws -> String {
         var original = source.components(separatedBy: "\n")
         let newline = source.utf8.last == 10
         if newline || source.isEmpty {
             original.removeLast()
         }
-        var output: [String] = [], consumed = 0, index = 0
+        var output: [String] = [], consumed = 0, index = 0, hunk = 0
         while index < body.count {
+            hunk += 1
             guard body[index] == "@@" || body[index].hasPrefix("@@ ") else {
                 throw AgentToolError(
                     "invalid_patch",
@@ -119,7 +120,13 @@ public enum AgentPatch {
             if let anchor {
                 let matches = original.indices.filter { $0 >= consumed && original[$0] == anchor }
                 guard matches.count == 1, let match = matches.first else {
-                    throw AgentToolError("ambiguous_match", "Hunk anchor must match exactly once.")
+                    throw AgentToolError(
+                        "ambiguous_match",
+                        "Hunk \(hunk) in \(path): anchor \(quote(anchor)) matched \(matches.count) times " +
+                            "after the preceding hunk; it must match one whole line exactly once.",
+                        details: ["path": .string(path), "hunk": .number(Double(hunk)),
+                                  "matches": .number(Double(matches.count))],
+                    )
                 }
                 start = match + 1
             }
@@ -129,7 +136,7 @@ public enum AgentPatch {
                     Array(original[position ..< (position + old.count)]) == old
             } : []
             guard candidates.count == 1, let match = candidates.first else {
-                throw AgentToolError("patch_mismatch", "Hunk context must match exactly once after the preceding hunk.")
+                throw mismatch(hunk, path: path, old: old, original: original, from: start, matches: candidates.count)
             }
             output.append(contentsOf: original[consumed ..< match])
             output.append(contentsOf: new)
@@ -137,5 +144,61 @@ public enum AgentPatch {
         }
         output.append(contentsOf: original[consumed...])
         return output.joined(separator: "\n") + ((newline || source.isEmpty) && !output.isEmpty ? "\n" : "")
+    }
+
+    /// Names the failing hunk and, for zero matches, the first line that cannot be found as a whole line.
+    private static func mismatch(
+        _ hunk: Int,
+        path: String,
+        old: [String],
+        original: [String],
+        from start: Int,
+        matches: Int,
+    ) -> AgentToolError {
+        let first = old.first ?? ""
+        var message = "Hunk \(hunk) in \(path), starting \(quote(first)), matched \(matches) times after the preceding hunk"
+        var details: [String: JSONValue] = [
+            "path": .string(path), "hunk": .number(Double(hunk)), "matches": .number(Double(matches)),
+            "first_line": .string(excerpt(first)),
+        ]
+        guard matches == 0 else {
+            return AgentToolError(
+                "patch_mismatch",
+                message + ". Add context lines or an @@ anchor so it matches exactly once.",
+                details: details,
+            )
+        }
+        let remaining = original[min(start, original.count)...]
+        if let offset = old.firstIndex(where: { !remaining.contains($0) }) {
+            let line = old[offset]
+            details["unmatched_line"] = .string(excerpt(line))
+            details["unmatched_hunk_line"] = .number(Double(offset + 1))
+            let label = "hunk line \(offset + 1), \(quote(line)),"
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, let spaced = remaining.firstIndex(where: {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed
+            }) {
+                details["whitespace_mismatch_line"] = .number(Double(spaced + 1))
+                message += ". The \(label) differs from file line \(spaced + 1) only in surrounding whitespace " +
+                    "or line ending."
+            } else if !trimmed.isEmpty, let partial = remaining.firstIndex(where: { $0.contains(line) }) {
+                details["partial_line_match"] = .number(Double(partial + 1))
+                message += ". The \(label) only matches part of file line \(partial + 1); " +
+                    "context and removed lines must repeat entire lines."
+            } else {
+                message += ". The \(label) does not occur in the file after the preceding hunk."
+            }
+        } else {
+            message += ". Every line exists, but not consecutively in this order."
+        }
+        return AgentToolError("patch_mismatch", message + " Read the file again before retrying.", details: details)
+    }
+
+    private static func excerpt(_ line: String) -> String {
+        line.count > 80 ? String(line.prefix(80)) + "…" : line
+    }
+
+    private static func quote(_ line: String) -> String {
+        "\"" + excerpt(line) + "\""
     }
 }
