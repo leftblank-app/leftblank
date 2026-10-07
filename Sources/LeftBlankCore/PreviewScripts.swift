@@ -56,6 +56,25 @@ public enum PreviewScripts {
                     return {...area, top: area.top - area.height, height: area.height * 3};
                 };
             }
+            // A resize keeps the page in place with an anchor that lives 600 ms
+            // after the last rescale, and each scroll repaint rescales. Without a
+            // wheel or key event to clear it, such as while dragging a classic
+            // scroll bar that just appeared, every repaint would pull the reader
+            // back. Once the position moved from where the renderer left it, the
+            // reader scrolled and the anchor is stale.
+            const facade = impl.r;
+            if (typeof facade?.rescale === 'function' && typeof impl.clearSvgResizeAnchor === 'function') {
+                const rescale = facade.rescale;
+                let renderedTop;
+                facade.rescale = function(...args) {
+                    const host = impl.hookedElem?.parentElement;
+                    if (host && impl.svgResizeAnchor !== undefined && renderedTop !== undefined &&
+                        Math.abs(host.scrollTop - renderedTop) > 1) impl.clearSvgResizeAnchor();
+                    const result = rescale.apply(this, args);
+                    renderedTop = host?.scrollTop;
+                    return result;
+                };
+            }
         };
         // Repaint no more than once per 100 ms while scrolling, and never
         // sooner than twice the last render time, so a slow machine spends at

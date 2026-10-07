@@ -38,11 +38,28 @@ extension WritingFlowTests {
         // only when no such pause occurred before the page was painted. A busy
         // machine can stall for that long, so it tries other distant pages
         // instead of relying on a fixed repaint time.
+        //
+        // Each attempt starts right after the preview width changed, while the
+        // renderer still holds the page in place for the resize. A classic
+        // scroll bar appearing changes the width the same way. Scrolling without
+        // a wheel, such as dragging that scroll bar, must not be pulled back.
         var outcomes: [String] = []
         for target in [pages - 2, pages - 6, pages - 10] {
-            guard try await web.view.evaluateJavaScript("window.leftblankTestScroll(\(target), true)") as? Bool == true
-            else {
-                outcomes.append("page \(target) was painted before scrolling")
+            var start = "waiting"
+            let anchored = ContinuousClock.now + .seconds(15)
+            var resized = ContinuousClock.now - .seconds(1)
+            while start == "waiting", ContinuousClock.now < anchored {
+                // The resize anchor expires after 600 ms; resize again if it was missed.
+                if ContinuousClock.now - resized >= .seconds(1) {
+                    _ = try await web.view.evaluateJavaScript("window.leftblankTestResize()")
+                    resized = .now
+                }
+                try await Task.sleep(for: .milliseconds(20))
+                start = try await web.view
+                    .evaluateJavaScript("window.leftblankTestScroll(\(target), true)") as? String ?? "waiting"
+            }
+            guard start == "started" else {
+                outcomes.append("page \(target) was \(start) before scrolling")
                 continue
             }
             var glyphs = 0
@@ -76,16 +93,25 @@ extension WritingFlowTests {
     /// count, recording the longest pause between calls. Pages are looked up on
     /// every call because rendering can replace their elements. The test drives
     /// the calls because WebKit throttles chained timers in hidden windows.
+    /// Scrolling starts only while the renderer holds a resize anchor.
     private static let scroller = """
+    window.leftblankTestResize = () => {
+        const host = document.getElementById('typst-container-main');
+        if (!host) return;
+        host.style.width = host.style.width ? '' : 'calc(100% - 40px)';
+        window.dispatchEvent(new Event('resize'));
+    };
     window.leftblankTestScroll = (target, start) => {
         const host = document.getElementById('typst-container-main');
         const page = document.querySelector(`.typst-doc > g.typst-page[data-page-number="${target}"]`);
-        if (!host || !page) return start ? false : 0;
+        if (!host || !page) return start ? 'waiting' : 0;
         const glyphs = page.querySelectorAll('use').length;
         const now = performance.now();
         if (start) {
             // A page that is already painted proves nothing about scrolling.
-            if (glyphs > 0) return false;
+            if (glyphs > 0) return 'painted';
+            const renderer = document.getElementById('typst-container')?.documents?.[0]?.impl;
+            if (renderer?.svgResizeAnchor === undefined) return 'waiting';
             window.leftblankTestLongestPause = 0;
         } else {
             window.leftblankTestLongestPause = Math.max(window.leftblankTestLongestPause, now - window.leftblankTestLastScroll);
@@ -95,7 +121,7 @@ extension WritingFlowTests {
         host.scrollTop = Math.abs(host.scrollTop - top) < 1 ? top + 2 : top;
         // A hidden test window may defer native scroll events to a display update.
         host.dispatchEvent(new Event('scroll'));
-        return start ? true : page.querySelectorAll('use').length;
+        return start ? 'started' : page.querySelectorAll('use').length;
     };
     """
 
