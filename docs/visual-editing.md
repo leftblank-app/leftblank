@@ -8,7 +8,7 @@ one PR with tests.
 | Step | State |
 |---|---|
 | 1. Parser bridge | Implemented: [`Engine/SyntaxBridge`](../Engine/SyntaxBridge), `SyntaxTree` in `LeftBlankCore` |
-| 2. Presentation model | Planned |
+| 2. Presentation model | Implemented: `Presentation`, `PresentationStore` and `ChipEditing` in `LeftBlankCore` (no UI yet) |
 | 3–8. TextKit 2, concealment, iPad, chips, images, math | Planned |
 
 Sections A–C record the measurements of the spike (draft PR #75, evaluated on
@@ -341,19 +341,53 @@ flowchart LR
     iPad[UITextView shim] --> Session
 ```
 
-The model's input is the source, syntax nodes, the selection, signatures and
-rendered fragments. Its output is a `DisplayPlan`: sorted conceal ranges;
-atomic replacements (chip with argument model, bullet, image, fragment); style
-runs; inline image and math requests; revealed extents.
+### Presentation model (step 2, implemented)
 
-`Presentation.update` re-plans only the touched paragraphs, growing the window
-until no construct crosses its edge. A 400-step seeded test of random edits and
-selection moves checks that the incremental plan always equals a fresh full
-plan. A change to a `#let` signature triggers a full re-plan.
+`Presentation.plan` (`LeftBlankCore`) takes the source, syntax nodes (all, or a
+window from `SyntaxTree.nodes(in:)`), the selection, the document's `#let`
+definitions and `PresentationOptions` (reveal policy, chip value labels, image
+switch, rendered fragments). Its output is a `DisplayPlan`, every array sorted
+by location:
 
-`ChipEditing` turns form values into one source replacement and preserves the
-spacing and comments between arguments. The platform applies it as one native
-edit.
+- conceal ranges: heading markers with their space, `*`/`_`, inline raw
+  backticks and language, the `@` of a reference, `<`/`>` of a label;
+- atomic replacements: a chip with its argument model, a list bullet, an image
+  (`#image("literal path", …)`), or a cached engine fragment for an equation;
+- style runs (heading level, strong, emphasis, code, link, reference, label,
+  list markers, math, and revealed markers);
+- inline image and math requests, and the revealed construct extents.
+
+Reveal rules: with `.construct`, a construct shows its source while the
+selection touches it, including at either edge; with `.paragraph` (today's
+behaviour), every construct in the selection's paragraphs does. Erroneous or
+incomplete constructs (`*open`, `$x`, an empty heading, `#f(1`) stay source.
+
+A call becomes a chip only when it is `#name(…)` with literal arguments
+(strings, numbers, booleans, `none`, `auto`) and a `#let name(…)` definition
+appears before it; as in Typst, the latest earlier definition applies.
+Positional arguments take their names from that signature. Content blocks,
+expressions, spreads, field-access callees and unknown string escapes keep the
+call as source.
+
+`PresentationStore` keeps the plan for one buffer in blocks of whole
+paragraphs (at least 2,048 UTF-16 units) with entries relative to the block
+start; no construct or definition crosses a block boundary. An edit merges the
+blocks it touches, moves later block starts, and re-plans the union of the
+edited and reparsed ranges, growing the window until no construct crosses its
+edge. A selection change re-plans the old and new selection. A change to the
+sequence of definitions re-plans everything. This replaces the spike's O(n)
+flat-array shift: on SICP (620 blocks), a full plan takes 0.17 s and a
+keystroke (tree edit, plan update and caret move) 1.8 ms median, debug build.
+Seeded random edits and selection moves, under both reveal policies, must
+leave exactly the plan a fresh store computes.
+
+`ChipEditing.edit` turns form values into one `TextReplacement`: it changes
+argument values in place, keeps each argument's literal kind (validating
+numbers and keywords with the parser), appends missing positional and named
+arguments in order, and preserves spacing and comments between arguments.
+`ChipEditing.repeatPrevious` copies the nearest earlier chip's call as a
+`Snippet`, keeping labelled (enumerated) values and turning the rest into Tab
+placeholders. The platform applies either as one native edit.
 
 | Prototype component | Lines | Mac | iPad |
 |---|---:|---|---|
@@ -408,7 +442,7 @@ Each step is one PR with tests. Steps 1–2 change no UI.
    wrapper to `LeftBlankCore`. Tests: kind-code table, UTF-16 with
    CJK/emoji/CRLF, surrogate rejection, incremental edit equal to a fresh parse
    (Rust and Swift), book parse time.
-2. **Presentation model.** Add `Presentation` and plan storage to
+2. **Presentation model (done).** Add `Presentation` and plan storage to
    `LeftBlankCore`, alongside `SourcePresentation`. Tests: per-construct
    golden plans, erroneous constructs, the seeded incremental-equals-full
    invariant, chip edits and repeat-previous.
@@ -463,8 +497,9 @@ Each step is one PR with tests. Steps 1–2 change no UI.
    arrow keys and the `NSTextView` hit test land inside the call. That would
    need custom `NSTextSelectionDataSource` navigation, which the spike did not
    attempt.
-7. **Plan storage cost.** The spike's flat arrays shift in O(n) per keystroke
-   (3.7 ms on SICP). Store runs relative to paragraphs.
+7. **Plan storage cost (addressed in step 2).** The spike's flat arrays
+   shifted in O(n) per keystroke (3.7 ms on SICP). `PresentationStore` keeps
+   entries relative to paragraph blocks instead.
 8. **Attachment views exist only in ordered-in windows.** Tests that inspect
    chip views need a visible (off-screen) window.
 
