@@ -922,3 +922,6 @@
 "Editor" = "Editor";
 "Review Checks" = "Review Checks";
 "Long documents can take a while to typeset the first time." = "Long documents can take a while to typeset the first time.";
+"Resize Writing and Preview" = "Resize Writing and Preview";
+"Drag to resize. Double-click to split evenly." = "Drag to resize. Double-click to split evenly.";
+"Drag to resize. Double-tap to split evenly." = "Drag to resize. Double-tap to split evenly.";

@@ -19,6 +19,9 @@ struct TabletRoot: View {
     @State private var title = ""
     @State private var presentedPanel: TabletWorkspace.Panel?
     @State private var dismissingPanel = false
+    /// The editor's share in side-by-side layout; per device, not synced.
+    @AppStorage("iPadSplitFraction") private var splitFraction = Double(SplitLayout.defaultFraction)
+    @State private var splitDragStart: CGFloat?
 
     var body: some View {
         NavigationSplitView(columnVisibility: $visibility, preferredCompactColumn: $column) {
@@ -205,6 +208,40 @@ struct TabletRoot: View {
             .accessibilityLabel(L10n.text("Browse Library")).accessibilityIdentifier("sidebar-toggle")
     }
 
+    /// The touch target recommended for iPad controls.
+    private static let dividerTarget: CGFloat = 44
+
+    private func splitDivider(editorWidth: CGFloat, width: CGFloat) -> some View {
+        let fraction = SplitLayout.fraction(editorWidth: editorWidth, in: width)
+        return Capsule().fill(splitDragStart == nil ? TabletTheme.border : TabletTheme.accent)
+            .frame(width: 4, height: 36)
+            .frame(width: Self.dividerTarget).frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .hoverEffect(.highlight)
+            .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .named("tabletWriting"))
+                .onChanged { value in
+                    // The handle moves with the divider. Measure from the press
+                    // in the writing area, not in the handle's own coordinates.
+                    let start = splitDragStart ?? editorWidth
+                    splitDragStart = start
+                    splitFraction = SplitLayout.fraction(editorWidth: start + value.translation.width, in: width)
+                }
+                .onEnded { _ in splitDragStart = nil })
+            .onTapGesture(count: 2) { splitFraction = SplitLayout.defaultFraction }
+            .accessibilityElement()
+            .accessibilityLabel(L10n.text("Resize Writing and Preview"))
+            .accessibilityHint(L10n.text("Drag to resize. Double-tap to split evenly."))
+            .accessibilityValue("\(Int((fraction * 100).rounded()))%")
+            .accessibilityIdentifier("split-divider")
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: splitFraction = SplitLayout.adjusted(by: 1, editorWidth: editorWidth, in: width)
+                case .decrement: splitFraction = SplitLayout.adjusted(by: -1, editorWidth: editorWidth, in: width)
+                @unknown default: break
+                }
+            }
+    }
+
     private var panelBinding: Binding<TabletWorkspace.Panel?> {
         Binding(get: {
             presentedPanel == .universe ? nil : presentedPanel
@@ -255,10 +292,13 @@ struct TabletRoot: View {
         GeometryReader { geometry in
             let sideBySide = geometry.size.width >= 800 && workspace.layout == .split
             let reading = workspace.layout == .preview
+            let editorWidth = reading ? 0 : sideBySide
+                ? SplitLayout.editorWidth(in: geometry.size.width, fraction: splitFraction)
+                : geometry.size.width
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
                     TabletEditor(workspace: workspace)
-                        .frame(width: reading ? 0 : sideBySide ? geometry.size.width / 2 : geometry.size.width)
+                        .frame(width: editorWidth)
                         .clipped().opacity(reading ? 0 : 1).accessibilityHidden(reading)
                         .allowsHitTesting(!reading)
                     ZStack {
@@ -309,10 +349,15 @@ struct TabletRoot: View {
                         if sideBySide {
                             Rectangle().fill(TabletTheme.border).frame(width: 0.5)
                         }
-                    }.frame(width: reading ? geometry.size.width : sideBySide ? geometry.size.width / 2 : 0)
+                    }.frame(width: reading ? geometry.size.width : sideBySide ? geometry.size.width - editorWidth : 0)
                         .clipped().opacity(reading || sideBySide ? 1 : 0).accessibilityHidden(!reading && !sideBySide)
                         .allowsHitTesting(reading || sideBySide)
-                }
+                }.overlay(alignment: .leading) {
+                    if sideBySide {
+                        splitDivider(editorWidth: editorWidth, width: geometry.size.width)
+                            .offset(x: editorWidth - Self.dividerTarget / 2)
+                    }
+                }.coordinateSpace(name: "tabletWriting")
                 HStack {
                     Text(L10n.text(workspace.saveStatus)).accessibilityIdentifier("save-status")
                     Text(L10n.text(workspace.serviceStatus)).accessibilityIdentifier("engine-status")

@@ -922,3 +922,6 @@
 "Editor" = "编辑器";
 "Review Checks" = "查看文稿检查";
 "Long documents can take a while to typeset the first time." = "长文稿首次排版需要一些时间。";
+"Resize Writing and Preview" = "调整写作与预览宽度";
+"Drag to resize. Double-click to split evenly." = "拖动调整宽度，双击恢复等宽。";
+"Drag to resize. Double-tap to split evenly." = "拖动调整宽度，轻点两下恢复等宽。";

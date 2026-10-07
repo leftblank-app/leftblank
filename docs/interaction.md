@@ -116,6 +116,16 @@ pane's width rather than the full window. The outline shares the same margin
 calculation, so pinning it never changes the text width. Width changes reflow
 prose rather than inserting source hard wraps.
 
+In side-by-side layout, dragging the divider sets the editor's share of the
+window; its 10 pt target shows a resize pointer, and double-clicking restores
+equal panes. Each pane keeps at least 280 pt and at most 80% of the area, and the
+ratio, not the width, follows window resizing. The ratio is stored in local
+defaults rather than synced preferences because screens differ between devices.
+iPad uses the same shared `SplitLayout` model with a 44 pt touch target,
+double-tap reset and its own `iPadSplitFraction` value. Both expose the divider
+to VoiceOver as an adjustable control. The preview stays mounted while it is
+resized, and its reading anchor is kept across repeated resize events.
+
 This default follows the distinction between readable line length and available
 screen space. [Bear](https://bear.app/faq/typography-options/) and
 [Ulysses](https://help.ulysses.app/dive-into-editing/editor-customization-guide)

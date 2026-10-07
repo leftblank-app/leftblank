@@ -84,6 +84,33 @@ import WebKit
             .evaluateJavaScript("window.leftblankRestoreReading({page:-1,x:.5,y:.3,viewportY:.2})") as? Bool == false)
     }
 
+    @Test func readingPositionSurvivesALiveSplitDividerDrag() async throws {
+        let fixture = try PreviewReadingFixture(script: PreviewScripts.reading)
+        defer { fixture.close() }
+        try await fixture.ready()
+        let web = fixture.web
+        let window = try #require(web.window)
+        let anchor = try #require(PreviewReadingAnchor(page: 1, x: 0.5, y: 0.35, viewportY: 0.2))
+        #expect(try await web
+            .evaluateJavaScript("window.leftblankRestoreReading(\(anchor.javaScript))") as? Bool == true)
+        try await Task.sleep(for: .milliseconds(500))
+        let beforeMessage = try #require(await web.evaluateJavaScript("window.leftblankCaptureReading()"))
+        let before = try #require(PreviewReadingAnchor(message: beforeMessage))
+        // Dragging the divider resizes the preview on every pointer event,
+        // narrowing and widening the pages faster than the restore passes.
+        let widths = Array(stride(from: 600, through: 360, by: -20)) + Array(stride(from: 380, through: 520, by: 20))
+        for width in widths {
+            window.setContentSize(NSSize(width: CGFloat(width), height: 500))
+            try await Task.sleep(for: .milliseconds(8))
+        }
+        try await Task.sleep(for: .milliseconds(600))
+        let afterMessage = try #require(await web.evaluateJavaScript("window.leftblankCaptureReading()"))
+        let after = try #require(PreviewReadingAnchor(message: afterMessage))
+        #expect(after.page == before.page)
+        #expect(abs(after.y - before.y) < 0.02)
+        #expect(web.frame.width == 520)
+    }
+
     @Test func nativeReturnRestoresBookmarkedPageAndAcknowledgesSuccess() async throws {
         let fixture = try PreviewReadingFixture(script: PreviewScripts.reading)
         defer { fixture.close() }
