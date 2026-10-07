@@ -97,6 +97,9 @@ public enum AgentTools {
         let path = string("Project-relative path. No absolute paths, parent traversal, hidden files or symlinks.")
         let document = string("Stable document UUID from list_documents.")
         let revision = string("Opaque revision from a current read; never a history version_id.")
+        let expectedProject = string(
+            "Optional project_revision from get_document. The call fails if the project changed since.",
+        )
         let strings = JSONValue.object([
             "type": .string("array"),
             "description": .string("Only search files whose project-relative path matches one of these globs."),
@@ -283,6 +286,44 @@ public enum AgentTools {
                     "expected_revision": nullableRevision("Current revision of the file, or null if it is absent."),
                 ],
                 write: true,
+            ),
+            tool(
+                "render_page",
+                "Render one page of the captured project in an isolated engine as a PNG image, to check the " +
+                    "typeset result. Each call compiles the project.",
+                ["document_id"],
+                ["page", "ppi", "expected_project_revision"],
+                fields: [
+                    "page": integer(1, 100_000, "Page to render, 1-based. Default 1."),
+                    "ppi": integer(
+                        AgentEngineExport.ppiRange.lowerBound,
+                        AgentEngineExport.ppiRange.upperBound,
+                        "Requested pixels per inch. Default 144. Lowered for pages over 2048 px per edge or 3 MP.",
+                    ),
+                    "expected_project_revision": expectedProject,
+                ],
+            ),
+            tool(
+                "get_editor_context",
+                "Read what the user sees in an open document: active file and revision, cursor, bounded " +
+                    "selection, visible lines, layout and preview page. Fails if the document is not open.",
+                ["document_id"],
+            ),
+            tool(
+                "query_document",
+                "Run a Typst query on the captured project in an isolated engine and return the matches as JSON, " +
+                    "for example metadata values or headings.",
+                ["document_id", "selector"],
+                ["field", "one", "limit", "cursor", "expected_project_revision"],
+                fields: [
+                    "selector": string(
+                        "Typst selector code, for example <item>, heading, heading.where(level: 2) or " +
+                            "figure.where(kind: table). Up to 2000 bytes.",
+                    ),
+                    "field": string("Return only this field of each match, such as value for metadata."),
+                    "one": boolean("Require exactly one match and return it as value. Default false."),
+                    "expected_project_revision": expectedProject,
+                ],
             ),
         ]
     }()

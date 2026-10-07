@@ -23,6 +23,7 @@ LeftBlank 的技术内核是面向 Typst 的代码编辑器，用户体验仍围
 - Rust helper 使用锁定的 rmcp 3.5.0，只承担 MCP transport、认证与私有 JSON 行协议。macOS 构建和签名脚本打包 helper；iPad 继续使用独立依赖图，CI 增加产物检查。
 - 入口位于 **设置 → 编程智能体**：默认关闭；新启用的连接可读写文稿库里的所有文档（包括新建文稿），启用后复制配置提示词。设置页保留连接启停和复制提示词，删除文稿范围与只读权限选项。既有连接继续遵守已保存的权限，重新启用后采用新的完整文稿权限。状态表示本机服务已启用，不代表某个 agent 已完成连接。停用会撤销当前凭证，再次启用使用新凭证。配置不会同步到 iCloud。
 - 写操作去重只保留当前 helper/dispatcher 生命周期内最近 256 个请求，按授权身份隔离；不承诺重启后或缓存过期后的 exactly-once。游标最多保留 128 个，服务重启后失效。
+- 查看类只读工具：render_page 与 query_document 沿用 compile_document 的路径，在独立目录捕获项目（含未保存 buffer），每次启动全新 Tinymist，分别调用 `tinymist.exportPng`（单页，请求 ppi 36–288，默认 144）和 `tinymist.exportQuery`（format=json，可选 field、one；结果按 limit/cursor 分页）；可选 expected_project_revision，返回 compiled_project_revision、is_current 与 status=unverified。render_page 在同一引擎上先以极低分辨率探测页面尺寸（每次探测不超过 256 px），再自动降低 ppi，使每边不超过 2048 px、总像素不超过 3 MP，结果报告实际 ppi、requested_ppi 与 ppi_reduced；连 1 ppi 也放不下时返回 page_too_large。编译失败返回 compile_failed 与诊断，页码越界返回 page_out_of_range 与 page_count。三个引擎工具共用编译队列。get_editor_context 只描述当前窗口中已打开且已授权的文档：活动文件与版本、光标、最多 4000 字符的选区（带 truncated）、可见行、布局与预览页；活动文件在项目外（如只读包源码）时不返回其路径或内容，未打开时返回 document_not_open。iPad 不提供 MCP，共享工具定义随核心编译，平台宿主尚未实现。
 
 当前编译工具已经在独立目录捕获项目文件与实时 buffer，并启动全新的 Tinymist 实例，避免旧 PDF 混入结果。但外部包和系统字体尚未固定，因此即使产生有效 PDF，也返回 status=unverified、project_sources_compiled=true 与具体 limitation；无有效 PDF 返回 failed。这里还没有完成设计中的严格验证保证。缓存诊断暂时统一返回 freshness=unknown，原生诊断只保留起点时标明 range_is_point。
 
@@ -296,7 +297,7 @@ list_file_versions、read_file(version_id) 与 restore_file_version 在首版形
 
 | 能力 | 拟议工具 | 独立存在的原因 |
 | --- | --- | --- |
-| 视觉验证 | render_page(document_id, compiled_project_revision, page) | 编译成功不能证明排版正确；返回同一编译产物的有界页面图片 |
+| 视觉验证 | render_page(document_id, page, ppi, expected_project_revision)，已实现 | 编译成功不能证明排版正确；返回捕获版本的有界页面图片。每次调用重新编译，尚不复用同一编译产物 |
 | 导出 | export_document(document_id, format, expected_project_revision) | format 为 pdf/source/project；返回授权产物 resource link，不允许任意磁盘覆盖 |
 | 图片等资源 | import_asset(document_id, path, content_base64, expected_revision, request_id) | patch 不承载二进制；大小、MIME 与覆盖规则单独定义，配套资源读取与删除也须一起设计 |
 

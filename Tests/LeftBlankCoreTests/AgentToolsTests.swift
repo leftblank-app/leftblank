@@ -558,7 +558,7 @@ struct AgentToolsTests {
     }
 }
 
-private func testImage(width: Int, height: Int, type: UTType) -> Data? {
+func testImage(width: Int, height: Int, type: UTType) -> Data? {
     guard let space = CGColorSpace(name: CGColorSpace.sRGB),
           let context = CGContext(
               data: nil,
@@ -578,7 +578,7 @@ private func testImage(width: Int, height: Int, type: UTType) -> Data? {
 }
 
 @MainActor
-private final class AgentFixture {
+final class AgentFixture {
     let root: URL
     let library: DocumentLibrary
     let history: DocumentHistory
@@ -603,7 +603,7 @@ private final class AgentFixture {
 }
 
 @MainActor
-private final class DiskAgentHost: AgentToolHost {
+final class DiskAgentHost: AgentToolHost {
     var writes = 0
     var failPath: String?
     func agentState() -> JSONValue {
@@ -636,5 +636,36 @@ private final class DiskAgentHost: AgentToolHost {
     func agentCompile(_ snapshot: AgentProjectSnapshot, entry: String) async -> JSONValue {
         await Task.yield()
         return .object(["status": .string("unverified")])
+    }
+
+    var exports: [AgentEngineExport] = []
+    var exportOutput: (AgentEngineExport) -> AgentEngineOutput = { _ in AgentEngineOutput(status: .engineUnavailable) }
+    var engines = 0
+    func agentEngine<T>(
+        _ snapshot: AgentProjectSnapshot,
+        entry: String,
+        _ body: (any AgentEngineSession) async throws -> T,
+    ) async throws -> T {
+        await Task.yield()
+        engines += 1
+        return try await body(FakeEngineSession(host: self))
+    }
+
+    var editorContext: AgentEditorContext?
+    func agentEditorContext(in document: LibraryDocument) -> AgentEditorContext? {
+        editorContext
+    }
+}
+
+@MainActor
+private final class FakeEngineSession: AgentEngineSession {
+    let host: DiskAgentHost
+    init(host: DiskAgentHost) {
+        self.host = host
+    }
+
+    func run(_ export: AgentEngineExport) -> AgentEngineOutput {
+        host.exports.append(export)
+        return host.exportOutput(export)
     }
 }

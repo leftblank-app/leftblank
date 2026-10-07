@@ -377,6 +377,76 @@ Accept: application/json, text/event-stream
 MCP-Protocol-Version: 2025-11-25
 {
   "jsonrpc": "2.0",
+  "id": 19,
+  "method": "tools/call",
+  "params": {
+    "name": "render_page",
+    "arguments": {
+      "document_id": "{{document}}",
+      "ppi": 72
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.isError" == false
+jsonpath "$.result.structuredContent.page_count" == 1
+jsonpath "$.result.structuredContent.mime_type" == "image/png"
+jsonpath "$.result.content" count == 2
+jsonpath "$.result.content[1].type" == "image"
+jsonpath "$.result.content[1].mimeType" == "image/png"
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+{
+  "jsonrpc": "2.0",
+  "id": 20,
+  "method": "tools/call",
+  "params": {
+    "name": "query_document",
+    "arguments": {
+      "document_id": "{{document}}",
+      "selector": "heading"
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.isError" == false
+jsonpath "$.result.structuredContent.count" == 0
+jsonpath "$.result.structuredContent.items" count == 0
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+{
+  "jsonrpc": "2.0",
+  "id": 21,
+  "method": "tools/call",
+  "params": {
+    "name": "get_editor_context",
+    "arguments": {
+      "document_id": "{{document}}"
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.isError" == true
+jsonpath "$.result.structuredContent.error.code" == "document_not_open"
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+{
+  "jsonrpc": "2.0",
   "id": 16,
   "method": "tools/call",
   "params": {
