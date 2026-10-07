@@ -298,8 +298,11 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
                 anchor = (offset, caret.minY - visible.minY)
             }
         }
-        storage.performEditingTransaction {
-            for range in paragraphs where NSMaxRange(range) <= text.length && range.length > 0 {
+        // One transaction per range: a text storage merges a transaction's
+        // edits into one range, and macOS 15 rebuilds every paragraph in it
+        // (all of War and Peace for equations at both ends).
+        for range in paragraphs where NSMaxRange(range) <= text.length && range.length > 0 {
+            storage.performEditingTransaction {
                 text.edited(.editedAttributes, range: range, changeInLength: 0)
             }
         }

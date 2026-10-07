@@ -188,9 +188,10 @@ public enum TextKit2Geometry {
     /// Scrolls `offset` into view without trusting `scrollRangeToVisible`,
     /// which reads estimated geometry and can leave a distant target thousands
     /// of points away (1 of 6 War and Peace jumps on the Mac, every distant
-    /// jump on iPad). Lays out the target, scrolls it a third of the way down
-    /// the viewport, lets the viewport re-anchor, and repeats until its frame
-    /// stops moving. A target that is already visible does not scroll.
+    /// jump on iPad). Lays out the target and the text above it, scrolls the
+    /// target a third of the way down the viewport, lets the viewport
+    /// re-anchor, and repeats until its frame stops moving. A target that is
+    /// already visible does not scroll.
     ///
     /// `visible` returns the visible rect in container coordinates; `scroll`
     /// scrolls so that container-y `y` is at the top.
@@ -200,6 +201,16 @@ public enum TextKit2Geometry {
         visible: () -> CGRect,
         scroll: (CGFloat) -> Void,
     ) {
+        // macOS 15 finds the fragment at the viewport's top by laying out
+        // forward from the nearest laid-out one above it. Lay out the context
+        // above the target first, or a distant jump lays out everything in
+        // between (1.3 s in SICP) and each later keystroke walks those cached
+        // paragraphs.
+        if let start = location(max(0, offset - 3000), in: manager), let end = location(offset, in: manager),
+           let context = NSTextRange(location: start, end: end)
+        {
+            manager.ensureLayout(for: context)
+        }
         var previous: CGFloat?
         for _ in 0 ..< 4 {
             guard let target = caretRect(at: offset, in: manager) else {
