@@ -35,7 +35,7 @@ Stable tags now also build, upload and submit the Mac App Store release. Follow
 bilingual release message and retry a partial release. An empty-tag manual run
 continues to verify only Developer ID packaging.
 
-1. PR CI runs functional tests, coverage, large-book benchmarks and distribution-isolation checks without release credentials. After successful main CI, a separate job creates a Developer ID signed and notarized LeftBlank Preview package, uploads it for seven days, and publishes its signed update feed. See [Preview updates](preview-updates.md).
+1. PR CI runs functional tests, coverage, large-book benchmarks and distribution-isolation checks without release credentials. After nightly main CI passes its Mac checks (or a manual `publish_preview` run), a separate job creates a Developer ID signed and notarized LeftBlank Preview package, uploads it for seven days, and publishes its signed update feed. See [Preview updates](preview-updates.md).
 2. A manual Release workflow on main verifies signing and notarization and saves an artifact without creating a public Release.
 3. Run `release_metadata.py prepare` and finish the bilingual release message, then merge the verified commit into main.
 4. Push a matching version tag, such as `v0.6.0`. The workflow checks that main contains the tagged commit, runs functional tests and the 80% coverage gate, then signs, notarizes, staples and publishes.

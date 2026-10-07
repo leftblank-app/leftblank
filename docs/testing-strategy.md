@@ -4,7 +4,7 @@ LeftBlank's primary automated checks are feature integration tests, with an 80% 
 
 ## Running today
 
-Run `scripts/test.sh` from an SSD checkout. It exercises the real AppKit editor, SwiftUI hosting views, document storage, undo, Tinymist compilation and WebKit preview. Tests use isolated document directories and injected cloud stores, never a personal iCloud account. After main Mac validation succeeds, a separate job builds and notarizes LeftBlank Preview, validates its Developer ID signature and cold-launches a relocated copy with the build-directory resource bundle hidden. Pull requests run the functional suite, coverage gate and book benchmarks without the release build or app upload, keeping review feedback faster. Successful main builds automatically upload a runnable Preview app for seven days and publish its signed update feed. PRs cannot access release credentials. Tagged stable releases retain their separate signing and notarization workflow. Main runs a separate App Store distribution check before Preview packaging to keep the external updater out of the App Store binary. PRs skip that distribution rebuild. The launch check uses a fresh library and verifies Chinese starter content plus a ready Tinymist service. Its isolated logs are retained as artifacts. All native UI scenarios share one serialized suite because AppKit menus, field editors and sheet presentation are process-wide. Codecov publishes project and changed-line coverage on each PR.
+Run `scripts/test.sh` from an SSD checkout. It exercises the real AppKit editor, SwiftUI hosting views, document storage, undo, Tinymist compilation and WebKit preview. Tests use isolated document directories and injected cloud stores, never a personal iCloud account. After nightly Mac validation succeeds, a separate job builds and notarizes LeftBlank Preview, validates its Developer ID signature and cold-launches a relocated copy with the build-directory resource bundle hidden. Pull requests run the functional suite, coverage gate and book benchmarks without the release build or app upload, keeping review feedback faster. Each successful nightly main run (and any manual `publish_preview` run) uploads a runnable Preview app for seven days and publishes its signed update feed. PRs cannot access release credentials. Tagged stable releases retain their separate signing and notarization workflow. The nightly run performs a separate App Store distribution check before Preview packaging to keep the external updater out of the App Store binary. PRs and main pushes skip that distribution rebuild. The launch check uses a fresh library and verifies Chinese starter content plus a ready Tinymist service. Its isolated logs are retained as artifacts. All native UI scenarios share one serialized suite because AppKit menus, field editors and sheet presentation are process-wide. Codecov publishes project and changed-line coverage on each PR.
 
 For build-system-specific resource failures, the native SwiftPM builder can be reproduced separately on toolchains that still support it:
 
@@ -16,10 +16,11 @@ swift test --build-system native --scratch-path .build/native-validation \
 
 Keep the scratch path inside the SSD checkout. The hosted CI toolchain is deliberately older than the development machine, so local success is not a substitute for its result.
 
-## Main-only memory checks
+## Nightly memory checks
 
-The `Memory safety` jobs run on main pushes and manual main runs, never on pull
-requests. They run independently of preview packaging and preserve diagnostics
+The `Memory safety` jobs run in the nightly run and manual main runs, never on
+pull requests or main pushes. They feed the `build and test`
+gate but run independently of preview packaging and preserve diagnostics
 in `build/memory` for 14 days. Existing functional and book-performance PR gates
 remain enabled.
 
@@ -88,7 +89,9 @@ Swift or this prebuilt Rust library. See
 [Apple's sanitizer scope](https://developer.apple.com/documentation/xcode/diagnosing-memory-thread-and-crash-issues-early).
 
 All required iPad build, native test, coverage and memory jobs feed the final
-`build and test` gate. Native `.xcresult` and memory diagnostics remain available
+`build and test` gate. Pull requests and main pushes run the iPad smoke suite;
+the nightly run (or a full manual dispatch) runs both UI sizes, the sanitizers
+and the coverage gate. Native `.xcresult` and memory diagnostics remain available
 as Actions artifacts for 14 days. Device compilation continues independently
 to catch simulator-only assumptions; actual device performance and App Store
 StoreKit delivery still require release acceptance on hardware.

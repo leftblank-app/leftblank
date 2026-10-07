@@ -129,38 +129,47 @@ xcodebuild -project iPad/LeftBlank.xcodeproj -scheme LeftBlank-iPad \
   CODE_SIGNING_ALLOWED=NO test
 ```
 
-Mac and iPad share one `.github/workflows/ci.yml` workflow. Mac regression and
-Mac App Store validation (main only) run alongside the iPad engine, device and
+Mac and iPad share one `.github/workflows/ci.yml` workflow. Its first job
+selects Mac and iPad jobs from the changed paths (see the
+[CI capacity policy](development.md#ci-capacity-policy)): changes under `iPad/`,
+`Engine/TinymistBridge` or iPad-only scripts skip Mac regression, Mac-only changes skip every
+iPad job, and shared code runs both. When selected, Mac regression and Mac App
+Store validation (nightly and manual main runs) run alongside the iPad engine, device and
 simulator builds. The simulator build produces the tests every UI job runs.
 iPad validation has two depths:
 
-- **Smoke** (pull requests, or `workflow_dispatch` with `ipad_suite=smoke`):
-  one 11-inch/light UI job runs every native unit test plus the curated UI
-  scenarios in `SMOKE_TESTS` (`scripts/ipad_simulator.py`): writing, split
-  view, autosave, preview, rotation, Welcome rendering and PDF sharing. The
-  whole pull-request workflow is designed to finish within ten minutes.
-- **Full** (main, or `workflow_dispatch` with the default `ipad_suite=full`):
-  11-inch/light and 13-inch/dark UI jobs run every UI scenario and record
-  memory metrics. Separate Address Sanitizer and Thread Sanitizer jobs compile
-  their own products and run the native unit tests in parallel, and the 80%
-  iPad application coverage gate merges both UI results.
+- **Smoke** (pull requests, main pushes, or `workflow_dispatch` with
+  `ipad_suite=smoke`): one 11-inch/light UI job runs every native unit test
+  plus the curated UI scenarios in `SMOKE_TESTS` (`scripts/ipad_simulator.py`):
+  writing, split view, autosave, preview, rotation, Welcome rendering and PDF
+  sharing. The whole pull-request workflow is designed to finish within ten
+  minutes.
+- **Full** (the nightly schedule at 18:00 UTC, or `workflow_dispatch` with the
+  default `ipad_suite=full`): 11-inch/light and 13-inch/dark UI jobs run every
+  UI scenario and record memory metrics. Separate Address Sanitizer and Thread
+  Sanitizer jobs compile their own products and run the native unit tests in
+  parallel, and the 80% iPad application coverage gate merges both UI results.
+  The nightly run skips only a commit that already had a fully successful
+  nightly, so a full-suite regression is reported up to a day after it merges.
 
 The existing `build and test` check aggregates Mac and iPad results and rejects
-failed, cancelled or unexpectedly skipped prerequisites. Smoke runs require the
-full-only coverage and sanitizer jobs to be skipped; full runs require them to
-pass. PRs expect the main-only App Store check to be skipped;
-main requires it to pass. Mac regression tests remain in `scripts/test.sh`.
+failed, cancelled or unexpectedly skipped prerequisites. Jobs the path selection
+did not choose must be skipped. Smoke runs require the full-only coverage and
+sanitizer jobs to be skipped; full runs require them to pass. PRs and main
+pushes expect the App Store and Mac memory checks to be skipped; nightly and
+manual main runs require them to pass. Mac regression tests remain in `scripts/test.sh`.
 Platform build/release boundaries, engine tradeoffs and the feature-gap
 inventory are in [ipad-architecture.md](ipad-architecture.md).
 
 ```mermaid
 flowchart LR
+    changes[Select jobs from changed paths] --> mac & store & checks & build
     mac[Mac regression] --> gate[build and test]
-    store[Mac App Store validation - main only] --> gate
+    store[Mac App Store validation - nightly and manual main] --> gate
     checks[iPad engine and device builds] --> gate
     build[iPad simulator build] --> ui[11-inch UI; full adds 13-inch] --> gate
-    ui --> coverage[Full: 80% coverage] --> gate
-    build --> memory[Full: Address and Thread Sanitizers] --> gate
+    ui --> coverage[Nightly/full: 80% coverage] --> gate
+    build --> memory[Nightly/full: Address and Thread Sanitizers] --> gate
 ```
 
 Successful compilation is cached before UI testing, so a failed UI test does not

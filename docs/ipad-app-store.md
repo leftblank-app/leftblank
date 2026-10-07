@@ -78,6 +78,13 @@ python3 scripts/ipad_release.py
 
 After merging, wait until the required `build and test` check has succeeded on
 the actual merged main commit. A successful PR check alone is not sufficient.
+Main pushes run the path-selected PR-level checks (iPad smoke suite) and a newer
+push cancels an older main run, so a superseded commit may have no successful
+check: tag one that does. For the
+full iPad suite (both sizes, sanitizers, coverage), wait for the nightly run on
+that commit or run **build and test** manually for it first
+(`gh workflow run ci.yml --ref main`); the release uses the latest
+`build and test` result for the commit.
 Only then push an immutable tag matching the iPad version; do not start a release
 runner just to wait for CI:
 
