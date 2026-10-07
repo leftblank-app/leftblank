@@ -19,7 +19,10 @@ public final class AgentToolDispatcher {
     let history: DocumentHistory
     weak var host: (any AgentToolHost)?
     let epoch = UUID().uuidString
-    var running = false
+    /// Read-only tools share the gate; writes run alone so reads never see a half-applied change.
+    let gate = AgentToolGate()
+    /// Each compile starts its own engine, so compiles run one at a time beside other reads.
+    let compiles = AgentToolGate()
     var cachedWrites: [String: (fingerprint: String, result: AgentToolResult)] = [:]
     var writeOrder: [String] = []
     var cursors: [String: (query: String, snapshot: String, offset: Int)] = [:]
@@ -32,12 +35,22 @@ public final class AgentToolDispatcher {
     }
 
     public func call(_ name: String, arguments: JSONValue, access: AgentToolAccess) async -> AgentToolResult {
-        guard !running
-        else {
-            return failure(AgentToolError("busy", "Another tool is running; retry after it finishes."))
+        let exclusive = AgentTools.definitions.first(where: { $0.name == name })?.readOnly != true
+        let compiling = name == "compile_document"
+        if compiling {
+            guard await compiles.acquire(exclusive: true) else {
+                return failure(CancellationError())
+            }
         }
-        running = true
-        defer { running = false }
+        defer {
+            if compiling {
+                compiles.release(exclusive: true)
+            }
+        }
+        guard await gate.acquire(exclusive: exclusive) else {
+            return failure(CancellationError())
+        }
+        defer { gate.release(exclusive: exclusive) }
         do {
             try Task.checkCancellation()
             guard let definition = AgentTools.definitions.first(where: { $0.name == name }) else {
