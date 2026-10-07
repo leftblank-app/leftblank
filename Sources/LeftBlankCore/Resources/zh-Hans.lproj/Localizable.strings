@@ -925,3 +925,6 @@
 "Resize Writing and Preview" = "调整写作与预览宽度";
 "Drag to resize. Double-click to split evenly." = "拖动调整宽度，双击恢复等宽。";
 "Drag to resize. Double-tap to split evenly." = "拖动调整宽度，轻点两下恢复等宽。";
+"The equation could not be rendered." = "无法渲染此公式。";
+"The equation is too large to show in the editor." = "公式过大，无法在编辑器中显示。";
+"The document's rules for equations do not compile: %@" = "文稿中作用于公式的规则无法编译：%@";
