@@ -27,8 +27,9 @@ def package(binary_dir, distribution):
     for directory in ('MacOS', 'Helpers'):
         (contents / directory).mkdir(parents=True)
     shutil.copy2(binary_dir / 'LeftBlank', contents / 'MacOS/LeftBlank')
-    engine = '.tools/tinymist-appstore' if distribution == 'appstore' else '.tools/tinymist'
-    shutil.copy2(engine, contents / 'Helpers/tinymist')
+    # Every channel bundles the patched source build; refuse a stale or release binary.
+    subprocess.run(['scripts/build-tinymist.sh', '--check'], check=True)
+    shutil.copy2('.tools/tinymist', contents / 'Helpers/tinymist')
     shutil.copy2('.tools/leftblank-mcp', contents / 'Helpers/leftblank-mcp')
     shutil.copy2('.tools/MCP-LICENSES.txt', resources / 'MCP-LICENSES.txt')
     # Native SwiftPM embeds its PackageFrameworks path ahead of the app's rpath.

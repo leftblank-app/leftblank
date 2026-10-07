@@ -94,12 +94,14 @@ connection. App Store approval and actual cloud account behavior remain separate
 from these checks.
 
 
-The App Store bootstrap builds Tinymist 0.15.8 at pinned commit
+Every Mac edition bundles Tinymist 0.15.8 built at pinned commit
 `32f908199ee17ea295512bbc27166e890c438175` with the checked-in native TLS
-patch and lockfile changes. Reqwest then uses macOS Security Framework instead
-of Rust TLS. The source checkout, Cargo cache and target directory live under
-`.tools/tinymist-appstore-source`; Rust 1.92.0 is required. The GitHub download
-and Preview editions continue using the verified upstream release binary.
+patch and lockfile changes, plus the VFS revision fix shared with iPad. Reqwest
+then uses macOS Security Framework instead of Rust TLS. The source checkout,
+Cargo cache and target directory live under `.tools/tinymist-mac-source`; Rust
+1.92.0 is required. The GitHub download and Preview editions use the same
+binary: nothing in them requires Rust TLS, and system trust settings apply to
+package downloads in every edition.
 
 The native TLS engine compiled all fourteen marketing documents, downloaded
 CeTZ and its dependencies into an empty isolated package cache, and passed the

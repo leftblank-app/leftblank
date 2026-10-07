@@ -1,5 +1,5 @@
 #!/bin/bash
-# Keep embedded engine fixes separate from the macOS CLI distribution.
+# Keep iPad-only engine fixes separate from the macOS CLI; the VFS fix is shared.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/environment.sh
@@ -10,7 +10,7 @@ if [ ! -d "$source_dir" ]; then
 fi
 test "$(git -C "$source_dir" rev-parse HEAD)" = "$revision"
 for patch in "$PWD/scripts/tinymist-ipad.patch" "$PWD/scripts/tinymist-ipad-export.patch" \
-  "$PWD/scripts/tinymist-ipad-vfs.patch"; do
+  "$PWD/scripts/tinymist-vfs.patch"; do
   if git -C "$source_dir" apply --check "$patch" 2>/dev/null; then
     git -C "$source_dir" apply "$patch"
   else

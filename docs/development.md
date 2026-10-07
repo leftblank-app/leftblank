@@ -2,14 +2,14 @@
 
 LeftBlank uses SwiftUI and AppKit for the app and editing experience, with Tinymist as a managed child process for Typst language services and preview. Documents use ordinary `.typ` source and relative assets. The visual approach was inspired by Nano Emacs.
 
-Use Xcode 26 or later with a Swift 6.2 or later toolchain and the macOS SDK. The macOS MCP helper additionally requires Rust 1.92.0 (`rustup toolchain install 1.92.0 --profile minimal`). Local development scripts expect the external development volume at `/Volumes/SSD/Developer`; run from an SSD checkout:
+Use Xcode 26 or later with a Swift 6.2 or later toolchain and the macOS SDK. The Tinymist and macOS MCP helpers are built with Rust 1.92.0 (`rustup toolchain install 1.92.0 --profile minimal`). Local development scripts expect the external development volume at `/Volumes/SSD/Developer`; run from an SSD checkout:
 
 ```sh
 scripts/build.sh release
 scripts/test.sh
 ```
 
-The build downloads Tinymist **0.15.8** (Typst 0.15.1), verifies its pinned SHA-256, and produces `build/LeftBlank.app` with an ad hoc development signature. Functional tests exercise the real native editor, workspace, windows, WebKit preview and Tinymist process: discovery, insertion, undo/redo, Unicode, recovery, multiple files, compilation errors and PDF output. Small boundary tests cover text ranges and index validation.
+The build compiles Tinymist **0.15.8** (Typst 0.15.1) from its pinned commit with `scripts/tinymist-native-tls.patch` and `scripts/tinymist-vfs.patch` (`scripts/build-tinymist.sh`), and produces `build/LeftBlank.app` with an ad hoc development signature. The first build takes about 15 minutes; `.tools/tinymist.stamp` records the revision, toolchain and patch hashes, so later builds reuse the binary until a patch changes. CI caches the binary under the same inputs, and `scripts/test-tinymist-build.py` checks that the binary in use matches them. Functional tests exercise the real native editor, workspace, windows, WebKit preview and Tinymist process: discovery, insertion, undo/redo, Unicode, recovery, multiple files, compilation errors and PDF output. Small boundary tests cover text ranges and index validation.
 
 `scripts/test.sh` writes HTML, raw coverage data and `build/coverage/summary.md`. It requires **80% coverage of unique executable lines across production Swift sources**, including the interface. LCOV records are deduplicated by source file and line to avoid counting SwiftUI generic instantiations repeatedly. Plain `swift test` omits explicitly enabled integration scenarios and does not enforce coverage.
 

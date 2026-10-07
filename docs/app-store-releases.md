@@ -50,8 +50,9 @@ review. The next version should describe actual application changes.
    non-integer build numbers, unfinished release messages, and commits outside main.
 2. Runs release contract tests, strict Swift lint, integration tests and coverage.
 3. Signs and notarizes the Developer ID download package using the existing pipeline.
-4. Tests the App Store distribution and builds the pinned Tinymist engine with
-   macOS native TLS. Cached engine binaries are keyed by the patch and build script.
+4. Tests the App Store distribution with the pinned Tinymist engine shared by all
+   Mac editions (macOS native TLS and the VFS fix). Cached engine binaries are keyed
+   by the patches and build script.
 5. Checks the App ID, other pending versions, and increasing App Store build number.
    Creates a draft GitHub Release with `appstore-source.json` before upload, binding
    the tag, version, build, commit and release message. A retry must match this record.

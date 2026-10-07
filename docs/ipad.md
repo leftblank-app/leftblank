@@ -23,14 +23,15 @@ compilation finishes after shutdown. This prevents a process-wide panic during
 document switching. `scripts/tinymist-ipad-export.patch` makes explicit exports
 use the latest LSP buffers, including unsaved included files, even while the
 compiler is processing a close/reopen filesystem invalidation.
-`scripts/tinymist-ipad-vfs.patch` gives each virtual-filesystem revision its own
+`scripts/tinymist-vfs.patch` gives each virtual-filesystem revision its own
 unread file cells. Otherwise a compile still reading the previous revision could
 fill a cell shared with the next one after its path index was copied; later edits
 to that file then never invalidated it, so export and preview kept stale
 include contents. The integration test immediately exports repeated edits
 without waiting for preview and verifies that closing an included file restores
-its saved contents. The source stays in the workspace's `.tools` directory;
-the macOS CLI and shared Cargo source cache are unaffected. CoreText
+its saved contents. The Mac helper is built with the same VFS patch. The source
+stays in the workspace's `.tools` directory; the iPad-only patches do not reach
+the macOS CLI or the shared Cargo source cache. CoreText
 font URLs are copied into an application cache and explicitly included in LSP
 initialization, so package-cache options cannot replace the font search path.
 Typst's default fonts are also embedded as a fallback. Identical pagination still requires the same fonts and assets on both
