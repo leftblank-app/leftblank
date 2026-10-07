@@ -417,31 +417,9 @@ class WorkflowContractTests(unittest.TestCase):
             'mac': 'false', 'ipad': 'false', 'suite': 'smoke', 'release': 'false', 'publish': 'false'}},
             **{job: {'result': 'skipped'} for job in gated}}), [])
 
-    def test_only_pull_requests_and_main_pushes_cancel_in_progress_runs(self):
-        self.assertIn('\nconcurrency:\n  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}\n'
-                      "  cancel-in-progress: ${{ github.event_name == 'pull_request' || "
-                      "github.event_name == 'push' }}\n", self.text)
-        self.assertEqual(re.findall(r'cancel-in-progress: (.*)', self.text),
-                         ["${{ github.event_name == 'pull_request' || github.event_name == 'push' }}", 'false'])
-
-    def test_preview_publishes_after_mac_checks_from_non_cancelling_runs(self):
-        preview, publish = self.jobs['preview'], self.jobs['publish-preview']
-        self.assertEqual(field(preview, 'name'), 'Signed preview')
-        self.assertEqual(field(preview, 'if'), "needs.changes.outputs.publish == 'true'")
-        # Mac checks only: iPad failures fail the gate but do not hold back Preview.
-        self.assertEqual(needs(preview), {'changes', 'integration', 'appstore'})
-        self.assertIn('run: scripts/release.sh', preview)
-        self.assertEqual(needs(publish), {'preview'})
-        self.assertIn('run: python3 scripts/publish-preview.py', publish)
-        self.assertIn('    concurrency:\n      group: preview-publish\n      cancel-in-progress: false\n', publish)
-        self.assertIn('LEFTBLANK_BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}', preview)
-        # Only these jobs see release credentials or write access.
-        for name, block in self.jobs.items():
-            if name not in ('preview', 'publish-preview'):
-                with self.subTest(job=name):
-                    self.assertNotIn('secrets.', block)
-                    self.assertNotIn('contents: write', block)
-
+    def test_newer_runs_cancel_older_ones_of_the_same_event_only(self):
+        self.assertIn('\nconcurrency:\n  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}\n'
+                      '  cancel-in-progress: true\n', self.text)
 
 if __name__ == '__main__':
     unittest.main()

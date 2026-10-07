@@ -68,8 +68,9 @@ on demand from a manual main run with `publish_preview` checked
 (`gh workflow run ci.yml --ref main -f publish_preview=true`), which runs only
 the Mac checks. Main pushes do not publish. Once Mac regression and Mac App
 Store validation pass, a signed-preview job starts; iPad failures do not block
-it. Nightly and manual runs never cancel each other or get cancelled by pushes,
-so signing and publication always finish. The signed-preview job
+it. Main pushes never cancel the nightly or a manual run; a cancelled
+publication at worst leaves a build release that the next one supersedes. The
+signed-preview job
 compiles Release once, signs nested Sparkle helpers and the app, notarizes,
 staples, checks Gatekeeper and cold-launches the relocated package. Only then
 is the ZIP available as a seven-day Actions artifact and an immutable GitHub

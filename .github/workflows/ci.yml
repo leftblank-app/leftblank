@@ -31,7 +31,7 @@ permissions:
 #   cancelled or failed run's changes stay selected.
 # - Pull requests and main pushes run exactly the same checks: the selected
 #   Mac regression and iPad smoke suite (native unit tests plus a few curated
-#   UI scenarios on one 11-inch simulator). A newer push cancels the older run.
+#   UI scenarios on one 11-inch simulator).
 # - The nightly schedule on main runs everything: the full iPad suite (every
 #   UI scenario on both sizes, coverage, memory metrics and sanitizers), Mac App
 #   Store validation and Mac memory safety, then signs and publishes LeftBlank
@@ -40,19 +40,20 @@ permissions:
 # - Manual dispatches run everything at the `ipad_suite` depth (default full);
 #   on main they add the App Store and memory checks. `publish_preview` on main
 #   runs only the Mac checks and publishes Preview between nightlies.
-# - Nightly and manual runs never cancel, so publication is never interrupted.
+# - A newer run cancels an older one with the same event and ref, so pushes
+#   never cancel nightly or manual runs. A cancelled publication is harmless:
+#   at worst it leaves a build release that the next publication supersedes.
 # The `build and test` gate is the only required check; it accepts a skipped
 # job only when the selection did not require it. Job conditions repeat the
 # suite test because workflow env is unavailable there.
 env:
   IPAD_SUITE: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.ipad_suite != 'smoke')) && 'full' || 'smoke' }}
 
-# Pull requests and main pushes keep only their newest run. Nightly and manual
-# runs, the only ones that publish, queue in their own non-cancelling groups so
-# pushes never cancel them.
+# Keep only the newest run per ref and event: the event name keeps main
+# pushes from cancelling nightly and manual runs.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
 
 jobs:
   changes:
@@ -294,8 +295,6 @@ jobs:
   # Preview publishes from the nightly run, or on demand from a main dispatch
   # with publish_preview. It depends on Mac validation only: an iPad failure
   # fails the gate and is reported, but does not hold back the Mac preview.
-  # Main pushes never publish, so cancelling them never interrupts signing;
-  # nightly and manual runs use non-cancelling concurrency groups.
   preview:
     name: Signed preview
     needs: [changes, integration, appstore]
