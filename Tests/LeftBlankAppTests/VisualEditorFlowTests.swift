@@ -68,7 +68,6 @@ extension WritingFlowTests {
         find.tag = NSTextFinder.Action.nextMatch.rawValue
         editor.performTextFinderAction(find)
         await app.layout()
-        print("DEBUG find", editor.selectedRange())
         editor.cacheDisplay(in: editor.visibleRect, to: bitmap)
         find.tag = NSTextFinder.Action.hideFindInterface.rawValue
         editor.performTextFinderAction(find)
@@ -118,7 +117,7 @@ extension WritingFlowTests {
         #expect(!editor.switchedToTextKit1)
     }
 
-    @Test func aLayoutManagerAccessIsDetected() async throws {
+    @Test func aLayoutManagerAccessIsDetected() throws {
         let app = try WritingFixture(text: "= Title\n\n*Strong* words.\n", startService: false)
         defer { app.close() }
         let editor = try #require(app.workspace.editor)
@@ -133,9 +132,9 @@ extension WritingFlowTests {
         )
         #expect(log.contains("editor.textKit1Fallback"))
         app.allowsTextKit1 = true
-        // The switch queues a drag-type update on the run loop; let it run
-        // while the text view is alive, or it messages a freed view later.
-        await app.layout()
+        // On macOS 15, tearing down a switched view queues a drag-type update
+        // that runs after the view is freed and crashes the next test.
+        switchedEditors.append(editor)
     }
 
     @Test func preciseJumpsLandOnDistantTargetsAndHitTestsRoundTrip() async throws {
@@ -192,3 +191,6 @@ private func searchField(in view: NSView?) -> NSSearchField? {
     }
     return view as? NSSearchField ?? view.subviews.lazy.compactMap { searchField(in: $0) }.first
 }
+
+/// Editors deliberately switched to TextKit 1, kept for the process lifetime.
+@MainActor private var switchedEditors: [ManuscriptTextView] = []
