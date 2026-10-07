@@ -33,26 +33,33 @@ extension WritingFlowTests {
         // The page below the viewport is painted before the reader reaches it.
         try await waitForJavaScript(web.view, condition: "\(Self.pageGlyphs)[1] > 20")
         #expect(try await web.view.evaluateJavaScript("\(Self.pageGlyphs).at(-1)") as? Int == 0)
-        // Keep scrolling near a distant page. Tinymist's own repaint waits for
-        // 500 ms without scroll events, so only the scroll-time repaint can
-        // paint this page before the scrolling stops.
-        let target = pages - 2
-        let nudge = """
-        (() => {
-            const host = document.getElementById('typst-container-main');
-            const page = document.querySelector('.typst-doc > g.typst-page[data-page-number="\(target)"]');
-            const top = host.scrollTop + page.getBoundingClientRect().top - host.getBoundingClientRect().top;
-            host.scrollTop = Math.abs(host.scrollTop - top) < 1 ? top + 2 : top;
-            return page.querySelectorAll('use').length;
-        })()
-        """
-        var glyphs = 0
-        let deadline = ContinuousClock.now + .seconds(4)
-        while glyphs <= 20, ContinuousClock.now < deadline {
-            glyphs = try await web.view.evaluateJavaScript(nudge) as? Int ?? 0
-            try await Task.sleep(for: .milliseconds(60))
+        // Keep scrolling near a distant page. Tinymist's own repaint needs 500 ms
+        // without scroll events, so an attempt proves the scroll-time repaint
+        // only when no such pause occurred before the page was painted. A busy
+        // machine can stall for that long, so it tries other distant pages
+        // instead of relying on a fixed repaint time.
+        var outcomes: [String] = []
+        for target in [pages - 2, pages - 6, pages - 10] {
+            guard try await web.view.evaluateJavaScript("window.leftblankTestScroll(\(target), true)") as? Bool == true
+            else {
+                outcomes.append("page \(target) was painted before scrolling")
+                continue
+            }
+            var glyphs = 0
+            let deadline = ContinuousClock.now + .seconds(15)
+            while glyphs <= 20, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(40))
+                glyphs = try await web.view
+                    .evaluateJavaScript("window.leftblankTestScroll(\(target), false)") as? Int ?? 0
+            }
+            let pause = try await web.view
+                .evaluateJavaScript("window.leftblankTestLongestPause") as? Double ?? .infinity
+            outcomes.append("page \(target): \(glyphs) glyphs, longest pause \(pause.formatted()) ms")
+            if glyphs > 20, pause < 450 {
+                return
+            }
         }
-        #expect(glyphs > 20, "A distant page must be painted while scrolling continues")
+        Issue.record("A distant page must be painted while scrolling continues: \(outcomes)")
     }
 
     private static let renderer = "document.getElementById('typst-container').documents[0].impl"
@@ -63,6 +70,33 @@ extension WritingFlowTests {
         const bounds = page.getBoundingClientRect();
         return bounds.bottom > 0 && bounds.top < innerHeight;
     }).map(page => page.querySelectorAll('use').length)
+    """
+
+    /// Scrolls by two points around a page on each call and returns its glyph
+    /// count, recording the longest pause between calls. Pages are looked up on
+    /// every call because rendering can replace their elements. The test drives
+    /// the calls because WebKit throttles chained timers in hidden windows.
+    private static let scroller = """
+    window.leftblankTestScroll = (target, start) => {
+        const host = document.getElementById('typst-container-main');
+        const page = document.querySelector(`.typst-doc > g.typst-page[data-page-number="${target}"]`);
+        if (!host || !page) return start ? false : 0;
+        const glyphs = page.querySelectorAll('use').length;
+        const now = performance.now();
+        if (start) {
+            // A page that is already painted proves nothing about scrolling.
+            if (glyphs > 0) return false;
+            window.leftblankTestLongestPause = 0;
+        } else {
+            window.leftblankTestLongestPause = Math.max(window.leftblankTestLongestPause, now - window.leftblankTestLastScroll);
+        }
+        window.leftblankTestLastScroll = now;
+        const top = host.scrollTop + page.getBoundingClientRect().top - host.getBoundingClientRect().top;
+        host.scrollTop = Math.abs(host.scrollTop - top) < 1 ? top + 2 : top;
+        // A hidden test window may defer native scroll events to a display update.
+        host.dispatchEvent(new Event('scroll'));
+        return start ? true : page.querySelectorAll('use').length;
+    };
     """
 
     private func openScrollPreview(pages: Int) async throws -> (app: WritingFixture, view: WKWebView) {
@@ -77,14 +111,15 @@ extension WritingFlowTests {
             // A hidden test window has no display ticks; drive animation frames.
             web.configuration.preferences.inactiveSchedulingPolicy = .none
             web.configuration.userContentController.addUserScript(WKUserScript(
-                source: "window.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 16); window.cancelAnimationFrame = clearTimeout;",
+                source: "window.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 16); window.cancelAnimationFrame = clearTimeout; window.leftblankTestFrames = true;" +
+                    Self.scroller,
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: true,
             ))
             web.reload()
             try await waitForJavaScript(
                 web,
-                condition: "document.querySelectorAll('.typst-doc > g.typst-page').length === \(pages) && \(Self.pageGlyphs)[0] > 20",
+                condition: "window.leftblankTestFrames === true && document.querySelectorAll('.typst-doc > g.typst-page').length === \(pages) && \(Self.pageGlyphs)[0] > 20",
             )
             return (app, web)
         } catch {

@@ -4,7 +4,7 @@ public enum PreviewScripts {
     /// Documents up to this many pages are painted completely, so scrolling
     /// never reveals an unpainted page. Longer documents render by viewport.
     public static let fullRenderingPageLimit = 20
-    /// Viewport repaint cadence while a long document scrolls.
+    /// Shortest viewport repaint interval while a long document scrolls.
     public static let scrollRepaintIntervalMilliseconds = 100
 
     public static func setup(canvas: String, scheme: String) -> String {
@@ -57,16 +57,25 @@ public enum PreviewScripts {
                 };
             }
         };
+        // Repaint no more than once per 100 ms while scrolling, and never
+        // sooner than twice the last render time, so a slow machine spends at
+        // most about half of its main thread on scroll repaints. A render in
+        // progress is not interrupted; the next tick picks up the new position.
         let scrollRepaint;
-        document.getElementById('typst-container-main')?.addEventListener('scroll', () => {
+        const scheduleScrollRepaint = () => {
             if (scrollRepaint !== undefined) return;
+            const renders = (container?.documents || []).map(doc => doc?.impl?.sampledRenderTime || 0);
             scrollRepaint = setTimeout(() => {
                 scrollRepaint = undefined;
                 for (const doc of container?.documents || []) {
-                    if (doc?.impl?.partialRendering) doc.impl.addViewportChange?.();
+                    const impl = doc?.impl;
+                    if (!impl?.partialRendering) continue;
+                    if (impl.isRendering) scheduleScrollRepaint();
+                    else impl.addViewportChange?.();
                 }
-            }, scrollRepaintInterval);
-        }, {passive: true});
+            }, Math.max(scrollRepaintInterval, 2 * Math.max(0, ...renders)));
+        };
+        document.getElementById('typst-container-main')?.addEventListener('scroll', scheduleScrollRepaint, {passive: true});
         const configureDocument = doc => {
             const impl = doc?.impl;
             if (!impl || configured.has(impl)) return;
