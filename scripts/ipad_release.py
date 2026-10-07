@@ -10,6 +10,7 @@ import re
 import subprocess
 import struct
 import time
+import ipad_frameworks
 
 ROOT = Path(__file__).resolve().parent.parent
 BUNDLE = 'app.leftblank.writer'
@@ -145,6 +146,7 @@ def validate_archive(archive, expected):
         raise ValueError('iPad archive is missing its executable')
     if not (app / 'Frameworks/LeftBlankCore.framework/LeftBlankCore').is_file():
         raise ValueError('iPad archive is missing its shared Core framework')
+    ipad_frameworks.check_app(app)
     if any(app.rglob('*.storekit')) or any(app.rglob('*.xctest')):
         raise ValueError('iPad archive contains test-only StoreKit configuration or tests')
     return app

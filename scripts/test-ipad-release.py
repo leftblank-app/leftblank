@@ -14,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 import appstore_connect as asc
+import ipad_frameworks
 import ipad_release as ipad
 from ipad_storefront import Storefront
 
@@ -120,8 +121,12 @@ class ProfileTests(unittest.TestCase):
             ipad.validate_profile(self.profile, 'NOT_THE_CERTIFICATE')
 
 
+CORE = '@rpath/LeftBlankCore.framework/LeftBlankCore'
+
+
 class ArchiveTests(unittest.TestCase):
-    def test_versions_device_family_crypto_and_desktop_components(self):
+    @patch('ipad_frameworks.load_commands', return_value=(['/usr/lib/swift', '@executable_path/Frameworks'], [CORE]))
+    def test_versions_device_family_crypto_and_desktop_components(self, _):
         with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as directory:
             archive = Path(directory)
             app = archive / 'Products/Applications/LeftBlank.app'
@@ -167,6 +172,26 @@ class ArchiveTests(unittest.TestCase):
             core.unlink()
             with self.assertRaisesRegex(ValueError, 'shared Core framework'):
                 ipad.validate_archive(archive, expected)
+
+    def test_linked_frameworks_must_resolve_inside_the_installed_app(self):
+        # The simulator finds LeftBlankCore in the build products, so only a
+        # device launch fails when the app lacks @executable_path/Frameworks.
+        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as directory:
+            app = Path(directory) / 'LeftBlank.app'
+            core = app / 'Frameworks/LeftBlankCore.framework/LeftBlankCore'
+            core.parent.mkdir(parents=True)
+            core.touch()
+            (app / 'LeftBlank').touch()
+            (app / 'LeftBlank.debug.dylib').touch()
+            for rpaths in [['/usr/lib/swift'], ['@loader_path'], ['/Volumes/build/PackageFrameworks']]:
+                with self.subTest(rpaths=rpaths), patch('ipad_frameworks.load_commands', return_value=(rpaths, [CORE])):
+                    with self.assertRaisesRegex(ValueError, 'without a runpath'):
+                        ipad_frameworks.check_app(app)
+            for rpaths in [['@executable_path/Frameworks'], ['@loader_path/Frameworks']]:
+                with self.subTest(rpaths=rpaths), patch('ipad_frameworks.load_commands', return_value=(rpaths, [CORE])):
+                    ipad_frameworks.check_app(app)
+            with patch('ipad_frameworks.load_commands', return_value=([], ['/usr/lib/libSystem.B.dylib'])):
+                ipad_frameworks.check_app(app)
 
 
 class PlatformTests(unittest.TestCase):
