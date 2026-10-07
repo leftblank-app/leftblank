@@ -108,7 +108,7 @@ struct ContentView: View {
     }
 
     private func preview(paneWidth: CGFloat) -> some View {
-        Group {
+        ZStack {
             if let url = workspace.previewURL {
                 PreviewView(
                     url: url,
@@ -123,16 +123,10 @@ struct ContentView: View {
                     $0,
                     persistent: true,
                 ) }
-            } else {
-                VStack(spacing: 16) {
-                    PhosphorIcon(name: "file-text", size: 32).foregroundStyle(Theme.accent.opacity(0.8))
-                    Text(L10n.text("Your words are becoming pages")).font(.system(size: 16, weight: .medium))
-                    Text(L10n.text(workspace.serviceStatus)).font(.system(size: 12)).foregroundStyle(Theme.secondary)
-                    if !workspace.serviceReady {
-                        Button(L10n.text("Reconnect")) { workspace.startService() }.buttonStyle(.plain)
-                            .foregroundStyle(Theme.accent)
-                    }
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            // Keep the web view loading underneath until Tinymist paints its first page.
+            if !workspace.previewPainted {
+                previewPlaceholder
             }
         }.background(Theme.panel)
             .overlay(alignment: .topTrailing) {
@@ -175,6 +169,38 @@ struct ContentView: View {
                         .background(Theme.panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 7)).padding(8)
                 }
             }
+    }
+
+    private var previewPlaceholder: some View {
+        let attention = workspace.previewNeedsAttention
+        let working = !attention && (workspace.serviceReady || workspace.serviceStatus == "Connecting")
+        return VStack(spacing: 16) {
+            PhosphorIcon(name: attention ? "warning-circle" : "file-text", size: 32)
+                .foregroundStyle(attention ? Theme.red : Theme.accent.opacity(0.8))
+            Text(L10n.text(attention ? "Document Needs Attention" : "Your words are becoming pages"))
+                .font(.system(size: 16, weight: .medium))
+            // A compile error without diagnostics has no more specific label than the title.
+            if !attention || workspace.checkErrors > 0 {
+                HStack(spacing: 8) {
+                    if working {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(workspace.checkLabel).font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                }
+            }
+            if attention {
+                Button(L10n.text("Review Checks")) { workspace.checksOpen = true }.buttonStyle(.plain)
+                    .foregroundStyle(Theme.accent).accessibilityIdentifier("preview.review-checks")
+            } else if workspace.serviceReady {
+                Text(L10n.text("Long documents can take a while to typeset the first time."))
+                    .font(.system(size: 11)).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
+            } else {
+                Button(L10n.text("Reconnect")) { workspace.startService() }.buttonStyle(.plain)
+                    .foregroundStyle(Theme.accent)
+            }
+        }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.panel)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(attention ? "preview.attention" : "preview.loading")
     }
 
     private func messageBar(_ message: String) -> some View {
