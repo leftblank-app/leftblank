@@ -28,7 +28,10 @@
         }
 
         var channel: PreviewUpdateChannel {
-            get { defaults.string(forKey: PreviewUpdateChannel.defaultsKey).flatMap(PreviewUpdateChannel.init) ?? .nightly }
+            get {
+                defaults.string(forKey: PreviewUpdateChannel.defaultsKey)
+                    .flatMap(PreviewUpdateChannel.init) ?? .nightly
+            }
             set { defaults.set(newValue.rawValue, forKey: PreviewUpdateChannel.defaultsKey) }
         }
 
