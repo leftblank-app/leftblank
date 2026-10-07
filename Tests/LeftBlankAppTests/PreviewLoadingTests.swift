@@ -10,8 +10,7 @@ extension WritingFlowTests {
         let app = try WritingFixture(text: "= Loading sentinel\n\nA short paragraph.\n")
         defer { app.close() }
         app.workspace.layout = .split
-        #expect(!app.workspace.previewPainted)
-        #expect(previewSpinnerShown(app))
+        try await expectLoadingPlaceholder(app)
         try await app.ready()
         try await paintPreview(app)
 
@@ -20,7 +19,7 @@ extension WritingFlowTests {
         try Data("= Next document\n\nMore words.\n".utf8).write(to: next)
         #expect(app.workspace.open(next))
         #expect(!app.workspace.previewPainted)
-        #expect(previewSpinnerShown(app))
+        try await expectLoadingPlaceholder(app)
         try await app.ready()
         try await paintPreview(app)
 
@@ -59,22 +58,70 @@ extension WritingFlowTests {
     }
 }
 
+/// SwiftUI renders a published change on a later run-loop turn (macOS 15 does
+/// not flush it in `layoutSubtreeIfNeeded`), so wait for the placeholder rather
+/// than inspecting the view tree in the same turn as the state change. The page
+/// cannot paint meanwhile: a hidden test window's web view gets no animation
+/// frames until `paintPreview` drives them.
+@MainActor
+private func expectLoadingPlaceholder(
+    _ app: WritingFixture,
+    sourceLocation: Testing.SourceLocation = #_sourceLocation,
+) async throws {
+    try await app.wait(sourceLocation: sourceLocation) {
+        app.workspace.previewPainted || previewSpinnerShown(app) && previewCovered(app) != false
+    }
+    #expect(!app.workspace.previewPainted, "The page painted before its placeholder was checked", sourceLocation: sourceLocation)
+    #expect(previewSpinnerShown(app), "The unpainted preview shows its loading spinner", sourceLocation: sourceLocation)
+}
+
 /// A hidden test window has no display ticks, so drive animation frames with a
 /// timer and reload; the real Tinymist renderer then reports its first paint.
+/// Frames stay held until the reloaded page is confirmed covered, so a fast or
+/// slow machine cannot paint before the placeholder is checked.
 @MainActor
 private func paintPreview(_ app: WritingFixture) async throws {
     await app.layout()
     let web = try #require(findPreviewWebView(app.window.contentView))
     web.configuration.preferences.inactiveSchedulingPolicy = .none
+    let token = UUID().uuidString
     web.configuration.userContentController.addUserScript(WKUserScript(
-        source: "window.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 16); window.cancelAnimationFrame = clearTimeout;",
+        source: """
+        (() => {
+            const held = new Map();
+            let released = false;
+            let next = 0;
+            const run = callback => setTimeout(() => callback(performance.now()), 16);
+            window.requestAnimationFrame = callback => {
+                if (released) return run(callback);
+                held.set(--next, callback);
+                return next;
+            };
+            window.cancelAnimationFrame = id => held.delete(id) || clearTimeout(id);
+            window.leftblankTestFrames = '\(token)';
+            window.leftblankReleaseTestFrames = () => {
+                released = true;
+                const callbacks = [...held.values()];
+                held.clear();
+                callbacks.forEach(run);
+            };
+        })();
+        """,
         injectionTime: .atDocumentStart,
         forMainFrameOnly: true,
     ))
     web.reload()
-    // Nothing has awaited since reload, so the page cannot have reported a paint yet.
     #expect(!app.workspace.previewPainted, "Reloading the page must cover it again")
-    #expect(previewCovered(app) == true, "The mounted web view stays under the placeholder")
+    try await app.wait { previewCovered(app) == true && previewSpinnerShown(app) }
+    #expect(!app.workspace.previewPainted, "Held animation frames keep the reloaded page unpainted")
+
+    // Release frames only in the reloaded document; the old one may still be live.
+    let release = "window.leftblankTestFrames === '\(token)' ? (window.leftblankReleaseTestFrames(), true) : false"
+    let deadline = ContinuousClock.now + .seconds(15)
+    while await (try? web.evaluateJavaScript(release)) as? Bool != true {
+        try #require(ContinuousClock.now < deadline, "The reloaded preview never installed its frame hold")
+        try await Task.sleep(for: .milliseconds(30))
+    }
     try await app.wait { app.workspace.previewPainted }
     try await app.wait { previewCovered(app) == false && !previewSpinnerShown(app) }
 }
