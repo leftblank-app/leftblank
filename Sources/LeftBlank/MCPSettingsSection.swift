@@ -34,6 +34,11 @@ struct MCPSettingsSection: View {
                 Button(L10n.text("Enable Connection")) { enable() }
                     .disabled(working)
                     .accessibilityIdentifier("settings.agent.enable")
+                if connection.portInUse {
+                    Button(L10n.text("Use a New Port")) { useNewPort() }
+                        .disabled(working)
+                        .accessibilityIdentifier("settings.agent.newPort")
+                }
                 if connection.isEnabled {
                     Button(L10n.text("Disconnect Coding Agent")) {
                         connection.disable()
@@ -61,7 +66,21 @@ struct MCPSettingsSection: View {
         Task { @MainActor in
             defer { working = false }
             do { try await connection.enable() }
-            catch { message = error.localizedDescription }
+            // A port conflict is already explained next to the Use a New Port action.
+            catch { message = connection.portInUse ? nil : error.localizedDescription }
+        }
+    }
+
+    func useNewPort() {
+        working = true
+        message = nil
+        Task { @MainActor in
+            defer { working = false }
+            do {
+                try await connection.useNewPort()
+                message = L10n
+                    .text("The connection now uses a new port. Copy the setup prompt into your coding agent again.")
+            } catch { message = error.localizedDescription }
         }
     }
 
