@@ -22,6 +22,6 @@ GitHub Actions builds on macOS arm64, runs functional tests and coverage, and up
 
 ## Scope
 
-Arbitrary Typst functions and package templates are not converted into visual widgets. Equations and diagrams appear in the real preview. Future embedded previews must retain document context and source mapping. This iteration does not change exported colors or introduce system-wide key recording.
+Arbitrary Typst functions and package templates are not converted into visual widgets. (Superseded for literal-argument calls with a visible `#let` signature by the [visual editing plan](visual-editing.md); content-bearing calls and templates still stay source.) Equations and diagrams appear in the real preview. Future embedded previews must retain document context and source mapping. This iteration does not change exported colors or introduce system-wide key recording.
 
 References: [Tinymist preview configuration](https://myriad-dreamin.github.io/tinymist/config/vscode.html), [Typst packages](https://github.com/typst/packages), [Typst scripting and packages](https://typst.app/docs/reference/scripting/).

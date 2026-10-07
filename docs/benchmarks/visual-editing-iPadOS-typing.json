@@ -1,0 +1,404 @@
+{
+  "iPadOS.large.war-and-peace-highlighted.tk1" : {
+    "first_draw_ms" : 64.074583000000004,
+    "full_layout_ms" : 278.616041,
+    "full_layout_slice_ms" : {
+
+    },
+    "full_layout_slices" : 0,
+    "height_full" : 1135460,
+    "height_initial" : 855735,
+    "jumps_native" : {
+      "all_visible" : false,
+      "height_range" : [
+        855735,
+        855801
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 30.997959000000002,
+        "median" : 16.761208,
+        "p95" : 30.997959000000002
+      },
+      "samples" : [
+        {
+          "height" : 855735,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 14.292916999999999,
+          "native_caret_error" : 0,
+          "offset" : 323634,
+          "passes" : 1
+        },
+        {
+          "height" : 855751,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 16.761208,
+          "native_caret_error" : 0,
+          "offset" : 2912792,
+          "passes" : 1
+        },
+        {
+          "height" : 855785,
+          "hit_error" : 0,
+          "immediate_hit_error" : -5,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 30.997959000000002,
+          "native_caret_error" : 0,
+          "offset" : 1618177,
+          "passes" : 1
+        },
+        {
+          "height" : 855801,
+          "hit_error" : 0,
+          "immediate_hit_error" : -5,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 13.47925,
+          "native_caret_error" : 0,
+          "offset" : 3204084,
+          "passes" : 1
+        },
+        {
+          "height" : 855801,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 15.127916000000001,
+          "native_caret_error" : 0,
+          "offset" : 32345,
+          "passes" : 1
+        },
+        {
+          "height" : 855801,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 22.471125000000001,
+          "native_caret_error" : 0,
+          "offset" : 2427274,
+          "passes" : 1
+        }
+      ]
+    },
+    "memory_before_mib" : 27.861503601074219,
+    "memory_full_layout_mib" : 99.628135681152344,
+    "memory_open_mib" : 45.220993041992188,
+    "open_ms" : 71.564750000000004,
+    "parser_edit_failures" : 0,
+    "scroll_draw_ms" : {
+      "max" : 13.564125000000001,
+      "median" : 9.0955829999999995,
+      "p95" : 10.790583
+    },
+    "selection_replan_ms" : {
+
+    },
+    "typing_breakdown_median_ms" : {
+      "layout" : 0.007208,
+      "replace" : 1.8443750000000001,
+      "visual" : 0
+    },
+    "typing_ms" : {
+      "max" : 6.5208329999999997,
+      "median" : 1.851666,
+      "p95" : 1.890209
+    },
+    "typing_nodes_ms" : 0,
+    "typing_plan_ms" : 0,
+    "typing_shift_ms" : 0,
+    "undo_restores_source" : true,
+    "utf16" : 3236451
+  },
+  "iPadOS.large.war-and-peace-highlighted.tk2" : {
+    "first_draw_ms" : 60.265999999999998,
+    "full_layout_ms" : 707.68449999999996,
+    "full_layout_slice_ms" : {
+      "max" : 8.0524579999999997,
+      "median" : 8.0050000000000008,
+      "p95" : 8.0128749999999993
+    },
+    "full_layout_slices" : 81,
+    "height_full" : 1135455,
+    "height_initial" : 13879019,
+    "jumps_native" : {
+      "all_visible" : false,
+      "height_range" : [
+        1266054,
+        2449282
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 13.566041,
+        "median" : 12.986958,
+        "p95" : 13.566041
+      },
+      "samples" : [
+        {
+          "height" : 2449282,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 7.7984580000000001,
+          "native_caret_error" : -0.77269847970455885,
+          "offset" : 323634,
+          "passes" : 1
+        },
+        {
+          "height" : 2445193,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 11.112916999999999,
+          "native_caret_error" : -0.90998426591977477,
+          "offset" : 2912792,
+          "passes" : 1
+        },
+        {
+          "height" : 2428343,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 11.785792000000001,
+          "native_caret_error" : -0.76485447771847248,
+          "offset" : 1618177,
+          "passes" : 1
+        },
+        {
+          "height" : 2428141,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 13.005750000000001,
+          "native_caret_error" : -0.76874050823971629,
+          "offset" : 3204084,
+          "passes" : 1
+        },
+        {
+          "height" : 1273341,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 12.986958,
+          "native_caret_error" : -0.90661951014772058,
+          "offset" : 32345,
+          "passes" : 1
+        },
+        {
+          "height" : 1266054,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 13.566041,
+          "native_caret_error" : -0.90121426386758685,
+          "offset" : 2427274,
+          "passes" : 1
+        }
+      ]
+    },
+    "jumps_native_after_full_layout" : {
+      "all_visible" : false,
+      "height_range" : [
+        1135455,
+        1220623
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 17.667750000000002,
+        "median" : 16.669665999999999,
+        "p95" : 17.667750000000002
+      },
+      "samples" : [
+        {
+          "height" : 1135455,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 17.667750000000002,
+          "native_caret_error" : -0.7578125,
+          "offset" : 323634,
+          "passes" : 1
+        },
+        {
+          "height" : 1220623,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 16.669665999999999,
+          "native_caret_error" : -0.84581801481544971,
+          "offset" : 2912792,
+          "passes" : 1
+        },
+        {
+          "height" : 1220623,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 15.075417,
+          "native_caret_error" : -0.98046875,
+          "offset" : 1618177,
+          "passes" : 1
+        },
+        {
+          "height" : 1220420,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 13.201917,
+          "native_caret_error" : -1.0815269623417407,
+          "offset" : 3204084,
+          "passes" : 1
+        },
+        {
+          "height" : 1220420,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 13.793666,
+          "native_caret_error" : -0.9375,
+          "offset" : 32345,
+          "passes" : 1
+        },
+        {
+          "height" : 1191487,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 17.278666999999999,
+          "native_caret_error" : -1.0778952206019312,
+          "offset" : 2427274,
+          "passes" : 1
+        }
+      ]
+    },
+    "jumps_precise" : {
+      "all_visible" : true,
+      "height_range" : [
+        1046278,
+        1234934
+      ],
+      "max_hit_error" : 46840,
+      "ms" : {
+        "max" : 586.37579100000005,
+        "median" : 249.22999999999999,
+        "p95" : 586.37579100000005
+      },
+      "samples" : [
+        {
+          "height" : 1189802,
+          "hit_error" : 46840,
+          "immediate_hit_error" : 46840,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 120.41333400000001,
+          "native_caret_error" : -1.1558193897653837,
+          "offset" : 323634,
+          "passes" : 2
+        },
+        {
+          "height" : 1135455,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 580.41495799999996,
+          "native_caret_error" : -0.9609375,
+          "offset" : 2912792,
+          "passes" : 3
+        },
+        {
+          "height" : 1234934,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 110.26000000000001,
+          "native_caret_error" : -0.98046875,
+          "offset" : 1618177,
+          "passes" : 1
+        },
+        {
+          "height" : 1135455,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 249.22999999999999,
+          "native_caret_error" : -1.0859375,
+          "offset" : 3204084,
+          "passes" : 2
+        },
+        {
+          "height" : 1046278,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 203.90049999999999,
+          "native_caret_error" : -0.9375,
+          "offset" : 32345,
+          "passes" : 1
+        },
+        {
+          "height" : 1135455,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 586.37579100000005,
+          "native_caret_error" : -0.8046875,
+          "offset" : 2427274,
+          "passes" : 4
+        }
+      ]
+    },
+    "memory_before_mib" : 54.642936706542969,
+    "memory_full_layout_mib" : 1757.051383972168,
+    "memory_open_mib" : 64.314834594726562,
+    "open_ms" : 9.8849590000000003,
+    "parser_edit_failures" : 0,
+    "scroll_draw_ms" : {
+      "max" : 265.87683299999998,
+      "median" : 13.312958,
+      "p95" : 16.118458
+    },
+    "selection_replan_ms" : {
+
+    },
+    "typing_breakdown_median_ms" : {
+      "layout" : 1.6286670000000001,
+      "replace" : 57.435791999999999,
+      "visual" : 0.000125
+    },
+    "typing_ms" : {
+      "max" : 69.762916000000004,
+      "median" : 59.161000000000001,
+      "p95" : 61.278917
+    },
+    "typing_nodes_ms" : 0,
+    "typing_plan_ms" : 0,
+    "typing_shift_ms" : 0,
+    "undo_restores_source" : true,
+    "utf16" : 3236451
+  }
+}

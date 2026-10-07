@@ -1,0 +1,1699 @@
+{
+  "iPadOS.large.main.tk1" : {
+    "first_draw_ms" : 68.987875000000003,
+    "full_layout_ms" : 161.441125,
+    "full_layout_slice_ms" : {
+
+    },
+    "full_layout_slices" : 0,
+    "height_full" : 499758,
+    "height_initial" : 376260,
+    "jumps_native" : {
+      "all_visible" : false,
+      "height_range" : [
+        376176,
+        376226
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 81.854042000000007,
+        "median" : 29.514749999999999,
+        "p95" : 81.854042000000007
+      },
+      "samples" : [
+        {
+          "height" : 376193,
+          "hit_error" : 0,
+          "immediate_hit_error" : 104,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 29.514749999999999,
+          "native_caret_error" : 0,
+          "offset" : 144038,
+          "passes" : 1
+        },
+        {
+          "height" : 376209,
+          "hit_error" : 0,
+          "immediate_hit_error" : 10,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 25.795417,
+          "native_caret_error" : 0,
+          "offset" : 1297923,
+          "passes" : 1
+        },
+        {
+          "height" : 376226,
+          "hit_error" : 0,
+          "immediate_hit_error" : -6,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 53.298000000000002,
+          "native_caret_error" : 0,
+          "offset" : 720976,
+          "passes" : 1
+        },
+        {
+          "height" : 376209,
+          "hit_error" : 0,
+          "immediate_hit_error" : 85,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 81.854042000000007,
+          "native_caret_error" : 0,
+          "offset" : 1427677,
+          "passes" : 1
+        },
+        {
+          "height" : 376176,
+          "hit_error" : 0,
+          "immediate_hit_error" : 102,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 21.613792,
+          "native_caret_error" : 0,
+          "offset" : 14401,
+          "passes" : 1
+        },
+        {
+          "height" : 376226,
+          "hit_error" : 0,
+          "immediate_hit_error" : -39,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 28.829916999999998,
+          "native_caret_error" : 0,
+          "offset" : 1081586,
+          "passes" : 1
+        }
+      ]
+    },
+    "memory_before_mib" : 40.861618041992188,
+    "memory_full_layout_mib" : 85.518760681152344,
+    "memory_open_mib" : 49.830390930175781,
+    "open_ms" : 15.398833,
+    "parser_edit_failures" : 0,
+    "scroll_draw_ms" : {
+      "max" : 1825.0671669999999,
+      "median" : 30.068375,
+      "p95" : 127.40133400000001
+    },
+    "selection_replan_ms" : {
+
+    },
+    "typing_ms" : {
+      "max" : 6.7368750000000004,
+      "median" : 1.560875,
+      "p95" : 2.195541
+    },
+    "typing_nodes_ms" : 0,
+    "typing_plan_ms" : 0,
+    "typing_shift_ms" : 0,
+    "undo_restores_source" : true,
+    "utf16" : 1442138
+  },
+  "iPadOS.large.main.tk1Visual" : {
+    "first_draw_ms" : 69.521208000000001,
+    "full_layout_ms" : 485.476584,
+    "full_layout_slice_ms" : {
+
+    },
+    "full_layout_slices" : 0,
+    "full_plan_ms" : 242.40533300000001,
+    "height_full" : 496266,
+    "height_initial" : 376260,
+    "jumps_native" : {
+      "all_visible" : false,
+      "height_range" : [
+        376176,
+        376226
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 22.424040999999999,
+        "median" : 21.838792000000002,
+        "p95" : 22.424040999999999
+      },
+      "samples" : [
+        {
+          "height" : 376193,
+          "hit_error" : 0,
+          "immediate_hit_error" : 104,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 22.424040999999999,
+          "native_caret_error" : 0,
+          "offset" : 144038,
+          "passes" : 1
+        },
+        {
+          "height" : 376209,
+          "hit_error" : 0,
+          "immediate_hit_error" : 10,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 20.675457999999999,
+          "native_caret_error" : 0,
+          "offset" : 1297923,
+          "passes" : 1
+        },
+        {
+          "height" : 376226,
+          "hit_error" : 0,
+          "immediate_hit_error" : -6,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 21.95675,
+          "native_caret_error" : 0,
+          "offset" : 720976,
+          "passes" : 1
+        },
+        {
+          "height" : 376209,
+          "hit_error" : 0,
+          "immediate_hit_error" : 85,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 18.029,
+          "native_caret_error" : 0,
+          "offset" : 1427677,
+          "passes" : 1
+        },
+        {
+          "height" : 376176,
+          "hit_error" : 0,
+          "immediate_hit_error" : 102,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 20.562291999999999,
+          "native_caret_error" : 0,
+          "offset" : 14401,
+          "passes" : 1
+        },
+        {
+          "height" : 376226,
+          "hit_error" : 0,
+          "immediate_hit_error" : -39,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 21.838792000000002,
+          "native_caret_error" : 0,
+          "offset" : 1081586,
+          "passes" : 1
+        }
+      ]
+    },
+    "memory_before_mib" : 41.330413818359375,
+    "memory_full_layout_mib" : 94.909408569335938,
+    "memory_open_mib" : 50.439811706542969,
+    "open_ms" : 9.7148749999999993,
+    "parser_edit_failures" : 0,
+    "scroll_draw_ms" : {
+      "max" : 19.515042000000001,
+      "median" : 14.435041,
+      "p95" : 17.734874999999999
+    },
+    "selection_replan_ms" : {
+
+    },
+    "typing_ms" : {
+      "max" : 1.0609580000000001,
+      "median" : 0.84304100000000004,
+      "p95" : 0.96174999999999999
+    },
+    "typing_nodes_ms" : 0,
+    "typing_plan_ms" : 0,
+    "typing_shift_ms" : 0,
+    "undo_restores_source" : true,
+    "utf16" : 1442138
+  },
+  "iPadOS.large.main.tk2" : {
+    "first_draw_ms" : 68.299458000000001,
+    "full_layout_ms" : 355.95566700000001,
+    "full_layout_slice_ms" : {
+      "max" : 8.0877909999999993,
+      "median" : 8.0100840000000009,
+      "p95" : 8.0656250000000007
+    },
+    "full_layout_slices" : 43,
+    "height_full" : 499758,
+    "height_initial" : 325786,
+    "jumps_native" : {
+      "all_visible" : false,
+      "height_range" : [
+        433928,
+        462820
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 17.164375,
+        "median" : 14.665915999999999,
+        "p95" : 17.164375
+      },
+      "samples" : [
+        {
+          "height" : 448373,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 13.869790999999999,
+          "native_caret_error" : -0.85552486005690298,
+          "offset" : 144038,
+          "passes" : 1
+        },
+        {
+          "height" : 459534,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 17.164375,
+          "native_caret_error" : -0.85463036625878885,
+          "offset" : 1297923,
+          "passes" : 1
+        },
+        {
+          "height" : 435646,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 14.632667,
+          "native_caret_error" : -0.84279044100549072,
+          "offset" : 720976,
+          "passes" : 1
+        },
+        {
+          "height" : 433928,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 14.151,
+          "native_caret_error" : -1.0782694273511879,
+          "offset" : 1427677,
+          "passes" : 1
+        },
+        {
+          "height" : 435403,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 14.665915999999999,
+          "native_caret_error" : -0.75513407002563326,
+          "offset" : 14401,
+          "passes" : 1
+        },
+        {
+          "height" : 462820,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 16.125540999999998,
+          "native_caret_error" : -0.75521929282695055,
+          "offset" : 1081586,
+          "passes" : 1
+        }
+      ]
+    },
+    "jumps_native_after_full_layout" : {
+      "all_visible" : false,
+      "height_range" : [
+        535814,
+        540531
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 38.506042000000001,
+        "median" : 19.056709000000001,
+        "p95" : 38.506042000000001
+      },
+      "samples" : [
+        {
+          "height" : 540531,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 38.506042000000001,
+          "native_caret_error" : -0.96484375,
+          "offset" : 144038,
+          "passes" : 1
+        },
+        {
+          "height" : 538655,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 15.841958,
+          "native_caret_error" : -1.1403533184784465,
+          "offset" : 1297923,
+          "passes" : 1
+        },
+        {
+          "height" : 538655,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 18.837833,
+          "native_caret_error" : -1.05859375,
+          "offset" : 720976,
+          "passes" : 1
+        },
+        {
+          "height" : 536937,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 21.346416999999999,
+          "native_caret_error" : -0.92485852679237723,
+          "offset" : 1427677,
+          "passes" : 1
+        },
+        {
+          "height" : 536937,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 15.357834,
+          "native_caret_error" : -0.78515625,
+          "offset" : 14401,
+          "passes" : 1
+        },
+        {
+          "height" : 535814,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 19.056709000000001,
+          "native_caret_error" : -1.0775319391395897,
+          "offset" : 1081586,
+          "passes" : 1
+        }
+      ]
+    },
+    "jumps_precise" : {
+      "all_visible" : true,
+      "height_range" : [
+        328407,
+        616541
+      ],
+      "max_hit_error" : 141757,
+      "ms" : {
+        "max" : 148.78666699999999,
+        "median" : 77.167790999999994,
+        "p95" : 148.78666699999999
+      },
+      "samples" : [
+        {
+          "height" : 423793,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 37.834874999999997,
+          "native_caret_error" : -1.01171875,
+          "offset" : 144038,
+          "passes" : 4
+        },
+        {
+          "height" : 515780,
+          "hit_error" : 141757,
+          "immediate_hit_error" : 141757,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 129.85458299999999,
+          "native_caret_error" : -0.86570800782646984,
+          "offset" : 1297923,
+          "passes" : 3
+        },
+        {
+          "height" : 472378,
+          "hit_error" : 94999,
+          "immediate_hit_error" : 94999,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 66.242917000000006,
+          "native_caret_error" : -0.91619140625698492,
+          "offset" : 720976,
+          "passes" : 1
+        },
+        {
+          "height" : 515546,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 148.78666699999999,
+          "native_caret_error" : -1.12890625,
+          "offset" : 1427677,
+          "passes" : 4
+        },
+        {
+          "height" : 328407,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 77.167790999999994,
+          "native_caret_error" : -1.1484375,
+          "offset" : 14401,
+          "passes" : 2
+        },
+        {
+          "height" : 616541,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 64.948875000000001,
+          "native_caret_error" : -1.11328125,
+          "offset" : 1081586,
+          "passes" : 4
+        }
+      ]
+    },
+    "memory_before_mib" : 51.346061706542969,
+    "memory_full_layout_mib" : 706.76935577392578,
+    "memory_open_mib" : 62.642936706542969,
+    "open_ms" : 9.0230829999999997,
+    "parser_edit_failures" : 0,
+    "scroll_draw_ms" : {
+      "max" : 17.110375000000001,
+      "median" : 11.486583,
+      "p95" : 13.553667000000001
+    },
+    "selection_replan_ms" : {
+
+    },
+    "typing_ms" : {
+      "max" : 89.709541000000002,
+      "median" : 33.567500000000003,
+      "p95" : 35.399999999999999
+    },
+    "typing_nodes_ms" : 0,
+    "typing_plan_ms" : 0,
+    "typing_shift_ms" : 0,
+    "undo_restores_source" : true,
+    "utf16" : 1442138
+  },
+  "iPadOS.large.main.tk2Visual" : {
+    "conceals" : 18871,
+    "first_draw_ms" : 69.474542,
+    "full_layout_ms" : 354.79666700000001,
+    "full_layout_slice_ms" : {
+      "max" : 8.1180000000000003,
+      "median" : 8.0090000000000003,
+      "p95" : 8.0999999999999996
+    },
+    "full_layout_slices" : 43,
+    "full_plan_apply_ms" : 154.63624999999999,
+    "full_plan_nodes_ms" : 9.3957080000000008,
+    "full_plan_only_ms" : 77.817125000000004,
+    "height_full" : 496116,
+    "height_initial" : 325786,
+    "jumps_native" : {
+      "all_visible" : false,
+      "height_range" : [
+        433928,
+        462820
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 23.016791999999999,
+        "median" : 22.800000000000001,
+        "p95" : 23.016791999999999
+      },
+      "samples" : [
+        {
+          "height" : 448373,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 19.586417000000001,
+          "native_caret_error" : -0.85552486005690298,
+          "offset" : 144038,
+          "passes" : 1
+        },
+        {
+          "height" : 459534,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 22.231915999999998,
+          "native_caret_error" : -0.85463036625878885,
+          "offset" : 1297923,
+          "passes" : 1
+        },
+        {
+          "height" : 435646,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 22.674416999999998,
+          "native_caret_error" : -0.84279044100549072,
+          "offset" : 720976,
+          "passes" : 1
+        },
+        {
+          "height" : 433928,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 22.800000000000001,
+          "native_caret_error" : -1.0782694273511879,
+          "offset" : 1427677,
+          "passes" : 1
+        },
+        {
+          "height" : 435403,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 23.016791999999999,
+          "native_caret_error" : -0.75513407002563326,
+          "offset" : 14401,
+          "passes" : 1
+        },
+        {
+          "height" : 462820,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 22.963999999999999,
+          "native_caret_error" : -0.75521929282695055,
+          "offset" : 1081586,
+          "passes" : 1
+        }
+      ]
+    },
+    "jumps_native_after_full_layout" : {
+      "all_visible" : false,
+      "height_range" : [
+        534428,
+        539145
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 53.245125000000002,
+        "median" : 25.111584000000001,
+        "p95" : 53.245125000000002
+      },
+      "samples" : [
+        {
+          "height" : 539145,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 53.245125000000002,
+          "native_caret_error" : -0.7734375,
+          "offset" : 144038,
+          "passes" : 1
+        },
+        {
+          "height" : 537268,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 23.022583000000001,
+          "native_caret_error" : -0.95675956847844645,
+          "offset" : 1297923,
+          "passes" : 1
+        },
+        {
+          "height" : 537268,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 24.040832999999999,
+          "native_caret_error" : -0.875,
+          "offset" : 720976,
+          "passes" : 1
+        },
+        {
+          "height" : 535550,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 20.833082999999998,
+          "native_caret_error" : -1.2412647767923772,
+          "offset" : 1427677,
+          "passes" : 1
+        },
+        {
+          "height" : 535550,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 25.111584000000001,
+          "native_caret_error" : -0.78515625,
+          "offset" : 14401,
+          "passes" : 1
+        },
+        {
+          "height" : 534428,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 29.070542,
+          "native_caret_error" : -0.89393818913958967,
+          "offset" : 1081586,
+          "passes" : 1
+        }
+      ]
+    },
+    "jumps_precise" : {
+      "all_visible" : true,
+      "height_range" : [
+        328407,
+        616524
+      ],
+      "max_hit_error" : 142091,
+      "ms" : {
+        "max" : 157.16037499999999,
+        "median" : 84.363040999999996,
+        "p95" : 157.16037499999999
+      },
+      "samples" : [
+        {
+          "height" : 421512,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 42.367417000000003,
+          "native_caret_error" : -1.01171875,
+          "offset" : 144038,
+          "passes" : 4
+        },
+        {
+          "height" : 515646,
+          "hit_error" : 142091,
+          "immediate_hit_error" : 142091,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 157.16037499999999,
+          "native_caret_error" : -0.86570800782646984,
+          "offset" : 1297923,
+          "passes" : 3
+        },
+        {
+          "height" : 457670,
+          "hit_error" : 95402,
+          "immediate_hit_error" : 95402,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 71.949292,
+          "native_caret_error" : -0.91619140625698492,
+          "offset" : 720976,
+          "passes" : 1
+        },
+        {
+          "height" : 515797,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 130.73683299999999,
+          "native_caret_error" : -0.80078125,
+          "offset" : 1427677,
+          "passes" : 4
+        },
+        {
+          "height" : 328407,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 84.363040999999996,
+          "native_caret_error" : -1.1484375,
+          "offset" : 14401,
+          "passes" : 2
+        },
+        {
+          "height" : 616524,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 65.418125000000003,
+          "native_caret_error" : -0.90625,
+          "offset" : 1081586,
+          "passes" : 4
+        }
+      ]
+    },
+    "memory_before_mib" : 120.25297546386719,
+    "memory_full_layout_mib" : 764.14444732666016,
+    "memory_open_mib" : 136.78422546386719,
+    "open_ms" : 7.2362500000000001,
+    "parser_edit_failures" : 0,
+    "replacements" : 166,
+    "scroll_draw_ms" : {
+      "max" : 12.248666999999999,
+      "median" : 9.6469590000000007,
+      "p95" : 10.870583999999999
+    },
+    "selection_replan_ms" : {
+      "max" : 2.9950000000000001,
+      "median" : 2.791709,
+      "p95" : 2.976375
+    },
+    "session_open_ms" : 82.078457999999998,
+    "typing_ms" : {
+      "max" : 102.322666,
+      "median" : 46.602708999999997,
+      "p95" : 52.010041999999999
+    },
+    "typing_nodes_ms" : 0.109625,
+    "typing_plan_ms" : 2.392083,
+    "typing_shift_ms" : 3.6448330000000002,
+    "undo_restores_source" : true,
+    "utf16" : 1442138
+  },
+  "iPadOS.large.war-and-peace-highlighted.tk1" : {
+    "first_draw_ms" : 91.174000000000007,
+    "full_layout_ms" : 314.89262500000001,
+    "full_layout_slice_ms" : {
+
+    },
+    "full_layout_slices" : 0,
+    "height_full" : 1135460,
+    "height_initial" : 855735,
+    "jumps_native" : {
+      "all_visible" : false,
+      "height_range" : [
+        855735,
+        855801
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 108.073458,
+        "median" : 75.234540999999993,
+        "p95" : 108.073458
+      },
+      "samples" : [
+        {
+          "height" : 855735,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 36.866124999999997,
+          "native_caret_error" : 0,
+          "offset" : 323634,
+          "passes" : 1
+        },
+        {
+          "height" : 855751,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 80.720459000000005,
+          "native_caret_error" : 0,
+          "offset" : 2912792,
+          "passes" : 1
+        },
+        {
+          "height" : 855785,
+          "hit_error" : 0,
+          "immediate_hit_error" : -5,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 75.234540999999993,
+          "native_caret_error" : 0,
+          "offset" : 1618177,
+          "passes" : 1
+        },
+        {
+          "height" : 855801,
+          "hit_error" : 0,
+          "immediate_hit_error" : -5,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 19.294542,
+          "native_caret_error" : 0,
+          "offset" : 3204084,
+          "passes" : 1
+        },
+        {
+          "height" : 855801,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 38.540666999999999,
+          "native_caret_error" : 0,
+          "offset" : 32345,
+          "passes" : 1
+        },
+        {
+          "height" : 855801,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 108.073458,
+          "native_caret_error" : 0,
+          "offset" : 2427274,
+          "passes" : 1
+        }
+      ]
+    },
+    "memory_before_mib" : 31.549003601074219,
+    "memory_full_layout_mib" : 104.95626068115234,
+    "memory_open_mib" : 55.080390930175781,
+    "open_ms" : 316.816958,
+    "parser_edit_failures" : 0,
+    "scroll_draw_ms" : {
+      "max" : 119.48866700000001,
+      "median" : 18.225874999999998,
+      "p95" : 78.77225
+    },
+    "selection_replan_ms" : {
+
+    },
+    "typing_ms" : {
+      "max" : 6.5497079999999999,
+      "median" : 2.0065,
+      "p95" : 4.1238330000000003
+    },
+    "typing_nodes_ms" : 0,
+    "typing_plan_ms" : 0,
+    "typing_shift_ms" : 0,
+    "undo_restores_source" : true,
+    "utf16" : 3236451
+  },
+  "iPadOS.large.war-and-peace-highlighted.tk1Visual" : {
+    "first_draw_ms" : 67.037666000000002,
+    "full_layout_ms" : 2421.7067499999998,
+    "full_layout_slice_ms" : {
+
+    },
+    "full_layout_slices" : 0,
+    "full_plan_ms" : 73.960791999999998,
+    "height_full" : 1135460,
+    "height_initial" : 855852,
+    "jumps_native" : {
+      "all_visible" : false,
+      "height_range" : [
+        855852,
+        855918
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 38.659917,
+        "median" : 23.143750000000001,
+        "p95" : 38.659917
+      },
+      "samples" : [
+        {
+          "height" : 855852,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 18.575333000000001,
+          "native_caret_error" : 0,
+          "offset" : 323634,
+          "passes" : 1
+        },
+        {
+          "height" : 855868,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 23.143750000000001,
+          "native_caret_error" : 0,
+          "offset" : 2912792,
+          "passes" : 1
+        },
+        {
+          "height" : 855902,
+          "hit_error" : 0,
+          "immediate_hit_error" : -5,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 23.836124999999999,
+          "native_caret_error" : 0,
+          "offset" : 1618177,
+          "passes" : 1
+        },
+        {
+          "height" : 855918,
+          "hit_error" : 0,
+          "immediate_hit_error" : -5,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 20.186582999999999,
+          "native_caret_error" : 0,
+          "offset" : 3204084,
+          "passes" : 1
+        },
+        {
+          "height" : 855918,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 18.694541999999998,
+          "native_caret_error" : 0,
+          "offset" : 32345,
+          "passes" : 1
+        },
+        {
+          "height" : 855918,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 38.659917,
+          "native_caret_error" : 0,
+          "offset" : 2427274,
+          "passes" : 1
+        }
+      ]
+    },
+    "memory_before_mib" : 59.658584594726562,
+    "memory_full_layout_mib" : 146.47195434570312,
+    "memory_open_mib" : 74.064834594726562,
+    "open_ms" : 12.747583000000001,
+    "parser_edit_failures" : 0,
+    "scroll_draw_ms" : {
+      "max" : 102.17462500000001,
+      "median" : 17.529917000000001,
+      "p95" : 73.823582999999999
+    },
+    "selection_replan_ms" : {
+
+    },
+    "typing_ms" : {
+      "max" : 61.009,
+      "median" : 3.0864590000000001,
+      "p95" : 14.466625000000001
+    },
+    "typing_nodes_ms" : 0,
+    "typing_plan_ms" : 0,
+    "typing_shift_ms" : 0,
+    "undo_restores_source" : true,
+    "utf16" : 3236451
+  },
+  "iPadOS.large.war-and-peace-highlighted.tk2" : {
+    "first_draw_ms" : 66.109999999999999,
+    "full_layout_ms" : 799.82950000000005,
+    "full_layout_slice_ms" : {
+      "max" : 8.0340830000000008,
+      "median" : 8.0083330000000004,
+      "p95" : 8.0140829999999994
+    },
+    "full_layout_slices" : 91,
+    "height_full" : 1135455,
+    "height_initial" : 13879019,
+    "jumps_native" : {
+      "all_visible" : false,
+      "height_range" : [
+        1266054,
+        2449282
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 40.293999999999997,
+        "median" : 15.619624999999999,
+        "p95" : 40.293999999999997
+      },
+      "samples" : [
+        {
+          "height" : 2449282,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 9.4701249999999995,
+          "native_caret_error" : -0.77269847970455885,
+          "offset" : 323634,
+          "passes" : 1
+        },
+        {
+          "height" : 2445193,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 15.619624999999999,
+          "native_caret_error" : -0.90998426591977477,
+          "offset" : 2912792,
+          "passes" : 1
+        },
+        {
+          "height" : 2428343,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 17.497667,
+          "native_caret_error" : -0.76485447771847248,
+          "offset" : 1618177,
+          "passes" : 1
+        },
+        {
+          "height" : 2428141,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 40.293999999999997,
+          "native_caret_error" : -0.76874050823971629,
+          "offset" : 3204084,
+          "passes" : 1
+        },
+        {
+          "height" : 1273341,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 14.462375,
+          "native_caret_error" : -0.90661951014772058,
+          "offset" : 32345,
+          "passes" : 1
+        },
+        {
+          "height" : 1266054,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 10.286458,
+          "native_caret_error" : -0.90121426386758685,
+          "offset" : 2427274,
+          "passes" : 1
+        }
+      ]
+    },
+    "jumps_native_after_full_layout" : {
+      "all_visible" : false,
+      "height_range" : [
+        1135455,
+        1220623
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 25.258792,
+        "median" : 20.775583999999998,
+        "p95" : 25.258792
+      },
+      "samples" : [
+        {
+          "height" : 1135455,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 25.258792,
+          "native_caret_error" : -0.7578125,
+          "offset" : 323634,
+          "passes" : 1
+        },
+        {
+          "height" : 1220623,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 16.362625000000001,
+          "native_caret_error" : -0.84581801481544971,
+          "offset" : 2912792,
+          "passes" : 1
+        },
+        {
+          "height" : 1220623,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 19.814708,
+          "native_caret_error" : -0.98046875,
+          "offset" : 1618177,
+          "passes" : 1
+        },
+        {
+          "height" : 1220420,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 20.775583999999998,
+          "native_caret_error" : -1.0815269623417407,
+          "offset" : 3204084,
+          "passes" : 1
+        },
+        {
+          "height" : 1220420,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 19.082083000000001,
+          "native_caret_error" : -0.9375,
+          "offset" : 32345,
+          "passes" : 1
+        },
+        {
+          "height" : 1191487,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 21.296125,
+          "native_caret_error" : -1.0778952206019312,
+          "offset" : 2427274,
+          "passes" : 1
+        }
+      ]
+    },
+    "jumps_precise" : {
+      "all_visible" : true,
+      "height_range" : [
+        1046278,
+        1234934
+      ],
+      "max_hit_error" : 46840,
+      "ms" : {
+        "max" : 1054.1641669999999,
+        "median" : 330.83699999999999,
+        "p95" : 1054.1641669999999
+      },
+      "samples" : [
+        {
+          "height" : 1189802,
+          "hit_error" : 46840,
+          "immediate_hit_error" : 46840,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 214.552291,
+          "native_caret_error" : -1.1558193897653837,
+          "offset" : 323634,
+          "passes" : 2
+        },
+        {
+          "height" : 1135455,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 1054.1641669999999,
+          "native_caret_error" : -0.9609375,
+          "offset" : 2912792,
+          "passes" : 3
+        },
+        {
+          "height" : 1234934,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 129.06270799999999,
+          "native_caret_error" : -0.98046875,
+          "offset" : 1618177,
+          "passes" : 1
+        },
+        {
+          "height" : 1135455,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 330.83699999999999,
+          "native_caret_error" : -1.0859375,
+          "offset" : 3204084,
+          "passes" : 2
+        },
+        {
+          "height" : 1046278,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 256.14249999999998,
+          "native_caret_error" : -0.9375,
+          "offset" : 32345,
+          "passes" : 1
+        },
+        {
+          "height" : 1135455,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 853.89700000000005,
+          "native_caret_error" : -0.8046875,
+          "offset" : 2427274,
+          "passes" : 4
+        }
+      ]
+    },
+    "memory_before_mib" : 90.268051147460938,
+    "memory_full_layout_mib" : 1800.4108505249023,
+    "memory_open_mib" : 99.814949035644531,
+    "open_ms" : 19.580333,
+    "parser_edit_failures" : 0,
+    "scroll_draw_ms" : {
+      "max" : 473.53649999999999,
+      "median" : 18.953958,
+      "p95" : 41.775916000000002
+    },
+    "selection_replan_ms" : {
+
+    },
+    "typing_ms" : {
+      "max" : 184.40979200000001,
+      "median" : 92.078041999999996,
+      "p95" : 143.376375
+    },
+    "typing_nodes_ms" : 0,
+    "typing_plan_ms" : 0,
+    "typing_shift_ms" : 0,
+    "undo_restores_source" : true,
+    "utf16" : 3236451
+  },
+  "iPadOS.large.war-and-peace-highlighted.tk2Visual" : {
+    "conceals" : 998,
+    "first_draw_ms" : 66.159915999999996,
+    "full_layout_ms" : 893.129458,
+    "full_layout_slice_ms" : {
+      "max" : 9.8958329999999997,
+      "median" : 8.0099160000000005,
+      "p95" : 8.0549590000000002
+    },
+    "full_layout_slices" : 100,
+    "full_plan_apply_ms" : 29.669625,
+    "full_plan_nodes_ms" : 3.806292,
+    "full_plan_only_ms" : 11.110208,
+    "height_full" : 1135455,
+    "height_initial" : 13879019,
+    "jumps_native" : {
+      "all_visible" : false,
+      "height_range" : [
+        1266054,
+        2449282
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 9.8179999999999996,
+        "median" : 9.4470829999999992,
+        "p95" : 9.8179999999999996
+      },
+      "samples" : [
+        {
+          "height" : 2449282,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 9.5073749999999997,
+          "native_caret_error" : -0.77269847970455885,
+          "offset" : 323634,
+          "passes" : 1
+        },
+        {
+          "height" : 2445193,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 9.4470829999999992,
+          "native_caret_error" : -0.90998426591977477,
+          "offset" : 2912792,
+          "passes" : 1
+        },
+        {
+          "height" : 2428343,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 9.3999579999999998,
+          "native_caret_error" : -0.76485447771847248,
+          "offset" : 1618177,
+          "passes" : 1
+        },
+        {
+          "height" : 2428141,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 8.9145409999999998,
+          "native_caret_error" : -0.76874050823971629,
+          "offset" : 3204084,
+          "passes" : 1
+        },
+        {
+          "height" : 1273341,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 9.1488750000000003,
+          "native_caret_error" : -0.90661951014772058,
+          "offset" : 32345,
+          "passes" : 1
+        },
+        {
+          "height" : 1266054,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 9.8179999999999996,
+          "native_caret_error" : -0.90121426386758685,
+          "offset" : 2427274,
+          "passes" : 1
+        }
+      ]
+    },
+    "jumps_native_after_full_layout" : {
+      "all_visible" : false,
+      "height_range" : [
+        1191487,
+        1234934
+      ],
+      "max_hit_error" : 0,
+      "ms" : {
+        "max" : 28.720333,
+        "median" : 20.765666,
+        "p95" : 28.720333
+      },
+      "samples" : [
+        {
+          "height" : 1234934,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 28.720333,
+          "native_caret_error" : -0.7578125,
+          "offset" : 323634,
+          "passes" : 1
+        },
+        {
+          "height" : 1220623,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 15.883625,
+          "native_caret_error" : -0.84581801481544971,
+          "offset" : 2912792,
+          "passes" : 1
+        },
+        {
+          "height" : 1220623,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 20.765666,
+          "native_caret_error" : -0.98046875,
+          "offset" : 1618177,
+          "passes" : 1
+        },
+        {
+          "height" : 1220420,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 21.355291999999999,
+          "native_caret_error" : -1.0815269623417407,
+          "offset" : 3204084,
+          "passes" : 1
+        },
+        {
+          "height" : 1220420,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 15.52825,
+          "native_caret_error" : -0.9375,
+          "offset" : 32345,
+          "passes" : 1
+        },
+        {
+          "height" : 1191487,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : false,
+          "in_viewport" : false,
+          "ms" : 15.669083000000001,
+          "native_caret_error" : -1.0778952206019312,
+          "offset" : 2427274,
+          "passes" : 1
+        }
+      ]
+    },
+    "jumps_precise" : {
+      "all_visible" : true,
+      "height_range" : [
+        1046278,
+        1234934
+      ],
+      "max_hit_error" : 46840,
+      "ms" : {
+        "max" : 804.41641700000002,
+        "median" : 361.54012499999999,
+        "p95" : 804.41641700000002
+      },
+      "samples" : [
+        {
+          "height" : 1189802,
+          "hit_error" : 46840,
+          "immediate_hit_error" : 46840,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 131.947542,
+          "native_caret_error" : -1.1558193897653837,
+          "offset" : 323634,
+          "passes" : 2
+        },
+        {
+          "height" : 1135455,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 804.41641700000002,
+          "native_caret_error" : -0.9609375,
+          "offset" : 2912792,
+          "passes" : 3
+        },
+        {
+          "height" : 1234934,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 148.00045800000001,
+          "native_caret_error" : -0.98046875,
+          "offset" : 1618177,
+          "passes" : 1
+        },
+        {
+          "height" : 1135455,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 361.54012499999999,
+          "native_caret_error" : -1.0859375,
+          "offset" : 3204084,
+          "passes" : 2
+        },
+        {
+          "height" : 1046278,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 254.12995799999999,
+          "native_caret_error" : -0.9375,
+          "offset" : 32345,
+          "passes" : 1
+        },
+        {
+          "height" : 1135455,
+          "hit_error" : 0,
+          "immediate_hit_error" : 0,
+          "immediate_in_viewport" : true,
+          "in_viewport" : true,
+          "ms" : 741.43595900000003,
+          "native_caret_error" : -0.8046875,
+          "offset" : 2427274,
+          "passes" : 4
+        }
+      ]
+    },
+    "memory_before_mib" : 230.98828887939453,
+    "memory_full_layout_mib" : 1852.9109878540039,
+    "memory_open_mib" : 249.50395965576172,
+    "open_ms" : 10.517208999999999,
+    "parser_edit_failures" : 0,
+    "replacements" : 0,
+    "scroll_draw_ms" : {
+      "max" : 315.399,
+      "median" : 18.285833,
+      "p95" : 22.520917000000001
+    },
+    "selection_replan_ms" : {
+      "max" : 1.4435830000000001,
+      "median" : 1.2725,
+      "p95" : 1.4279580000000001
+    },
+    "session_open_ms" : 88.104416999999998,
+    "typing_ms" : {
+      "max" : 143.46416600000001,
+      "median" : 91.783917000000002,
+      "p95" : 108.063666
+    },
+    "typing_nodes_ms" : 0.29091699999999998,
+    "typing_plan_ms" : 0.42858299999999999,
+    "typing_shift_ms" : 0.53670799999999996,
+    "undo_restores_source" : true,
+    "utf16" : 3236451
+  },
+  "iPadOS.parser.main" : {
+    "flatten_to_swift_ms" : 11.351082999999999,
+    "nodes" : 111859,
+    "parse_ms" : {
+      "max" : 97.866040999999996,
+      "median" : 35.550457999999999,
+      "p95" : 97.866040999999996
+    },
+    "typing_edit_fetch_ms" : {
+      "max" : 86.662875,
+      "median" : 1.0591250000000001,
+      "p95" : 30.178542
+    },
+    "window_6000_ms" : {
+      "max" : 1.9377500000000001,
+      "median" : 0.16600000000000001,
+      "p95" : 1.9377500000000001
+    }
+  },
+  "iPadOS.parser.war-and-peace-highlighted" : {
+    "flatten_to_swift_ms" : 46.336917,
+    "nodes" : 17590,
+    "parse_ms" : {
+      "max" : 91.333708000000001,
+      "median" : 37.739874999999998,
+      "p95" : 91.333708000000001
+    },
+    "typing_edit_fetch_ms" : {
+      "max" : 95.767291999999998,
+      "median" : 2.2553339999999999,
+      "p95" : 45.414917000000003
+    },
+    "window_6000_ms" : {
+      "max" : 0.39950000000000002,
+      "median" : 0.26837499999999997,
+      "p95" : 0.39950000000000002
+    }
+  },
+  "iPadOS.tk1.accessibility.range" : "*粗体 bold*",
+  "iPadOS.tk1.chip.hit" : {
+    "native" : 132,
+    "start" : 132
+  },
+  "iPadOS.tk1.chip.width" : {
+    "box" : 130,
+    "layout" : 130
+  },
+  "iPadOS.tk1.ime" : {
+    "caret" : 241.5,
+    "marked" : 242.5
+  },
+  "iPadOS.tk1.markerWidths" : [
+    0,
+    0
+  ],
+  "iPadOS.tk2.accessibility" : {
+    "range" : "*粗体 bold*",
+    "valueIsSource" : false,
+    "valuePrefix" : "nil"
+  },
+  "iPadOS.tk2.chip.hit" : {
+    "native" : 132,
+    "navigation" : 132,
+    "start" : 132
+  },
+  "iPadOS.tk2.chip.viewProviders" : {
+    "fragment" : 1,
+    "requests" : 6
+  },
+  "iPadOS.tk2.chip.width" : {
+    "box" : 130,
+    "layout" : 130
+  },
+  "iPadOS.tk2.copy" : "not measured on this platform",
+  "iPadOS.tk2.customFragment.markerWidth" : 8.654296875,
+  "iPadOS.tk2.ime.markedRect" : {
+    "caret" : 242.505859375,
+    "width" : 43.5,
+    "x" : 242.5
+  },
+  "iPadOS.tk2.layoutManagerAccessFallsBack" : true,
+  "iPadOS.tk2.navigation.staticStops" : {
+    "from" : 72,
+    "stops" : [
+      74,
+      75,
+      76,
+      77
+    ]
+  },
+  "iPadOS.tk2.reveal.maxParagraphsRebuilt" : 3,
+  "iPadOS.tk2.reveal.ms" : {
+    "max" : 1.141958,
+    "median" : 0.96791700000000003,
+    "p95" : 1.141958
+  },
+  "iPadOS.tk2.selection.segments" : 1,
+  "iPadOS.tk2.shorter" : {
+    "shorterAfterX" : 131.63366366731518,
+    "shorterEndX" : -1,
+    "zeroWidthAfterX" : 114.32506991731518,
+    "zeroWidthEndX" : 417.2254605423152
+  },
+  "iPadOS.tk2.tinyFont.concealedMarkerWidths" : [
+    0.0051171874999980105,
+    0.0051171875000051159
+  ],
+  "iPadOS.tk2.zeroWidth.concealedMarkerWidths" : [
+    0,
+    0
+  ]
+}

@@ -32,6 +32,7 @@ Unicode editing, marked-text protection, undo and saving have automated coverage
 - [Architecture](architecture.md)
 - [Implementation and verification](progress.md)
 - [Writing features](editor-evolution.md)
+- [Visual editing spike (LB-019)](visual-editing.md)
 - [Interaction and performance](interaction.md)
 - [Brand assets and favicons](../Brand/README.md)
 - [Localization](localization.md)
