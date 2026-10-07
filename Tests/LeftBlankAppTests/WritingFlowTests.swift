@@ -151,8 +151,14 @@ struct WritingFlowTests {
         let app = try WritingFixture(text: original)
         defer { app.close() }
         try await app.ready()
+        #expect(!app.workspace.hasUnsavedChanges)
         app.workspace.edited("Temporary replacement")
+        #expect(app.workspace.hasUnsavedChanges)
+        // Same length, one character different: the literal comparison decides.
+        app.workspace.edited(original.replacingOccurrences(of: "中", with: "文"))
+        #expect(app.workspace.hasUnsavedChanges)
         app.workspace.edited(original)
+        #expect(!app.workspace.hasUnsavedChanges)
         app.workspace.save()
         #expect(app.workspace.saveStatus == "Saved")
         #expect(app.workspace.savedText == original)

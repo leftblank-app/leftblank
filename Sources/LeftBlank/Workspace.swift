@@ -46,6 +46,12 @@ final class Workspace: ObservableObject {
 
     @Published var mainFileURL: URL?
     @Published var savedText: String?
+    /// The toolbar asks on every keystroke; a Swift `String` comparison of a
+    /// book normalizes Unicode (20 ms per key in War and Peace).
+    var hasUnsavedChanges: Bool {
+        fileURL != nil && !(savedText.map { TextIdentity.equal(text, $0) } ?? false)
+    }
+
     @Published var objectEditSession: ObjectEditSession?
     let previewReading = PreviewReadingSession()
     private var previewFollowTask: Task<Void, Never>?

@@ -68,6 +68,8 @@ extension WritingFlowTests {
             let range = ns.paragraphRange(for: NSRange(location: start, length: 0))
             return min(ns.length - 1, range.location + min(4, max(0, range.length - 2)))
         }
+        let sampler = MainThreadSampler()
+        sampler.start()
         for offset in offsets {
             let start = ContinuousClock.now
             app.workspace.jump(to: offset)
@@ -108,6 +110,7 @@ extension WritingFlowTests {
             _ = found.location
             search.append(seconds(searchStart.duration(to: .now)))
         }
+        sampler.stop("jumps \(data.count)")
         report["jumps_on_target"] = jumpsOnTarget
         report["max_hit_error"] = maximumHitError
         report["navigation_ms"] = milliseconds(navigation)
@@ -151,6 +154,7 @@ extension WritingFlowTests {
         var typingSamples: [[String: Any]] = []
         editor.breakUndoCoalescing()
         editor.undoManager?.beginUndoGrouping()
+        sampler.start()
         // Retain the first keystroke: no warm-up samples are discarded. Eighty
         // inputs give p95 a meaningful tail instead of equating it with max.
         for character in String(repeating: "Smooth 中文😀 input", count: 5) {
@@ -174,6 +178,7 @@ extension WritingFlowTests {
             ])
             try await Task.sleep(for: .milliseconds(25))
         }
+        sampler.stop("typing \(data.count)")
         editor.undoManager?.endUndoGrouping()
         report["typing_ms"] = milliseconds(typing)
         report["typing_samples"] = typingSamples
