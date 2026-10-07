@@ -3,7 +3,7 @@ import Foundation
 import Testing
 
 /// Deterministic xorshift64* so a failure reproduces from its seed.
-private struct SeededRandom {
+struct SeededRandom {
     var state: UInt64
 
     mutating func below(_ bound: Int) -> Int {
