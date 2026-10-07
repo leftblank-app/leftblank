@@ -77,3 +77,30 @@ import Testing
     try BundledPackages.prepare(in: cache, resources: resources)
     #expect(try manager.contentsOfDirectory(atPath: root.appendingPathComponent("PackageBackups").path).count == 1)
 }
+
+@Test func bundledPackagesArePreparedOncePerCacheAndOffTheMainThread() async throws {
+    let manager = FileManager.default
+    let root = TestPaths.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? manager.removeItem(at: root) }
+    let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let resources = repo.appendingPathComponent("Resources/Packages")
+    let cache = root.appendingPathComponent("PackageCache")
+    // Concurrent engine starts share one preparation.
+    async let first: Void = BundledPackages.prepareOnce(in: cache, resources: resources)
+    async let second: Void = BundledPackages.prepareOnce(in: cache, resources: resources)
+    _ = try await (first, second)
+    let shapes = cache.appendingPathComponent("preview/cetz/0.5.2/src/draw/shapes.typ")
+    #expect(manager.contentsEqual(
+        atPath: cache.appendingPathComponent("preview/cetz/0.5.2").path,
+        andPath: resources.appendingPathComponent("preview/cetz/0.5.2").path,
+    ))
+    // Later starts in the same launch skip the ~2 MB comparison entirely.
+    try Data("= Changed after launch".utf8).write(to: shapes)
+    try await BundledPackages.prepareOnce(in: cache, resources: resources)
+    #expect(try String(contentsOf: shapes, encoding: .utf8) == "= Changed after launch")
+    // A different cache (another state directory) is still prepared.
+    let other = root.appendingPathComponent("OtherCache")
+    try await BundledPackages.prepareOnce(in: other, resources: resources)
+    #expect(manager.fileExists(atPath: other.appendingPathComponent("preview/cetz/0.5.2/src/draw/shapes.typ").path))
+}

@@ -39,6 +39,14 @@ public enum DocumentTemplate: String, CaseIterable, Identifiable, Sendable {
 /// Curated packages ship with the app. Their explicit versioned imports remain
 /// ordinary Typst, so exported sources work without any LeftBlank-only preprocessor.
 public enum BundledPackages {
+    private static let preparation = PackagePreparation()
+
+    /// Engine starts await this instead of `prepare`: the ~2 MB comparison runs at
+    /// most once per cache per launch, and never on the main thread.
+    public static func prepareOnce(in cache: URL, resources: URL? = nil) async throws {
+        try await preparation.prepare(cache, resources: resources)
+    }
+
     public static func prepare(in cache: URL, resources: URL? = nil) throws {
         var source = resources ?? Bundle.main.resourceURL?.appendingPathComponent("Packages")
         #if DEBUG
@@ -88,6 +96,26 @@ public enum BundledPackages {
                     throw error
                 }
             }
+        }
+    }
+}
+
+private actor PackagePreparation {
+    private var tasks: [String: Task<Void, Error>] = [:]
+
+    func prepare(_ cache: URL, resources: URL?) async throws {
+        let key = cache.standardizedFileURL.path
+        let task = tasks[key] ?? Task.detached(priority: .userInitiated) {
+            try BundledPackages.prepare(in: cache, resources: resources)
+        }
+        tasks[key] = task
+        do { try await task.value }
+        catch {
+            // A failed copy is retried by the next engine start.
+            if tasks[key] == task {
+                tasks[key] = nil
+            }
+            throw error
         }
     }
 }

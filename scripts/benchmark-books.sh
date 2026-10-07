@@ -25,15 +25,17 @@ LEFTBLANK_INTEGRATION=1 LEFTBLANK_BOOK_PREVIEW=1 \
 python3 - <<'PY'
 import json
 from pathlib import Path
-rows = ['# Book editing benchmarks', '', '| Book | Source bytes | Open (s) | Typing median / p95 / max (ms) | Typing CPU max (ms) | Navigate + draw median (ms) | Scroll + draw p95 (ms) |', '|---|---:|---:|---:|---:|---:|---:|']
+rows = ['# Book editing benchmarks', '', '| Book | Source bytes | Open (s) | First compile (s) | Typing median / p95 / max (ms) | Typing CPU max (ms) | Navigate + draw median (ms) | Scroll + draw p95 (ms) |', '|---|---:|---:|---:|---:|---:|---:|---:|']
 for book in ['war-and-peace', 'sicp']:
     report = Path(f'build/benchmarks/{book}.json')
     if not report.exists():
-        rows.append(f'| {book} | Report unavailable: scenario failed before completion | | | | | |')
+        rows.append(f'| {book} | Report unavailable: scenario failed before completion | | | | | | |')
         continue
     r = json.loads(report.read_text())
-    rows.append(f'| {book} | {r["bytes"]:,} | {r["open_seconds"]:.2f} | {r["typing_ms"]["median"]:.2f} / {r["typing_ms"]["p95"]:.2f} / {r["typing_ms"]["max"]:.2f} | {r["typing_thread_cpu_ms"]["max"]:.2f} | {r["navigation_ms"]["median"]:.2f} | {r["scroll_draw_ms"]["p95"]:.2f} |')
-rows += ['', 'Typing gates: 80 samples, wall p95 < 100 ms, wall max < 250 ms, main-thread CPU max < 100 ms. First input is included; no retries or discarded outliers.', '', 'Instrumented debug AppKit tests. CPU layout and bitmap painting, not display FPS. Memory excludes Tinymist and WebKit. See docs/large-document-performance.md for scope.']
+    first = r.get('first_compile_seconds')
+    first = f'{first:.2f}' if isinstance(first, (int, float)) else 'not reached'
+    rows.append(f'| {book} | {r["bytes"]:,} | {r["open_seconds"]:.2f} | {first} | {r["typing_ms"]["median"]:.2f} / {r["typing_ms"]["p95"]:.2f} / {r["typing_ms"]["max"]:.2f} | {r["typing_thread_cpu_ms"]["max"]:.2f} | {r["navigation_ms"]["median"]:.2f} | {r["scroll_draw_ms"]["p95"]:.2f} |')
+rows += ['', 'First compile: engine start to the first successful Tinymist compile, measured while the benchmark keeps working. Typing gates: 80 samples, wall p95 < 100 ms, wall max < 250 ms, main-thread CPU max < 100 ms. First input is included; no retries or discarded outliers.', '', 'Instrumented debug AppKit tests. CPU layout and bitmap painting, not display FPS. Memory excludes Tinymist and WebKit. See docs/large-document-performance.md for scope.']
 Path('build/benchmarks/summary.md').write_text('\n'.join(rows) + '\n')
 PY
 exit "$status"

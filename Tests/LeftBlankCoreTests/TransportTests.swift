@@ -1,5 +1,6 @@
 import Foundation
 @testable import LeftBlankCore
+import LeftBlankTestSupport
 import Testing
 
 @MainActor
@@ -143,3 +144,35 @@ private final class TransportResults: @unchecked Sendable {
         lock.withLock { results.append(value) }
     }
 }
+
+#if os(macOS)
+    /// A replaced engine that ignores SIGTERM must not keep competing for CPU.
+    @MainActor
+    @Test func stoppedEngineThatIgnoresTerminationIsKilled() async throws {
+        let transport = ProcessTinymistTransport(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "trap '' TERM; echo ready; exec /bin/sleep 30"],
+            killGracePeriod: .seconds(1),
+        )
+        let ready = TransportResults()
+        transport.output.readabilityHandler = { handle in
+            if String(decoding: handle.availableData, as: UTF8.self).contains("ready") {
+                ready.append(.success(.null))
+            }
+        }
+        defer { transport.output.readabilityHandler = nil }
+        try transport.start(root: TestPaths.temporaryDirectory)
+        let started = ContinuousClock.now + .seconds(20)
+        while ready.values.isEmpty, started > .now {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(!ready.values.isEmpty, "The stand-in engine must install its SIGTERM trap first")
+        // The trap is installed, so SIGTERM alone cannot end this process.
+        transport.stop()
+        let deadline = ContinuousClock.now + .seconds(20)
+        while transport.isRunning, deadline > .now {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(!transport.isRunning, "The engine is killed after the grace period")
+    }
+#endif

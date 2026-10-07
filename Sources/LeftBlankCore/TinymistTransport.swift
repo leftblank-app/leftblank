@@ -19,7 +19,18 @@ public protocol TinymistTransport: AnyObject {
         private let stdin = Pipe()
         private let stdout = Pipe()
         private let stderr = Pipe()
+        private let executable: URL?
+        private let arguments: [String]
+        private let killGracePeriod: Duration
         var onExit: (@MainActor (Int32) -> Void)?
+
+        /// Tests substitute a stand-in executable; the app always launches `tinymist lsp`.
+        init(executable: URL? = nil, arguments: [String] = ["lsp"], killGracePeriod: Duration = .seconds(2)) {
+            self.executable = executable
+            self.arguments = arguments
+            self.killGracePeriod = killGracePeriod
+        }
+
         var input: FileHandle {
             stdin.fileHandleForWriting
         }
@@ -52,11 +63,11 @@ public protocol TinymistTransport: AnyObject {
         }
 
         func start(root: URL) throws {
-            guard let binary = Self.binaryURL else {
+            guard let binary = executable ?? Self.binaryURL else {
                 throw ServiceError.unavailable
             }
             process.executableURL = binary
-            process.arguments = ["lsp"]
+            process.arguments = arguments
             process.currentDirectoryURL = root
             process.standardInput = stdin
             process.standardOutput = stdout
@@ -68,10 +79,20 @@ public protocol TinymistTransport: AnyObject {
             try process.run()
         }
 
+        /// A replaced engine must not keep compiling in the background and compete
+        /// with its successor for CPU. Ask politely, then force it after a grace period.
         func stop() {
             process.terminationHandler = nil
-            if process.isRunning {
-                process.terminate()
+            guard process.isRunning else {
+                return
+            }
+            process.terminate()
+            let process = process, grace = killGracePeriod
+            Task { @MainActor in
+                try? await Task.sleep(for: grace)
+                if process.isRunning {
+                    kill(process.processIdentifier, SIGKILL)
+                }
             }
         }
     }
