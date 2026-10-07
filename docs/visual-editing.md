@@ -574,8 +574,10 @@ Engine start before the first result took 67–110 ms. Memory: 222 cached
 images took 3.8 MiB of decoded bitmaps, and SICP's 493 took 15–17 MiB. The
 math helper process was 67–95 MiB resident. The test budgets are about 20×
 these numbers, for shared CI runners. The iPad simulator test (embedded engine,
-same fixtures) passed on the iPad Air 11-inch (M4) simulator, iOS 27.0; no
-physical iPad has run it yet.
+same fixtures) passed on the iPad Air 11-inch (M4) simulator, iOS 27.0, and
+on a physical iPad Air (5th generation, M1), iPadOS 26.5. On the device, the
+first batch of four equations, including the embedded session's start, took
+0.42 s for the whole test.
 
 Correctness checks against the real engine. They run on the Mac and, through
 the embedded engine, in the iPad simulator:
@@ -606,8 +608,9 @@ the embedded engine, in the iPad simulator:
 - **Runaway equations.** An equation that computes for 30 s times out the
   session request; the Mac helper is killed and restarted. The iPad's embedded
   worker cannot be killed, as for hover examples.
-- **Not yet profiled on an iPad device.** The second embedded session costs
-  memory alongside the manuscript's.
+- **Not yet profiled on an iPad device.** The device test checks correctness,
+  not memory. The second embedded session costs memory alongside the
+  manuscript's.
 
 ## Phased plan
 
