@@ -321,10 +321,14 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
 
     // MARK: - Display paragraphs
 
+    /// Temporary diagnostic: TextKit creates one element per request.
+    public static var paragraphRequests = 0
+
     public func textContentStorage(
         _ textContentStorage: NSTextContentStorage,
         textParagraphWith range: NSRange,
     ) -> NSTextParagraph? {
+        Self.paragraphRequests += 1
         guard isEnabled, let text = textContentStorage.textStorage, text.length == snapshot.length,
               NSMaxRange(range) <= text.length
         else {

@@ -15,6 +15,10 @@ extension WritingFlowTests {
         let source = try #require(String(data: data, encoding: .utf8))
         #expect(data.count > 1_000_000)
         let initialMemory = physicalFootprint()
+        let loadSampler = MainThreadSampler()
+        loadSampler.start()
+        VisualEditorSession.paragraphRequests = 0
+        var requests: [String: Int] = [:]
         let opened = ContinuousClock.now
         let app = try WritingFixture(text: source, startService: false)
         defer { app.close() }
@@ -33,6 +37,7 @@ extension WritingFlowTests {
         var report: [String: Any] = ["bytes": data.count, "utf16": source.utf16.count, "open_seconds": openTime,
                                      "text_system": textSystem, "memory_before_mib": initialMemory,
                                      "memory_open_mib": physicalFootprint()]
+        requests["open"] = VisualEditorSession.paragraphRequests
         let serviceStarted = ContinuousClock.now
         app.workspace.startService()
         let deadline = ContinuousClock.now + .seconds(120)
@@ -52,12 +57,15 @@ extension WritingFlowTests {
         // Publishing semantic tokens precedes SwiftUI's next native layout.
         // Finish and report that initial presentation before timing navigation,
         // just as we settle the window between every subsequent jump below.
+        requests["highlighted"] = VisualEditorSession.paragraphRequests
         let presentationStart = ContinuousClock.now
         await app.layout()
         editor.prepareForPointerInteraction()
         editor.cacheDisplay(in: editor.visibleRect, to: bitmap)
         report["initial_presentation_ms"] = seconds(presentationStart.duration(to: .now)) * 1000
         report["editor_ready_seconds"] = seconds(opened.duration(to: .now))
+        requests["presented"] = VisualEditorSession.paragraphRequests
+        loadSampler.stop("load \(data.count)")
         var navigation: [Double] = [], hitTesting: [Double] = [], search: [Double] = []
         var jumpTimes: [Double] = [], highlightTimes: [Double] = [], layoutTimes: [Double] = []
         var navigationSamples: [[String: Double]] = []
@@ -111,6 +119,7 @@ extension WritingFlowTests {
             search.append(seconds(searchStart.duration(to: .now)))
         }
         sampler.stop("jumps \(data.count)")
+        requests["jumped"] = VisualEditorSession.paragraphRequests
         report["jumps_on_target"] = jumpsOnTarget
         report["max_hit_error"] = maximumHitError
         report["navigation_ms"] = milliseconds(navigation)
@@ -148,6 +157,7 @@ extension WritingFlowTests {
         #expect(abs(drift) < 0.5, "A line moved by \(drift) pt in the viewport after scrolling away and back")
         report["scroll_layout_ms"] = milliseconds(scrolling)
         report["scroll_draw_ms"] = milliseconds(drawing)
+        requests["scrolled"] = VisualEditorSession.paragraphRequests
         app.workspace.jump(to: offsets[2])
         editor.highlight()
         var typing: [Double] = [], typingCPU: [Double] = [], insertTimes: [Double] = [], metricTimes: [Double] = []
@@ -179,6 +189,8 @@ extension WritingFlowTests {
             try await Task.sleep(for: .milliseconds(25))
         }
         sampler.stop("typing \(data.count)")
+        requests["typed"] = VisualEditorSession.paragraphRequests
+        report["paragraph_requests"] = requests
         editor.undoManager?.endUndoGrouping()
         report["typing_ms"] = milliseconds(typing)
         report["typing_samples"] = typingSamples
