@@ -187,12 +187,28 @@ extension WritingFlowTests {
             report["export_pages"] = pdf.pageCount
             #expect(pdf.pageCount > 400)
         }
+        // From engine start to Tinymist's first successful compile ("Checking…" in the
+        // app). Read from the operation log so measuring it does not change the run.
+        report["first_compile_seconds"] = firstCompileSeconds(in: app.workspace.stateDirectory) ?? NSNull()
         let json = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
         if let output = ProcessInfo.processInfo.environment["LEFTBLANK_PERFORMANCE_REPORT"] {
             try json.write(to: URL(fileURLWithPath: output), options: .atomic)
         }
         print("LEFTBLANK LARGE REPORT\n" + String(decoding: json, as: UTF8.self))
     }
+}
+
+private func firstCompileSeconds(in state: URL) -> Double? {
+    let log = (try? String(contentsOf: state.appendingPathComponent("Logs/events.jsonl"), encoding: .utf8)) ?? ""
+    for line in log.split(separator: "\n") where line.contains("service.firstCompile") {
+        if let entry = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+           let fields = entry["fields"] as? [String: String],
+           let milliseconds = fields["milliseconds"].flatMap(Double.init)
+        {
+            return milliseconds / 1000
+        }
+    }
+    return nil
 }
 
 private func seconds(_ duration: Duration) -> Double {

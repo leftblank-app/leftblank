@@ -106,10 +106,16 @@ public final class TinymistClient {
         }
         output = transport.output
         errorOutput = transport.errorOutput
-        try transport.start(root: root)
         let packageCache = packageCache ?? outputDirectory.deletingLastPathComponent()
             .appendingPathComponent("PackageCache")
-        try BundledPackages.prepare(in: packageCache)
+        // Packages must be in place before the engine can compile anything, but
+        // the copy check runs off the main actor while the process launches.
+        async let packages: Void = BundledPackages.prepareOnce(in: packageCache)
+        try transport.start(root: root)
+        try await packages
+        guard generation == session else {
+            throw ServiceError.disconnected
+        }
         // iPad's PingFang UI collection uses Apple-specific glyph tables that
         // Typst cannot parse. Supply the same portable CJK fallback on both platforms.
         let bundledFont = Self.bundledFontURL
@@ -222,6 +228,10 @@ public final class TinymistClient {
             "textDocument/didOpen",
             ["textDocument": ["uri": url.absoluteString, "languageId": "typst", "version": version, "text": text]],
         )
+    }
+
+    public func close(_ url: URL) throws {
+        try notify("textDocument/didClose", ["textDocument": ["uri": url.absoluteString]])
     }
 
     public func change(_ url: URL, text: String, version: Int) throws {

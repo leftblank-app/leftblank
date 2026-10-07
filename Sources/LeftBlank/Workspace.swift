@@ -222,6 +222,11 @@ final class Workspace: ObservableObject {
     private var diagnosticsByURI: [String: [DiagnosticItem]] = [:]
     private var documentVersion = 1
     private var serviceGeneration = UUID()
+    /// The running engine, once its preview is up. Files of the same book reuse it.
+    private var engine: EngineSession?
+    private var serviceStartedAt: ContinuousClock.Instant?
+    /// Engine processes launched by this window; reused sessions do not count.
+    private(set) var engineLaunches = 0
     private var saveTask: Task<Void, Never>?
     private var syncTask: Task<Void, Never>?
     private var syntaxTask: Task<Void, Never>?
@@ -361,6 +366,7 @@ final class Workspace: ObservableObject {
         client.onNotification = { [weak self] method, params in self?.receive(method, params) }
         client.onDisconnect = { [weak self] message in
             self?.recordOperation("service.disconnected", ["reason": message])
+            self?.engine = nil
             self?.serviceReady = false
             self?.serviceStatus = "Disconnected"
             self?.message = message
@@ -369,7 +375,10 @@ final class Workspace: ObservableObject {
         updateSourceAccess()
     }
 
-    func startService() {
+    /// `reusingEngine` keeps a running engine when only the visible file changed
+    /// within the same compilation entry (and therefore the same root). Restarting
+    /// would discard Tinymist's compile cache and preview, recompiling a whole book.
+    func startService(reusingEngine: Bool = false) {
         guard !isLibraryHome else {
             return
         }
@@ -378,7 +387,6 @@ final class Workspace: ObservableObject {
             previewReading.reset()
             previewReturnLayout = nil
         }
-        recordOperation("service.start")
         checksOpen = false
         dismissAssistance()
         let generation = UUID()
@@ -387,6 +395,13 @@ final class Workspace: ObservableObject {
         syntaxTask = nil
         syntaxSnapshot = nil
         syntaxRevision += 1
+        if reusingEngine, switchDocumentInRunningEngine() {
+            return
+        }
+        recordOperation("service.start")
+        engine = nil
+        engineLaunches += 1
+        serviceStartedAt = .now
         serviceReady = false
         serviceStatus = "Connecting"
         diagnostics = []
@@ -412,6 +427,7 @@ final class Workspace: ObservableObject {
                 guard serviceGeneration == generation else {
                     return
                 }
+                let opened = EngineSession(compilationURL: compilationURL, current: documentURL)
                 try client.open(documentURL, text: text, version: documentVersion)
                 if compilationURL != documentURL {
                     try client.open(compilationURL, text: DocumentStorage.read(compilationURL).0, version: 1)
@@ -424,6 +440,9 @@ final class Workspace: ObservableObject {
                     return
                 }
                 previewURL = url
+                // The same documents are open unless the reader moved on meanwhile,
+                // in which case this start was superseded by the guard above.
+                engine = opened
                 recordOperation("service.ready")
                 try flushChanges()
                 refreshSyntax()
@@ -437,6 +456,46 @@ final class Workspace: ObservableObject {
                 showMessage(error.localizedDescription, persistent: true)
             }
         }
+    }
+
+    /// Moves the running engine to `documentURL`: closes the file being left
+    /// (unless it is the compilation entry, which stays open for the preview),
+    /// and opens or refreshes the new one. Preview, compile cache and diagnostics
+    /// for the rest of the book are kept; Tinymist publishes diagnostics only for
+    /// files whose results change. Returns false when a full start is required.
+    private func switchDocumentInRunningEngine() -> Bool {
+        guard var session = engine, serviceReady, client.initialized, previewURL != nil,
+              session.compilationURL.standardizedFileURL == compilationURL.standardizedFileURL
+        else {
+            return false
+        }
+        do {
+            let previous = session.current
+            if previous.standardizedFileURL != documentURL.standardizedFileURL,
+               previous.standardizedFileURL != session.compilationURL.standardizedFileURL
+            {
+                try client.close(previous)
+                session.open.remove(previous.standardizedFileURL)
+            }
+            if session.open.contains(documentURL.standardizedFileURL) {
+                try client.change(documentURL, text: text, version: documentVersion)
+            } else {
+                try client.open(documentURL, text: text, version: documentVersion)
+                session.open.insert(documentURL.standardizedFileURL)
+            }
+            session.current = documentURL
+        } catch {
+            // The connection failed mid-switch; fall back to a clean engine.
+            engine = nil
+            return false
+        }
+        engine = session
+        sentVersion = documentVersion
+        outline = []
+        recordOperation("service.reuse")
+        refreshSyntax()
+        Task { await refreshOutline() }
+        return true
     }
 
     func edited(_ newText: String, change: TextReplacement? = nil) {
@@ -702,6 +761,9 @@ final class Workspace: ObservableObject {
         }
         recordOperation("document.open", ["preservingMain": String(preservingMain)])
         do {
+            // A reused engine keeps the file being left open if it is the
+            // compilation entry, so it must have the latest buffer.
+            try? flushChanges()
             guard preserveCurrent() else {
                 return false
             }
@@ -729,7 +791,7 @@ final class Workspace: ObservableObject {
             saveStatus = isPackageSource ? "Read-only Package" : "Saved"
             saveRecovery()
             onTitleChange?(title)
-            startService()
+            startService(reusingEngine: true)
             return true
         } catch { showMessage(error.localizedDescription, persistent: true)
             return false
@@ -769,6 +831,7 @@ final class Workspace: ObservableObject {
         syntaxSnapshot = nil
         syntaxRevision += 1
         serviceGeneration = UUID()
+        engine = nil
         client.stop()
         historyOpen = false
         isLibraryHome = true
@@ -815,7 +878,7 @@ final class Workspace: ObservableObject {
             editor?.load(content, selection: NSRange(location: 0, length: 0))
             saveStatus = "Saved"
             saveRecovery()
-            startService()
+            startService(reusingEngine: true)
             showMessage(L10n.text("Loaded the disk version. Your edits are preserved in a draft copy."))
         } catch { showMessage(error.localizedDescription, persistent: true) }
     }
@@ -1643,7 +1706,7 @@ final class Workspace: ObservableObject {
         }
     }
 
-    private func receive(_ method: String, _ params: JSONValue) {
+    func receive(_ method: String, _ params: JSONValue) {
         if method == "textDocument/publishDiagnostics", let uri = params["uri"].string, let url = URL(string: uri),
            url.isFileURL
         {
@@ -1667,6 +1730,12 @@ final class Workspace: ObservableObject {
                 previewStale = true
                 serviceStatus = hasSuccessfulPreview ? "Showing Last Preview · Check Source" : "Document Needs Attention"
             }
+        } else if method == "tinymist/preview/dispose" {
+            // Tinymist ends a preview after its page has been disconnected for a few
+            // seconds and then stops pinning the compilation entry. The engine can no
+            // longer serve this book's preview, so the next file switch starts afresh.
+            recordOperation("preview.disposed")
+            engine = nil
         } else if method == "tinymist/compileStatus" || method == "tinymist/status" {
             recordOperation("compile.status", ["status": params["status"].string ?? "unknown"])
             if let status = params["status"].string {
@@ -1677,6 +1746,12 @@ final class Workspace: ObservableObject {
                     previewStale = true
                     serviceStatus = hasSuccessfulPreview ? "Showing Last Preview · Check Source" : "Document Needs Attention"
                 case "compileSuccess":
+                    if let started = serviceStartedAt {
+                        serviceStartedAt = nil
+                        recordOperation("service.firstCompile", ["milliseconds": String(
+                            Int((started.duration(to: .now) / .milliseconds(1)).rounded()),
+                        )])
+                    }
                     hasSuccessfulPreview = true
                     previewStale = documentVersion != sentVersion
                     serviceStatus = previewStale ? "Typesetting" : "Preview Updated"
@@ -1748,6 +1823,7 @@ final class Workspace: ObservableObject {
         syncTask?.cancel()
         syntaxTask?.cancel()
         library.stop()
+        engine = nil
         client.stop()
     }
 
@@ -2023,7 +2099,11 @@ extension Workspace {
         {
             return
         }
+        let entry = compilationURL
         mainFileURL = destination.main
+        if compilationURL != entry {
+            startService()
+        }
         navigationHistory.removeSubrange(index...)
         jump(to: destination.position.offset(in: text))
     }
@@ -2077,5 +2157,19 @@ extension Workspace {
                 openDiscovery(.templates)
             }
         }
+    }
+}
+
+/// Which documents the running Tinymist session has open. The compilation entry
+/// stays open for the preview; `current` is the file shown in the editor.
+private struct EngineSession {
+    let compilationURL: URL
+    var current: URL
+    var open: Set<URL>
+
+    init(compilationURL: URL, current: URL) {
+        self.compilationURL = compilationURL
+        self.current = current
+        open = [compilationURL.standardizedFileURL, current.standardizedFileURL]
     }
 }
