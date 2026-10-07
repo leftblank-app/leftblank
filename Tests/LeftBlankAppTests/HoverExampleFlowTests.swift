@@ -1,6 +1,8 @@
 import AppKit
 @testable import LeftBlankApp
 import LeftBlankCore
+import LeftBlankTestSupport
+import PDFKit
 import Testing
 
 extension WritingFlowTests {
@@ -48,6 +50,50 @@ extension WritingFlowTests {
         }
         #expect(try String(contentsOf: app.document, encoding: .utf8) == source)
         let root = app.workspace.stateDirectory.appendingPathComponent("HoverExamples")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+
+    /// LB-002: CeTZ's `group` example is draw code. It must render as a canvas drawing
+    /// with the manuscript's CeTZ version, never as its own source typeset as prose.
+    @Test func hoveringACetzDrawFunctionRendersItsExampleAsADrawing() async throws {
+        let source = "#import \"@preview/cetz:0.5.2\": canvas, draw\n#canvas({\n  import draw: *\n  group({ rect((0, 0), (1, 1)) })\n})\n"
+        let app = try WritingFixture(text: source)
+        defer { app.close() }
+        try await app.ready()
+        let editor = try #require(app.workspace.editor)
+        try await app.hover(over: "group")
+        try await app.wait { editor.sourceHover.examplePreview?.loading == false }
+        let example = try #require(editor.sourceHover.help?.example)
+        #expect(example.displaySource.hasPrefix("// Create group\ngroup({"))
+        #expect(example.mode == .code)
+        #expect(example.package == TypstPackage(namespace: "preview", name: "cetz", version: "0.5.2"))
+        let image = try #require(editor.sourceHover.examplePreview?.image, "The CeTZ example renders a preview")
+        #expect(try inkPixels(image) > 100)
+        // The preview is the drawing: the compiled page has vector ink and no typeset text.
+        let page = try #require(await compiledPage(example, packageCache: app.workspace.packageCache))
+        #expect((page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        #expect(app.workspace.text == source)
+        if let artifacts = ProcessInfo.processInfo.environment["LEFTBLANK_UI_ARTIFACTS"] {
+            let directory = URL(fileURLWithPath: artifacts)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try app.captureHoverContext().write(to: directory.appendingPathComponent("hover-cetz-group.png"))
+        }
+        editor.sourceHover.dismiss()
+
+        // Without CeTZ's context the same draw code cannot compile, so no preview is shown.
+        let renderer = HoverExampleRenderer()
+        let root = app.workspace.stateDirectory.appendingPathComponent("HoverExamples")
+        #expect(await renderer.image(
+            for: example.inPackage(nil),
+            directory: root,
+            packageCache: app.workspace.packageCache,
+        ) == nil)
+        // A snippet that would only echo its call syntax as prose shows only its source.
+        let echoed = try #require(LanguageAssistance.hover(.object([
+            "contents": .string("```typ\nline((0, 0), (1, 1))\nx += 1\n```"),
+        ]))?.example)
+        #expect(echoed.mode == .markup)
+        #expect(await renderer.image(for: echoed, directory: root, packageCache: app.workspace.packageCache) == nil)
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
     }
 
@@ -142,6 +188,50 @@ extension WritingFlowTests {
         #expect(await task.value == false)
         #expect(!cancelled.isRunning)
     }
+}
+
+/// Dark pixels in a preview thumbnail drawn on white.
+@MainActor
+private func inkPixels(_ image: NSImage) throws -> Int {
+    let tiff = try #require(image.tiffRepresentation)
+    let bitmap = try #require(NSBitmapImageRep(data: tiff))
+    var count = 0
+    for y in 0 ..< bitmap.pixelsHigh {
+        for x in 0 ..< bitmap.pixelsWide {
+            if let color = bitmap.colorAt(x: x, y: y), color.alphaComponent > 0.5,
+               color.usingColorSpace(.deviceRGB)
+               .map({ $0.redComponent + $0.greenComponent + $0.blueComponent < 1.5 }) ==
+               true
+            {
+                count += 1
+            }
+        }
+    }
+    return count
+}
+
+/// Compile the example's preview document as the renderer does, to inspect its page text.
+@MainActor
+private func compiledPage(_ example: HoverExample, packageCache: URL) async throws -> PDFPage? {
+    let root = TestPaths.temporaryDirectory.appendingPathComponent("LeftBlank-hover-page-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let input = try example.writePreview(in: root)
+    let output = root.appendingPathComponent("example.pdf")
+    let process = Process()
+    guard let binary = TinymistClient.binaryURL else {
+        Issue.record("The bundled tinymist binary is missing")
+        return nil
+    }
+    process.executableURL = binary
+    process.arguments = ["compile", "--root", root.path, "--package-cache-path", packageCache.path]
+        + (TinymistClient.bundledFontURL.map { ["--font-path", $0.deletingLastPathComponent().path] } ?? [])
+        + [input.path, output.path]
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    await Task.detached { process.waitUntilExit() }.value
+    try #require(process.terminationStatus == 0)
+    return PDFDocument(url: output)?.page(at: 0)
 }
 
 private extension WritingFixture {

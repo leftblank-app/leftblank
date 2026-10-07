@@ -1820,17 +1820,17 @@ extension Workspace {
         let generation = serviceGeneration, version = documentVersion, url = documentURL, caret = selection
         do {
             try flushChanges()
-            let result = try await client.request("textDocument/hover", [
+            let params: [String: Any] = [
                 "textDocument": ["uri": url.absoluteString],
                 "position": TextPosition(offset: offset, in: text).json,
-            ])
+            ]
+            let help = try await client.hoverHelp(params, packageCache: packageCache)
             guard !Task.isCancelled, generation == serviceGeneration, version == documentVersion,
                   url == documentURL, caret == selection, assistance == nil, !paletteOpen,
                   layout != .preview, !documentTransitionInProgress, editor?.hasMarkedText() != true
             else {
                 return nil
             }
-            let help = LanguageAssistance.hover(result)
             recordOperation("hover.response", ["hasHelp": String(help != nil)])
             return help
         } catch {

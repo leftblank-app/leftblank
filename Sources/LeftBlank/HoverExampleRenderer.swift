@@ -65,7 +65,8 @@ final class HoverExampleRenderer {
             process.standardError = FileHandle.nullDevice
             guard await HoverCompilation(process: process).run(), !Task.isCancelled,
                   let size = try output.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 5_000_000,
-                  let pdf = PDFDocument(url: output), let page = pdf.page(at: 0)
+                  let pdf = PDFDocument(url: output), let page = pdf.page(at: 0),
+                  !example.isEchoed(by: page.string ?? "")
             else {
                 return nil
             }

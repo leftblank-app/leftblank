@@ -47,7 +47,8 @@ final class TabletExampleRenderer {
                 let output = URL(fileURLWithPath: path)
                 guard output.standardizedFileURL.path.hasPrefix(exports.standardizedFileURL.path + "/"),
                       let size = try output.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 5_000_000,
-                      let pdf = PDFDocument(url: output), let page = pdf.page(at: 0)
+                      let pdf = PDFDocument(url: output), let page = pdf.page(at: 0),
+                      !example.isEchoed(by: page.string ?? "")
                 else {
                     return nil
                 }
