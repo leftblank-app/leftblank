@@ -156,6 +156,31 @@ extension WritingFlowTests {
         #expect(editor.containerVisibleRect().contains(CGPoint(x: caret.minX, y: caret.midY)))
     }
 
+    @Test func resizingDeepInADocumentKeepsTheTopLineWithoutLayingOutTheRest() async throws {
+        let paragraph = "A paragraph of plain words that wraps across the writing column.\n\n"
+        let source = String(repeating: paragraph, count: 20000)
+        let app = try WritingFixture(text: source, startService: false)
+        defer { app.close() }
+        app.window.orderFront(nil)
+        await app.layout()
+        let editor = try #require(app.workspace.editor)
+        let manager = try #require(editor.textLayoutManager)
+        editor.reveal(NSRange(location: (source as NSString).length / 2, length: 0))
+        await app.layout()
+        let top = { TextKit2Geometry.viewportInsertionOffset(at: editor.containerVisibleRect().origin, in: manager) }
+        let line = try #require(top())
+        let built = VisualEditorSession.paragraphsBuilt
+        // Re-wrapping discards TextKit 2's layout; finding the viewport by
+        // position would lay out all 40,000 paragraphs above it.
+        app.window.setContentSize(NSSize(width: 1000, height: 760))
+        await app.layout()
+        #expect(VisualEditorSession.paragraphsBuilt - built < 500)
+        let after = try #require(top())
+        let text = source as NSString
+        let start = { text.lineRange(for: NSRange(location: $0, length: 0)).location }
+        #expect(start(after) == start(line), "Top line \(line) became \(after)")
+    }
+
     @Test func preciseJumpsLandOnDistantTargetsAndHitTestsRoundTrip() async throws {
         let paragraph = "A paragraph with *strong* words, 中文 and 😀 that wraps across the writing column. "
         let source = (0 ..< 1500).map { "== Section \($0)\n\n" + String(repeating: paragraph, count: 3) + "\n\n" }

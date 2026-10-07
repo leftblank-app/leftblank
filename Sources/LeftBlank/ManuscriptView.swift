@@ -207,6 +207,8 @@ final class ManuscriptTextView: NSTextView {
     var typingSource = ""
     var typingSelection = NSRange(location: 0, length: 0)
     private(set) var appliedFontSize: CGFloat = 0
+    /// The top line to keep in place until the layout pass after a re-wrap.
+    private var resizeAnchor: (offset: Int, y: CGFloat)?
     private var appliedSyntaxRevision = -1
     /// The visual layer: concealment, styles, chips, images and equations.
     var session: VisualEditorSession?
@@ -294,19 +296,15 @@ final class ManuscriptTextView: NSTextView {
         return characterEditCount == 1 ? characterEdit : nil
     }
 
-    private func layoutState() -> String {
-        "visible \(visibleRect.minY.rounded())+\(visibleRect.height) frame \(frame.height.rounded()) usage \(textLayoutManager?.usageBoundsForTextContainer.maxY.rounded() ?? -1)"
-    }
-
     override func layout() {
-        VisualEditorSession.trace("layout", layoutState) {
-            super.layout()
-        }
-    }
-
-    override func prepareContent(in rect: NSRect) {
-        VisualEditorSession.trace("prepareContent \(rect.minY.rounded())+\(rect.height.rounded())", layoutState) {
-            super.prepareContent(in: rect)
+        super.layout()
+        // The pass after re-wrapping sizes the view from a partial estimate
+        // first, and the clip view clamps the scroll to it.
+        if let anchor = resizeAnchor {
+            resizeAnchor = nil
+            keepAtTop(anchor)
+            // This pass is over; lay out the viewport where it now is.
+            textLayoutManager?.textViewportLayoutController.layoutViewport()
         }
     }
 
@@ -364,14 +362,46 @@ final class ManuscriptTextView: NSTextView {
     }
 
     override func setFrameSize(_ newSize: NSSize) {
-        if VisualEditorSession.tracing, abs(newSize.height - frame.height) > 1000 {
-            print("LEFTBLANK TRACE frame \(frame.height.rounded()) -> \(newSize.height.rounded()) | \(layoutState())")
-        }
+        // Re-wrapping discards TextKit 2's layout, and the next pass finds the
+        // viewport by laying out every paragraph above it (all 80,000 of a long
+        // document; each later edit then walks them). Keep the top line in
+        // place by location instead, which also keeps the reader's place.
+        let anchor = newSize.width != frame.width ? resizeAnchor ?? topLine() : nil
         super.setFrameSize(newSize)
         let inset = NSSize(width: ManuscriptLayout.horizontalInset(for: newSize.width), height: 42)
         if textContainerInset != inset {
             textContainerInset = inset
         }
+        if let anchor {
+            resizeAnchor = anchor
+            keepAtTop(anchor)
+        }
+    }
+
+    /// Lays out the text around `anchor` and scrolls its line back to where it
+    /// was in the viewport.
+    private func keepAtTop(_ anchor: (offset: Int, y: CGFloat)) {
+        guard let manager = textLayoutManager else {
+            return
+        }
+        TextKit2Geometry.layOutContext(around: anchor.offset, in: manager)
+        if let line = TextKit2Geometry.caretRect(at: anchor.offset, in: manager) {
+            scrollContainer(to: line.minY - anchor.y)
+        }
+    }
+
+    /// The first visible line's offset and its height within the viewport,
+    /// from the laid-out viewport; nil before the first layout or at the top.
+    private func topLine() -> (offset: Int, y: CGFloat)? {
+        let visible = containerVisibleRect()
+        let top = CGPoint(x: 0, y: visible.minY)
+        guard visible.minY > 0, let manager = textLayoutManager,
+              let offset = TextKit2Geometry.viewportInsertionOffset(at: top, in: manager),
+              let line = TextKit2Geometry.caretRect(at: offset, in: manager)
+        else {
+            return nil
+        }
+        return (offset, line.minY - visible.minY)
     }
 
     override func resetCursorRects() {
@@ -498,13 +528,11 @@ final class ManuscriptTextView: NSTextView {
             session.style = style
             appliedFontSize = size
         }
-        VisualEditorSession.trace("isEnabled", layoutState) { session.isEnabled = workspace?.styledSource ?? true }
+        session.isEnabled = workspace?.styledSource ?? true
         if let workspace, let snapshot = workspace.syntaxSnapshot, workspace.syntaxRevision != appliedSyntaxRevision,
            workspace.syntaxDocumentRevision == workspaceRevision, snapshot.source.utf16.count == string.utf16.count
         {
-            VisualEditorSession.trace("semantic colors \(snapshot.tokens.count)", layoutState) {
-                session.colors.setColors(snapshot.tokens.map { ($0.range, Theme.color(for: $0)) })
-            }
+            session.colors.setColors(snapshot.tokens.map { ($0.range, Theme.color(for: $0)) })
             appliedSyntaxRevision = workspace.syntaxRevision
         }
     }

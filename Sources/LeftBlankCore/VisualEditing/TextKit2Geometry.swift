@@ -185,6 +185,22 @@ public enum TextKit2Geometry {
         return NSRange(location: min(start, end), length: abs(end - start))
     }
 
+    /// Lays out about a screen of text on both sides of `offset`. TextKit 2
+    /// finds the fragment at a viewport's top by laying out forward from the
+    /// nearest laid-out one above it; scrolling onto text not laid out makes
+    /// it lay out everything in between (1.3 s for one SICP jump on macOS 15),
+    /// and every later edit walks those paragraphs.
+    public static func layOutContext(around offset: Int, in manager: NSTextLayoutManager) {
+        let length = self.offset(of: manager.documentRange.endLocation, in: manager)
+        guard let start = location(max(0, offset - 3000), in: manager),
+              let end = location(min(length, offset + 3000), in: manager),
+              let context = NSTextRange(location: start, end: end)
+        else {
+            return
+        }
+        manager.ensureLayout(for: context)
+    }
+
     /// Scrolls `offset` into view without trusting `scrollRangeToVisible`,
     /// which reads estimated geometry and can leave a distant target thousands
     /// of points away (1 of 6 War and Peace jumps on the Mac, every distant
@@ -201,16 +217,7 @@ public enum TextKit2Geometry {
         visible: () -> CGRect,
         scroll: (CGFloat) -> Void,
     ) {
-        // macOS 15 finds the fragment at the viewport's top by laying out
-        // forward from the nearest laid-out one above it. Lay out the context
-        // above the target first, or a distant jump lays out everything in
-        // between (1.3 s in SICP) and each later keystroke walks those cached
-        // paragraphs.
-        if let start = location(max(0, offset - 3000), in: manager), let end = location(offset, in: manager),
-           let context = NSTextRange(location: start, end: end)
-        {
-            manager.ensureLayout(for: context)
-        }
+        layOutContext(around: offset, in: manager)
         var previous: CGFloat?
         for _ in 0 ..< 4 {
             guard let target = caretRect(at: offset, in: manager) else {

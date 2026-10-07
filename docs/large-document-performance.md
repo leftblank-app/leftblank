@@ -16,19 +16,21 @@ Neither book is repeated to manufacture a larger buffer.
 
 | Book | Source bytes | Open (s) | Typing median / p95 / max (ms) | Navigate + draw median / max (ms) | Scroll + draw p95 (ms) |
 |---|---:|---:|---:|---:|---:|
-| war-and-peace | 3,302,718 | 0.57 | 4.71 / 5.30 / 5.94 | 5.94 / 8.90 | 2.72 |
-| sicp | 1,446,633 | 0.54 | 2.89 / 3.43 / 4.48 | 11.52 / 19.64 | 3.73 |
+| war-and-peace | 3,302,718 | 0.56 | 5.52 / 5.75 / 6.87 | 7.14 / 10.13 | 2.56 |
+| sicp | 1,446,633 | 0.52 | 3.78 / 4.15 / 4.64 | 14.83 / 25.01 | 2.98 |
 
 Both books land all six jumps in the viewport with zero hit-test error, and a
 line returns to the same place in the viewport after scrolling three screens
-away and back. The previous TextKit 1 editor (2026-10-01) opened War and Peace
+away and back. TextKit builds about 1,300 of War and Peace's 67,963
+paragraphs and 1,000 of SICP's 20,512 over the whole run; the benchmark fails
+above 5,000, because every edit walks the elements built after it. The previous TextKit 1 editor (2026-10-01) opened War and Peace
 in 4.09 s and SICP in 3.32 s, typed at 9.29 / 52.23 and 6.70 / 10.88 ms
 (median / max), navigated in 4.20 and 6.07 ms median, and scrolled at 5.04 and
-3.89 ms p95. SICP ended at 226.6 MiB (287.8 before).
+3.89 ms p95. SICP ended at 219.4 MiB (287.8 before).
 
-SICP exported to **448 pages** in 2.41 seconds after engine startup.
-The test/editor process ended at 209.8 MiB for War and Peace and
-226.6 MiB for SICP (290.7 and 287.8 with TextKit 1). These are process physical-footprint snapshots,
+SICP exported to **448 pages** in 0.21 seconds after engine startup.
+The test/editor process ended at 222.0 MiB for War and Peace and
+219.4 MiB for SICP (290.7 and 287.8 with TextKit 1). These are process physical-footprint snapshots,
 not peak memory and not total application memory: Tinymist and WebKit are separate
 processes. Each current report comes from its own fresh test process.
 

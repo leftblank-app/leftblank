@@ -601,7 +601,7 @@ flowchart LR
 | `PresentationSnapshot` | The plan as a value. The main thread rebases it across each native edit in O(blocks): later entries move, entries the edit touches are dropped. A reply is rebased by edits made meanwhile, and only entries that changed are invalidated. |
 | `VisualEditorSession` | `NSTextContentStorageDelegate`: builds each paragraph's display text (same UTF-16 length; U+200B conceals, U+FFFC boxes; heading sizes, strong, emphasis, code, links, references, labels, list markers, revealed markers). Invalidates changed paragraphs with attribute-only edits (no undo record, no selection change); defers while text is marked. |
 | `RenderingAttributes` | Tinymist semantic colours as rendering attributes, so a reply never re-lays out text. A mirror answers reads; changed spans are pushed, and many changes become one ordered rebuild (single removals cost O(runs) in TextKit 2: 3 s for 100,000 in War and Peace). |
-| `TextKit2Geometry` | Caret, segments, hit tests and reveal without `layoutManager`. Mac jumps lay out the target and repeat until it stops moving; iPad jumps anchor the viewport on the target (`relocateViewport`). Hit tests that matter after a jump use the laid-out viewport fragments (`viewportInsertionOffset`). |
+| `TextKit2Geometry` | Caret, segments, hit tests and reveal without `layoutManager`. Mac jumps lay out the target and the text above it, and repeat until it stops moving; iPad jumps anchor the viewport on the target (`relocateViewport`). Hit tests that matter after a jump use the laid-out viewport fragments (`viewportInsertionOffset`). |
 | `ChipForm` | One SwiftUI form for both platforms, generated from the `#let` signature. Labelled values become pickers. Apply writes one replacement (`ChipEditing.edit`), so one undo restores the call. |
 | `InlineImageCache` | Decodes `#image` files off the main thread (ImageIO thumbnails, at most 960 px; SVG and PDF through `NSImage` on the Mac), caches by path and modification date (64 entries), and shows at most 480 × 360 pt. A missing or undecodable file shows its name. |
 | Math | `EngineMathRenderer` (§D): the Mac's own Tinymist helper, the iPad's second embedded session. Visible equations are requested in one batch per layout pass; cached and stale images show at once; the caret entering an equation shows its source. |
@@ -634,10 +634,11 @@ Mac: `scripts/benchmark-books.sh` (debug build, M4 Pro). Before is today's
 
 | | W&P TK1 | W&P TK2 + visual | SICP TK1 | SICP TK2 + visual |
 |---|---:|---:|---:|---:|
-| Open (s) | 4.09 | 0.57 | 3.32 | 0.54 |
-| Typing median / p95 / max (ms) | 9.29 / – / 52.2 | 4.7 / 5.3 / 5.9 | 6.70 / – / 10.9 | 2.9 / 3.4 / 4.5 |
-| Navigate + draw median / max (ms) | 4.20 / – | 5.9 / 8.9 | 6.07 / – | 11.5 / 19.6 |
-| Scroll + draw p95 (ms) | 5.04 | 2.7 | 3.89 | 3.7 |
+| Open (s) | 4.09 | 0.56 | 3.32 | 0.52 |
+| Typing median / p95 / max (ms) | 9.29 / – / 52.2 | 5.5 / 5.8 / 6.9 | 6.70 / – / 10.9 | 3.8 / 4.2 / 4.6 |
+| Navigate + draw median / max (ms) | 4.20 / – | 7.1 / 10.1 | 6.07 / – | 14.8 / 25.0 |
+| Scroll + draw p95 (ms) | 5.04 | 2.6 | 3.89 | 3.0 |
+| Paragraphs TextKit built in the run | – | 1,299 of 67,963 | – | 995 of 20,512 |
 | Jumps on target, max hit error | 6/6, ≤ 1 | 6/6, 0 | 6/6, ≤ 1 | 6/6, 0 |
 | Line drift after scrolling away and back (pt) | 0 | 0 | 0 | 0 |
 
@@ -656,12 +657,14 @@ the line index and word count of the whole text, compared the whole text as
 Swift strings (Unicode-normalizing) up to four times, JSON-encoded the text for
 recovery, sent the full text to Tinymist, and resolved the source path on disk.
 These are now incremental, compared literally or by version, coalesced (160 ms
-for Tinymist, 400 ms for recovery, as on the Mac) and cached. What remains in
+for Tinymist, 400 ms for recovery, as on the Mac) and cached. The Mac had one
+of these too: its toolbar compared the whole text with the saved text as
+Swift strings on every keystroke (20 ms per key in War and Peace). What remains in
 War and Peace is UIKit's own TextKit 2 viewport pass, which estimates the size
 of every paragraph between the nearer end of the document and the viewport: a
 bare `UITextView` takes 60–92 ms per key in the middle of War and Peace, 5 ms
-near either end, and a third of that with fewer, longer paragraphs. Three
-layout traps were found and fixed on the way:
+near either end, and a third of that with fewer, longer paragraphs. Layout
+traps found and fixed on the way:
 
 - Revealing the restored caret before the first layout pass makes TextKit 2
   lay out every paragraph above it; each later keystroke then pays for all of
@@ -672,6 +675,22 @@ layout traps were found and fixed on the way:
 - On iOS, after a distant jump, a fragment laid out on its own and the
   viewport's fragments can disagree by 100,000 characters at the same height.
   Taps, hit tests and jump checks use the viewport's fragments.
+- Every edit walks each text element TextKit has built after it, so one
+  step that builds a whole book slows every later keystroke (45 ms in War
+  and Peace on CI). The book benchmark counts the paragraphs TextKit builds
+  and fails above 5,000; on CI's macOS 15 it found two such steps.
+- Re-wrapping (a window resize, a pane opening, or on CI the window shrinking
+  to the runner's screen) discards TextKit 2's layout, and NSTextView then
+  finds a far-down viewport by laying out every paragraph above it, on macOS
+  27 too: all 80,000 paragraphs of a long test document, all 41,302 of War
+  and Peace on CI. The Mac view keeps the top line in place by location
+  across width changes: it lays out the text around that line, and again
+  after the next pass, whose first sizing clamps the scroll.
+- Scrolling a jump target a third of a screen down, onto text not laid out,
+  made TextKit lay out forward from the nearest laid-out fragment above:
+  17,000 paragraphs and 1.3 s for one SICP jump on macOS 15. Jumps lay out
+  a screen of text around the target first. The view also never scrolls past
+  the end of its text.
 
 ## Follow-ups
 
