@@ -392,7 +392,9 @@ HTTP 200
 jsonpath "$.result.isError" == false
 jsonpath "$.result.structuredContent.page_count" == 1
 jsonpath "$.result.structuredContent.mime_type" == "image/png"
-jsonpath "$.result.content[?(@.type == 'image')].mimeType" includes "image/png"
+jsonpath "$.result.content" count == 2
+jsonpath "$.result.content[1].type" == "image"
+jsonpath "$.result.content[1].mimeType" == "image/png"
 
 POST {{url}}
 Authorization: Bearer {{token}}
