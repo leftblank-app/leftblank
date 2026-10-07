@@ -314,7 +314,11 @@ extension WritingFlowTests {
             access: access,
         )
         #expect(refused.isError && workspace.text == changed)
-        workspace.paletteOpen = false
+        // Close through the app's own path. It restores editability at once;
+        // assigning paletteOpen waits for the next SwiftUI update, which a slow
+        // machine may not run before the next tool call validates the editor.
+        workspace.closePalette()
+        #expect(editor.isEditable)
         // An external disk edit must not be overwritten when the live buffer is saved.
         try Data("Externally changed\n".utf8).write(to: document.sourceURL, options: .atomic)
         let applied = await tools.call(
@@ -329,7 +333,7 @@ extension WritingFlowTests {
             ]),
             access: access,
         )
-        #expect(applied.value["status"].string == "applied")
+        #expect(applied.value["status"].string == "applied", "\(applied.value["error"])")
         #expect(applied.value["files"].array.first?["save_status"].string == "save_failed")
         #expect(try String(contentsOf: document.sourceURL, encoding: .utf8) == "Externally changed\n")
     }
