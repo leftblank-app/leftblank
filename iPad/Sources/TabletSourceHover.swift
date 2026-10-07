@@ -110,13 +110,13 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
                 guard let self, let workspace, workspace.client.supports("hoverProvider") else {
                     return
                 }
-                let response = try await workspace.client.request("textDocument/hover", [
+                let help = try await workspace.client.hoverHelp([
                     "textDocument": ["uri": snapshot.url.absoluteString],
                     "position": TextPosition(offset: offset, in: snapshot.source).json,
-                ])
+                ], packageCache: workspace.packageCache)
                 logger.notice("Hover response received")
                 guard !Task.isCancelled, workspace.accepts(snapshot), workspace.panel == nil,
-                      range == target, !pointerInCard, let help = LanguageAssistance.hover(response)
+                      range == target, !pointerInCard, let help
                 else {
                     return
                 }

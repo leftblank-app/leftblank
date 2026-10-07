@@ -83,7 +83,7 @@ extension TabletWorkspace {
                 case .completion: return
                 case .help:
                     if client.supports("hoverProvider") {
-                        hover = try await LanguageAssistance.hover(client.request("textDocument/hover", params))
+                        hover = try await client.hoverHelp(params, packageCache: packageCache)
                     }
                     if client.supports("signatureHelpProvider"), !Task.isCancelled {
                         signature = try await LanguageAssistance.signatureHelp(client.request(

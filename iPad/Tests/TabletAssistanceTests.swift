@@ -458,6 +458,57 @@ extension TabletAssistanceTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
     }
 
+    /// LB-002: package draw code renders in CeTZ's canvas with the manuscript's version,
+    /// exactly as on Mac; code that cannot render there shows only its source.
+    @Test func cetzHelpExamplesRenderAsDrawingsWithTheEmbeddedEngine() async throws {
+        let (workspace, editor, _, _) = try await fixture()
+        defer { workspace.client.stop()
+            try? FileManager.default.removeItem(at: workspace.stateDirectory)
+        }
+        workspace.activeSourceURL = nil
+        let source = "#import \"@preview/cetz:0.5.2\": canvas, draw\n#canvas({\n  import draw: *\n  group({ rect((0, 0), (1, 1)) })\n})"
+        let document = try await workspace.library.create(title: "Drawing", text: source)
+        await workspace.open(document)
+        workspace.selection = NSRange(location: (source as NSString).range(of: "group").location + 1, length: 0)
+        editor.selectedRange = workspace.selection
+        workspace.requestAssistance(.help)
+        await workspace.assistance.task?.value
+        let example = try #require(workspace.assistance.hover?.example)
+        #expect(example.displaySource.hasPrefix("// Create group\ngroup({"))
+        #expect(example.mode == .code)
+        #expect(example.package == TypstPackage(namespace: "preview", name: "cetz", version: "0.5.2"))
+        let root = workspace.stateDirectory.appendingPathComponent("HoverExamples")
+        let image = try #require(await workspace.exampleRenderer.image(
+            for: example, directory: root, packageCache: workspace.packageCache,
+        ))
+        let bitmap = try #require(image.cgImage)
+        let context = try #require(CGContext(
+            data: nil,
+            width: bitmap.width,
+            height: bitmap.height,
+            bitsPerComponent: 8,
+            bytesPerRow: bitmap.width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+        ))
+        context.setFillColor(UIColor.white.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: bitmap.width, height: bitmap.height))
+        context.draw(bitmap, in: CGRect(x: 0, y: 0, width: bitmap.width, height: bitmap.height))
+        let pixels = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+        #expect((0 ..< bitmap.width * bitmap.height).count(where: { pixels[$0 * 4] < 128 }) > 100)
+        #expect(await workspace.exampleRenderer.image(
+            for: example.inPackage(nil), directory: root, packageCache: workspace.packageCache,
+        ) == nil, "Draw code outside CeTZ's canvas cannot render")
+        let echoed = try #require(LanguageAssistance.hover(.object([
+            "contents": .string("```typ\nline((0, 0), (1, 1))\nx += 1\n```"),
+        ]))?.example)
+        #expect(await workspace.exampleRenderer.image(
+            for: echoed, directory: root, packageCache: workspace.packageCache,
+        ) == nil, "Source typeset as prose is not a preview")
+        #expect(workspace.text == source && workspace.serviceReady)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+
     @Test func externalDefinitionsAreReadOnlyAndCloseReturnsToTheProject() async throws {
         let (workspace, editor, _, _) = try await fixture()
         defer { workspace.client.stop()
