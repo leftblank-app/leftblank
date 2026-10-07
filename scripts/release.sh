@@ -116,6 +116,6 @@ fi
 ditto -c -k --sequesterRsrc --keepParent "$app" "build/release/$archive"
 (cd build/release && shasum -a 256 "$archive" > "$archive.sha256")
 if [ "$distribution" = preview ]; then
-  python3 scripts/preview-feed.py "build/release/$archive" "$LEFTBLANK_BUILD_NUMBER"
+  python3 scripts/preview-feed.py "build/release/$archive" "$LEFTBLANK_BUILD_NUMBER" "${LEFTBLANK_PREVIEW_CHANNEL:-nightly}"
 fi
 echo "Signed, notarized and stapled: build/release/$archive"

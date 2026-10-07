@@ -42,6 +42,14 @@ Preview uses Sparkle 2's native update flow:
   drains queued history writes. Failure to preserve writing cancels termination.
   The delegate is used even when a previously prepared update is resumed, where
   Sparkle's optional postpone-relaunch callback would not be reliable.
+- **Update channel** (Settings → General → Updates, stored per Mac, not
+  synced): **Nightly (more stable)** by default, or **Every merge (Alpha)**.
+  Nightly builds are Sparkle's default channel. Alpha items carry
+  `<sparkle:channel>alpha</sparkle:channel>`, and the app's Sparkle delegate
+  returns `["alpha"]` from `allowedChannels(for:)` only after opting in, so an
+  alpha Mac installs whichever allowed build is newest. Switching channels
+  checks for updates at once. Switching back to Nightly never downgrades: the
+  next nightly build newer than the installed alpha build installs.
 - The appcast and archives are public HTTPS resources. Ed25519 update signatures
   are checked before extraction, and archives contain signed, notarized apps.
   No analytics or system-profile collection is enabled.
@@ -63,21 +71,33 @@ Release app. The full functional suite runs with Preview enabled; a second,
 focused App Store configuration check confirms the binary does not link
 Sparkle. Tests also exercise real archive/feed signatures and reject tampering.
 
-Preview publishes from the nightly `build and test` run on main (18:00 UTC), or
-on demand from a manual main run with `publish_preview` checked
+The **nightly** channel publishes from the nightly `build and test` run on main
+(18:00 UTC), or on demand from a manual main run with `publish_preview` checked
 (`gh workflow run ci.yml --ref main -f publish_preview=true`), which runs only
-the Mac checks. Main pushes do not publish. Once Mac regression and Mac App
-Store validation pass, a signed-preview job starts; iPad failures do not block
-it. Main pushes never cancel the nightly or a manual run; a cancelled
+the Mac checks. Once Mac regression and Mac App Store validation pass, a
+signed-preview job starts; iPad failures do not block it. The **alpha** channel
+publishes from every main push that selected the Mac jobs, once that push's
+PR-level `build and test` gate passes; docs-only and iPad-only pushes publish
+nothing. Both channels share the `build and test` run number, so build numbers
+increase across channels. Main pushes never cancel the nightly or a manual run; a cancelled
 publication at worst leaves a build release that the next one supersedes. The
 signed-preview job
 compiles Release once, signs nested Sparkle helpers and the app, notarizes,
 staples, checks Gatekeeper and cold-launches the relocated package. Only then
 is the ZIP available as a seven-day Actions artifact and an immutable GitHub
-prerelease `preview-<run number>.<attempt>`. A failed nightly publication is
-retried by the next nightly, or immediately by a `publish_preview` run. The marketing version does not change.
+prerelease: `preview-<run number>.<attempt>` for nightly builds and
+`preview-alpha-<run number>.<attempt>` for alpha builds. A failed nightly
+publication is retried by the next nightly, or immediately by a
+`publish_preview` run. The marketing version does not change.
 
-`preview-latest` is a fixed tag used only to host `appcast.xml`. Its tag is never
+`preview-latest` is a fixed tag used only to host `appcast.xml`. The feed holds
+the newest item of each channel: the signing job downloads and verifies the
+published feed, replaces only its own channel's item and re-signs the result.
+The publisher keeps a channel's item when the feed already offers an equal or
+newer build in that channel. If the other channel published while this build was
+being signed, its item reverts until that channel's next publication. After
+publishing, only the newest five alpha releases are kept, never one the feed
+points to; nightly releases are not pruned. Its tag is never
 moved or force-pushed. The signed feed points at an immutable build release,
 so a downloaded archive cannot silently change. Publication is serialized and
 compares build numbers to prevent a late old run from downgrading the feed.

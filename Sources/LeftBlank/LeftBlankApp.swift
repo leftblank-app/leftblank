@@ -430,16 +430,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// Sparkle owns consent, scheduling, download verification and installation UI.
     /// Creating this object performs no network work; startup follows window setup.
     @MainActor
-    final class PreviewUpdater: NSObject {
+    final class PreviewUpdater: NSObject, ObservableObject {
         let controller: SPUStandardUpdaterController
+        /// Sparkle holds its delegate weakly.
+        let channels: PreviewChannelDelegate
+        @Published private(set) var channel: PreviewUpdateChannel
+        private let checkForUpdates: (SPUUpdater) -> Void
 
-        override init() {
+        init(
+            defaults: UserDefaults = .standard,
+            checkForUpdates: @escaping (SPUUpdater) -> Void = { updater in
+                if updater.canCheckForUpdates {
+                    updater.checkForUpdatesInBackground()
+                }
+            },
+        ) {
+            channels = PreviewChannelDelegate(defaults: defaults)
+            channel = channels.channel
+            self.checkForUpdates = checkForUpdates
             controller = SPUStandardUpdaterController(
                 startingUpdater: false,
-                updaterDelegate: nil,
+                updaterDelegate: channels,
                 userDriverDelegate: nil,
             )
             super.init()
+        }
+
+        /// Stores this Mac's channel and checks at once, so a newly allowed
+        /// alpha build is offered without waiting for the next scheduled check.
+        func select(_ channel: PreviewUpdateChannel) {
+            guard channel != self.channel else {
+                return
+            }
+            channels.channel = channel
+            self.channel = channel
+            checkForUpdates(controller.updater)
         }
 
         func start() {

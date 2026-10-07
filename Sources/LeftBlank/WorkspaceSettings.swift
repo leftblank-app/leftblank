@@ -108,7 +108,6 @@ struct WritingSettingsView: View {
     @ObservedObject var library: LibraryController
     #if LEFTBLANK_PREVIEW
         var updater: PreviewUpdater? = nil
-        @State private var automaticUpdateChecks = false
     #endif
     @ObservedObject private var localization = AppLocalization.shared
 
@@ -150,18 +149,7 @@ struct WritingSettingsView: View {
             }
             #if LEFTBLANK_PREVIEW
                 if let updater {
-                    Section {
-                        Toggle(
-                            L10n.text("Automatically Check for Updates"),
-                            isOn: Binding(
-                                get: { automaticUpdateChecks },
-                                set: { updater.controller.updater.automaticallyChecksForUpdates = $0 },
-                            ),
-                        ).accessibilityIdentifier("settings.updates.automatic")
-                            .onReceive(updater.controller.updater.publisher(for: \.automaticallyChecksForUpdates)) {
-                                automaticUpdateChecks = $0
-                            }
-                    } header: { Text(L10n.text("Updates")) }
+                    PreviewUpdateSettings(updater: updater)
                 }
             #endif
             Section {

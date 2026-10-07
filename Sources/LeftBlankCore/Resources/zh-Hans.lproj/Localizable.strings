@@ -935,3 +935,7 @@
 "Unknown parameter %@" = "没有参数 %@";
 "%@ is not a valid value for %@" = "%1$@ 不是 %2$@ 的有效值";
 "Fill in %@ first" = "请先填写 %@";
+"Update Channel" = "更新通道";
+"Nightly (more stable)" = "每晚（较稳定）";
+"Every merge (Alpha)" = "每次合入（Alpha）";
+"Alpha builds arrive after every merge to main. After switching back to Nightly, the next nightly build newer than this one installs." = "Alpha 版本在每次合入 main 后发布。切回“每晚”后，会安装比当前版本更新的下一个每晚版本。";
