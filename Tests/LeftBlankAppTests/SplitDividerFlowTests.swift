@@ -16,12 +16,13 @@ extension WritingFlowTests {
         try await app.ready()
         #expect(dividers(app).isEmpty, "Writing mode has no divider target")
 
+        // Ordering a window front constrains it to the screen, so a hosted
+        // runner's small display can narrow it. Measure, never assume, widths.
+        let area = try #require(app.window.contentView).bounds.width
         app.workspace.layout = .split
-        await app.layout()
+        try await settle(app) { abs(editorWidth(app) - (area - 1) / 2) <= 1 && !dividers(app).isEmpty }
         let web = try #require(views(app).compactMap { $0 as? PreviewWebView }.first)
         let divider = try #require(dividers(app).first)
-        let area = try #require(app.window.contentView).bounds.width
-        #expect(abs(editorWidth(app) - (area - 1) / 2) <= 1)
         #expect(divider.accessibilityIdentifier() == "split-divider")
         #expect(divider.accessibilityRole() == .splitter)
         #expect(divider.accessibilityLabel() == L10n.text("Resize Writing and Preview"))
@@ -37,7 +38,7 @@ extension WritingFlowTests {
         let start = editorWidth(app)
         let preview = app.workspace.previewURL
         try drag(app, from: center, by: [-40, -90, -150])
-        await app.layout()
+        try await settle(app) { abs(editorWidth(app) - (start - 150)) <= 1 && abs(dividerX(app) - (start - 150)) <= 1 }
         // Resizing reflows the same mounted preview; it never remounts or reloads it.
         #expect(app.workspace.previewURL == preview)
         #expect(views(app).compactMap { $0 as? PreviewWebView }.first === web)
@@ -48,60 +49,72 @@ extension WritingFlowTests {
         #expect(abs(SplitLayout.storedFraction(in: defaults) - dragged) < 0.002)
         #expect(app.workspace.text == source)
 
-        // A new window, like a relaunch, restores the stored ratio.
+        // A new window, like a relaunch, restores the stored ratio for its own
+        // width. Give it a different size so the ratio, not the width, is kept.
         let next = try WritingFixture(text: source, startService: false, defaults: defaults)
+        next.window.setContentSize(NSSize(width: area + 180, height: 820))
         next.workspace.layout = .split
-        await next.layout()
-        #expect(abs(editorWidth(next) - editorWidth(app)) <= 1)
+        let nextArea = try #require(next.window.contentView).bounds.width
+        let restored = SplitLayout.editorWidth(in: nextArea, fraction: dragged, divider: 1)
+        try await settle(next) { abs(editorWidth(next) - restored) <= 1 }
+        #expect(abs(editorWidth(next) - editorWidth(app)) > 20, "The new window is wider, so its editor is too")
         next.close()
 
         // Resizing the window keeps the ratio rather than the width.
-        app.window.setContentSize(NSSize(width: 1600, height: 820))
-        await app.layout()
+        app.window.setContentSize(NSSize(width: area + 380, height: 820))
         let wide = try #require(app.window.contentView).bounds.width
-        #expect(abs(editorWidth(app) - SplitLayout.editorWidth(in: wide, fraction: dragged, divider: 1)) <= 1)
+        let widened = SplitLayout.editorWidth(in: wide, fraction: dragged, divider: 1)
+        try await settle(app) { abs(editorWidth(app) - widened) <= 1 }
         app.window.setContentSize(NSSize(width: area, height: 820))
-        await app.layout()
+        let narrowed = SplitLayout.editorWidth(in: area, fraction: dragged, divider: 1)
+        try await settle(app) { abs(editorWidth(app) - narrowed) <= 1 }
 
         // In an ordinary window the minimum pane width, not the ratio limit,
         // stops the divider on either side.
         try drag(app, from: currentDivider(app).convert(NSPoint(x: 5, y: 200), to: nil), by: [-400, -2000])
-        await app.layout()
-        #expect(abs(editorWidth(app) - SplitLayout.minimumPaneWidth) <= 1)
+        try await settle(app) { abs(editorWidth(app) - SplitLayout.minimumPaneWidth) <= 1 }
         #expect(abs(SplitLayout.storedFraction(in: defaults) - SplitLayout.fractionRange.lowerBound) < 0.001)
         try drag(app, from: currentDivider(app).convert(NSPoint(x: 5, y: 200), to: nil), by: [3000])
-        await app.layout()
-        #expect(abs(area - 1 - editorWidth(app) - SplitLayout.minimumPaneWidth) <= 1)
+        try await settle(app) { abs(area - 1 - editorWidth(app) - SplitLayout.minimumPaneWidth) <= 1 }
         #expect(abs(SplitLayout.storedFraction(in: defaults) - SplitLayout.fractionRange.upperBound) < 0.001)
 
         // VoiceOver can move the divider in steps.
         let before = editorWidth(app)
         #expect(try currentDivider(app).accessibilityPerformDecrement())
-        await app.layout()
-        #expect(editorWidth(app) < before)
+        try await settle(app) { editorWidth(app) < before - 1 }
         let decremented = editorWidth(app)
         #expect(try currentDivider(app).accessibilityPerformIncrement())
-        await app.layout()
-        #expect(editorWidth(app) > decremented)
+        try await settle(app) { editorWidth(app) > decremented + 1 }
 
         // Double-clicking restores equal panes and stores that choice.
         let reset = try currentDivider(app).convert(NSPoint(x: 5, y: 200), to: nil)
         try click(app, at: reset, count: 1)
         try click(app, at: reset, count: 2)
-        await app.layout()
-        #expect(abs(editorWidth(app) - (area - 1) / 2) <= 1)
+        try await settle(app) { abs(editorWidth(app) - (area - 1) / 2) <= 1 }
         #expect(SplitLayout.storedFraction(in: defaults) == SplitLayout.defaultFraction)
 
         // Other layouts keep no target at the former divider or window edges.
         for layout in [EditorLayout.writing, .preview] {
             app.workspace.layout = layout
-            await app.layout()
-            #expect(dividers(app).isEmpty)
+            try await settle(app) { dividers(app).isEmpty }
             for x in [2, reset.x, area - 2] {
                 #expect(!(hit(app, NSPoint(x: x, y: 200)) is SplitDividerView))
             }
         }
         #expect(app.workspace.text == source)
+    }
+
+    /// SwiftUI may apply state after `layoutSubtreeIfNeeded` returns on some
+    /// macOS releases. Wait for the actual geometry instead of a fixed delay.
+    private func settle(
+        _ app: WritingFixture,
+        sourceLocation: Testing.SourceLocation = #_sourceLocation,
+        _ condition: () -> Bool,
+    ) async throws {
+        try await app.wait(sourceLocation: sourceLocation) {
+            app.window.contentView?.layoutSubtreeIfNeeded()
+            return condition()
+        }
     }
 
     private func views(_ app: WritingFixture) -> [NSView] {
