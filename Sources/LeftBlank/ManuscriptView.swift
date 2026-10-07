@@ -298,6 +298,7 @@ final class ManuscriptTextView: NSTextView {
         VisualEditorSession.traceBuilds("text view layout, visible \(visibleRect), frame \(frame.size)") {
             super.layout()
         }
+        session?.viewportDidLayout()
     }
 
     override func viewDidMoveToWindow() {

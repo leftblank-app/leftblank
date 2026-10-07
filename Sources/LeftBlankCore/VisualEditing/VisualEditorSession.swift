@@ -85,6 +85,14 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
     private var inFlight = false
     /// Changes not drawn yet because text is being composed.
     private var deferred: [NSRange] = []
+    /// Re-planned text above the laid-out viewport, invalidated once the
+    /// viewport reaches it. On macOS 15, invalidating text above a distant
+    /// viewport makes the next layout pass lay out the document from its start
+    /// to find the viewport again: all 41,000 paragraphs of War and Peace, and
+    /// every later keystroke walks them. Paragraphs TextKit has not built need
+    /// nothing; they are built from the current plan.
+    private var aboveViewport: [NSRange] = []
+    private var flushScheduled = false
     private var opened = false
     /// Increases with every `open`; replies for an older text are dropped.
     private var generation = 0
@@ -130,6 +138,7 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
         generation += 1
         pending = []
         deferred = []
+        aboveViewport = []
         colors.removeAll()
         colors.replaceCharacters(in: NSRange(location: 0, length: colors.length), length: text.length)
         images.removeAll()
@@ -162,6 +171,7 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
         colors.replaceCharacters(in: original, length: edited.length)
         snapshot.edit(original, replacementLength: edited.length)
         deferred = deferred.map { PresentationStore.rebase($0, editing: original, delta: delta) }
+        aboveViewport = aboveViewport.map { PresentationStore.rebase($0, editing: original, delta: delta) }
         selection = PresentationStore.rebase(selection, editing: original, delta: delta)
         pending.append(.init(range: original, text: text.substring(with: edited)))
         revision += 1
@@ -270,6 +280,35 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
         invalidate(changed)
     }
 
+    /// Call after the text view lays out its viewport: rebuilds re-planned
+    /// text the viewport has reached (`aboveViewport`).
+    public func viewportDidLayout() {
+        guard !flushScheduled, let start = laidOutStart,
+              aboveViewport.contains(where: { NSMaxRange($0) > start })
+        else {
+            return
+        }
+        // Not during the layout pass itself.
+        flushScheduled = true
+        Task { [weak self] in
+            guard let self else {
+                return
+            }
+            flushScheduled = false
+            let ranges = aboveViewport
+            aboveViewport = []
+            invalidate(ranges)
+        }
+    }
+
+    /// Where the laid-out viewport starts; nil before the first layout.
+    private var laidOutStart: Int? {
+        guard let manager = textLayoutManager, let range = manager.textViewportLayoutController.viewportRange else {
+            return nil
+        }
+        return TextKit2Geometry.offset(of: range.location, in: manager)
+    }
+
     /// Makes the content storage rebuild the paragraphs covering `ranges`. An
     /// attribute-only edit: no characters change, so there is no undo record
     /// and the selection stays.
@@ -280,12 +319,18 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
             return
         }
         let source = text.string as NSString
-        let paragraphs = Presentation.merged(ranges.map {
+        var paragraphs = Presentation.merged(ranges.map {
             Presentation.paragraphRange(
                 NSIntersectionRange($0, NSRange(location: 0, length: source.length)),
                 in: source,
             )
         })
+        if let start = laidOutStart, start > 0 {
+            let above = NSRange(location: 0, length: start)
+            let below = NSRange(location: start, length: source.length - start)
+            aboveViewport = Presentation.merged(aboveViewport + paragraphs.map { NSIntersectionRange($0, above) })
+            paragraphs = paragraphs.map { NSIntersectionRange($0, below) }.filter { $0.length > 0 }
+        }
         // Text re-planned above the viewport can change height; remember which
         // line is at the top and where, from the laid-out viewport itself.
         var anchor: (offset: Int, y: CGFloat)?

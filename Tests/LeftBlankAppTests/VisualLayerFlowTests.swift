@@ -174,6 +174,30 @@ extension WritingFlowTests {
         #expect(editor.string == source)
     }
 
+    @Test func replansAboveADistantViewportWaitUntilItArrives() async throws {
+        let body = String(repeating: "A long paragraph of plain words that fills the writing column.\n\n", count: 3000)
+        let source = "Inline $x^2$ math.\n\n" + body + "End\n"
+        let app = try WritingFixture(text: source, startService: false)
+        defer { app.close() }
+        app.window.orderFront(nil)
+        let editor = try #require(app.workspace.editor)
+        let session = try #require(editor.session)
+        session.mathRenderer = nil
+        let end = (source as NSString).length - 1
+        editor.setSelectedRange(NSRange(location: end, length: 0))
+        editor.reveal(NSRange(location: end, length: 0))
+        await app.settle(editor)
+        let rebuilt = RebuiltRanges(editor)
+        // Rebuilding text above a distant viewport makes macOS 15 lay out
+        // the whole document to find the viewport again.
+        session.mathRenderer = FixedMathRenderer()
+        await app.settle(editor)
+        #expect(!rebuilt.ranges.contains { $0.location == 0 }, "\(rebuilt.ranges)")
+        editor.reveal(NSRange(location: 0, length: 0))
+        try await app.wait { editor.displayedAttachment(at: 7)?.label == "equation" }
+        #expect(rebuilt.ranges.contains { $0.location == 0 })
+    }
+
     @Test func typingNeverWaitsForTheParser() async throws {
         let paragraph = "A paragraph with *strong* words and `code` that the plan conceals.\n\n"
         let source = String(repeating: paragraph, count: 4000)
@@ -202,6 +226,27 @@ extension WritingFixture {
         await editor.session?.settled()
         await layout()
         editor.prepareForPointerInteraction()
+    }
+}
+
+/// Attribute-only edits of an editor's text storage: paragraphs rebuilt.
+@MainActor
+final class RebuiltRanges: NSObject {
+    private(set) var ranges: [NSRange] = []
+    private weak var storage: NSTextStorage?
+
+    init(_ editor: NSTextView) {
+        storage = editor.textStorage
+        super.init()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(processed), name: NSTextStorage.didProcessEditingNotification, object: storage,
+        )
+    }
+
+    @objc private func processed(_: Notification) {
+        if let storage, !storage.editedMask.contains(.editedCharacters) {
+            ranges.append(storage.editedRange)
+        }
     }
 }
 
