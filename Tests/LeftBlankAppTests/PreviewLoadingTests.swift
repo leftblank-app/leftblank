@@ -71,7 +71,11 @@ private func expectLoadingPlaceholder(
     try await app.wait(sourceLocation: sourceLocation) {
         app.workspace.previewPainted || previewSpinnerShown(app) && previewCovered(app) != false
     }
-    #expect(!app.workspace.previewPainted, "The page painted before its placeholder was checked", sourceLocation: sourceLocation)
+    #expect(
+        !app.workspace.previewPainted,
+        "The page painted before its placeholder was checked",
+        sourceLocation: sourceLocation,
+    )
     #expect(previewSpinnerShown(app), "The unpainted preview shows its loading spinner", sourceLocation: sourceLocation)
 }
 
