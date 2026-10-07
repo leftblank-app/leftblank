@@ -301,6 +301,95 @@ struct AgentToolsTests {
         #expect(await read("main.typ").images.isEmpty)
     }
 
+    @Test func gateAdmitsReadersTogetherWritersAloneInArrivalOrder() async {
+        let gate = AgentToolGate()
+        #expect(await gate.acquire(exclusive: false))
+        #expect(await gate.acquire(exclusive: false))
+        #expect(gate.shared == 2)
+        let writer = Task { await gate.acquire(exclusive: true) }
+        while gate.waiters.count < 1 {
+            await Task.yield()
+        }
+        // A reader arriving after a waiting writer queues behind it instead of starving it.
+        let lateReader = Task { await gate.acquire(exclusive: false) }
+        while gate.waiters.count < 2 {
+            await Task.yield()
+        }
+        gate.release(exclusive: false)
+        #expect(!gate.exclusive && gate.waiters.count == 2)
+        gate.release(exclusive: false)
+        #expect(await writer.value)
+        #expect(gate.exclusive && gate.shared == 0 && gate.waiters.count == 1)
+        gate.release(exclusive: true)
+        #expect(await lateReader.value)
+        #expect(!gate.exclusive && gate.shared == 1 && gate.waiters.isEmpty)
+        gate.release(exclusive: false)
+    }
+
+    @Test func gateCancelledWaitersLeaveWithoutBlockingOthers() async {
+        let gate = AgentToolGate()
+        #expect(await gate.acquire(exclusive: true))
+        let first = Task { await gate.acquire(exclusive: false) }
+        while gate.waiters.count < 1 {
+            await Task.yield()
+        }
+        let writer = Task { await gate.acquire(exclusive: true) }
+        while gate.waiters.count < 2 {
+            await Task.yield()
+        }
+        let second = Task { await gate.acquire(exclusive: false) }
+        while gate.waiters.count < 3 {
+            await Task.yield()
+        }
+        writer.cancel()
+        #expect(await writer.value == false)
+        gate.release(exclusive: true)
+        // With the writer gone, both readers are admitted together.
+        let admitted = await (first.value, second.value)
+        #expect(admitted == (true, true))
+        #expect(gate.shared == 2 && gate.waiters.isEmpty)
+    }
+
+    @Test func readToolsRunBesideOtherReadsAndWritesWaitForThem() async throws {
+        let fixture = try AgentFixture()
+        defer { fixture.close() }
+        let dispatcher = fixture.dispatcher
+        // An in-flight read holds the gate.
+        #expect(await dispatcher.gate.acquire(exclusive: false))
+        #expect(await !fixture.call("list_documents", [:]).isError)
+        #expect(await !fixture.call("get_app_state", [:]).isError)
+        let write = Task {
+            await fixture.call(
+                "create_document",
+                ["title": .string("Queued"), "source": .string("Hi"), "request_id": .string("queued")],
+            )
+        }
+        while dispatcher.gate.waiters.count < 1 {
+            await Task.yield()
+        }
+        #expect(try await fixture.library.list().isEmpty)
+        dispatcher.gate.release(exclusive: false)
+        #expect(await !write.value.isError)
+        #expect(try await fixture.library.list().count == 1)
+        // Compiles are reads, but each starts an engine, so they take turns.
+        #expect(await dispatcher.compiles.acquire(exclusive: true))
+        let document = try #require(try await fixture.library.list().first)
+        let metadata = await fixture.call("get_document", ["document_id": .string(document.id.uuidString)])
+        let compile = Task {
+            await fixture.call("compile_document", [
+                "document_id": .string(document.id.uuidString),
+                "expected_project_revision": metadata.value["project_revision"],
+            ])
+        }
+        while dispatcher.compiles.waiters.count < 1 {
+            await Task.yield()
+        }
+        #expect(await !fixture.call("list_documents", [:]).isError)
+        dispatcher.compiles.release(exclusive: true)
+        #expect(await compile.value.value["status"].string == "unverified")
+        #expect(dispatcher.gate.shared == 0 && !dispatcher.gate.exclusive && dispatcher.compiles.waiters.isEmpty)
+    }
+
     @Test func lineLimitsHandleCRLFAndLargeCombiningSequences() async throws {
         let fixture = try AgentFixture()
         defer { fixture.close() }
