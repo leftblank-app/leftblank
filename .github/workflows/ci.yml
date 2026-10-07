@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Nightly full iPad suite at 18:00 UTC (02:00 Beijing).
+  schedule:
+    - cron: '0 18 * * *'
   workflow_dispatch:
     inputs:
       ipad_suite:
@@ -11,24 +14,79 @@ on:
         type: choice
         options: [full, smoke]
         default: full
+      publish_preview:
+        description: Run only the Mac checks on main and publish LeftBlank Preview (ignores ipad_suite)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-# Pull requests run the iPad smoke suite on one 11-inch simulator: native unit
-# tests plus a few curated UI scenarios. Main and full dispatches add every UI
-# scenario on both sizes, coverage, memory metrics and sanitizers. Job conditions repeat this test
-# because workflow env is unavailable there.
+# GitHub Free gives the organization about five concurrent macOS runners, so
+# each run selects only what its changes need:
+# - The `changes` job diffs changed paths (scripts/ci_changes.py): Mac-only
+#   changes skip the iPad jobs, iPad-only changes skip Mac regression, shared
+#   code runs both and docs-only changes run no macOS job. Pull requests diff
+#   against their base; main pushes against the last successful main run, so a
+#   cancelled or failed run's changes stay selected.
+# - Pull requests and main pushes run exactly the same checks: the selected
+#   Mac regression and iPad smoke suite (native unit tests plus a few curated
+#   UI scenarios on one 11-inch simulator).
+# - The nightly schedule on main runs everything: the full iPad suite (every
+#   UI scenario on both sizes, coverage, memory metrics and sanitizers), Mac App
+#   Store validation and Mac memory safety, then signs and publishes LeftBlank
+#   Preview once Mac regression and App Store validation pass. It skips only
+#   when this commit already had a fully successful nightly.
+# - Manual dispatches run everything at the `ipad_suite` depth (default full);
+#   on main they add the App Store and memory checks. `publish_preview` on main
+#   runs only the Mac checks and publishes Preview between nightlies.
+# - A newer run cancels an older one with the same event and ref, so pushes
+#   never cancel nightly or manual runs. A cancelled publication is harmless:
+#   at worst it leaves a build release that the next publication supersedes.
+# The `build and test` gate is the only required check; it accepts a skipped
+# job only when the selection did not require it. Job conditions repeat the
+# suite test because workflow env is unavailable there.
 env:
-  IPAD_SUITE: ${{ (github.event_name == 'pull_request' || inputs.ipad_suite == 'smoke') && 'smoke' || 'full' }}
+  IPAD_SUITE: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.ipad_suite != 'smoke')) && 'full' || 'smoke' }}
 
+# Keep only the newest run per ref and event: the event name keeps main
+# pushes from cancelling nightly and manual runs.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Select jobs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      mac: ${{ steps.select.outputs.mac }}
+      ipad: ${{ steps.select.outputs.ipad }}
+      suite: ${{ steps.select.outputs.suite }}
+      release: ${{ steps.select.outputs.release }}
+      publish: ${{ steps.select.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - name: CI policy contracts
+        run: python3 scripts/test-ci-policy.py
+      - name: Select jobs from changed paths
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUBLISH_PREVIEW: ${{ inputs.publish_preview }}
+        run: python3 scripts/ci_changes.py select
   integration:
     name: Mac regression
+    needs: changes
+    if: needs.changes.outputs.mac == 'true'
     runs-on: macos-15
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
@@ -152,7 +210,9 @@ jobs:
           retention-days: 14
   appstore:
     name: Mac App Store validation
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Nightly and manual main runs only; `release` implies Mac jobs are selected.
+    needs: changes
+    if: needs.changes.outputs.release == 'true'
     runs-on: macos-15
     timeout-minutes: 15
     env:
@@ -191,7 +251,9 @@ jobs:
           fi
   memory:
     name: Memory safety (${{ matrix.check }})
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Nightly and manual main runs only; `release` implies Mac jobs are selected.
+    needs: changes
+    if: needs.changes.outputs.release == 'true'
     runs-on: macos-15
     timeout-minutes: 25
     strategy:
@@ -230,10 +292,13 @@ jobs:
           path: build/memory
           if-no-files-found: warn
           retention-days: 14
+  # Preview publishes from the nightly run, or on demand from a main dispatch
+  # with publish_preview. It depends on Mac validation only: an iPad failure
+  # fails the gate and is reported, but does not hold back the Mac preview.
   preview:
     name: Signed preview
-    needs: [integration, appstore]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [changes, integration, appstore]
+    if: needs.changes.outputs.publish == 'true'
     runs-on: macos-15
     timeout-minutes: 60
     outputs:
@@ -347,6 +412,8 @@ jobs:
         run: python3 scripts/publish-preview.py
   ipad-build:
     name: iPad ${{ matrix.platform }}
+    needs: changes
+    if: needs.changes.outputs.ipad == 'true'
     runs-on: macos-15
     timeout-minutes: 60
     strategy:
@@ -359,6 +426,11 @@ jobs:
       CARGO_BUILD_JOBS: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Mac regression normally lints the whole repository; lint here when an
+      # iPad-only change skips it.
+      - name: Strict SwiftFormat and SwiftLint
+        if: matrix.platform == 'engine' && needs.changes.outputs.mac != 'true'
+        run: scripts/lint.sh
       - name: Cache engine sources and platform build
         id: engine-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -424,6 +496,8 @@ jobs:
           key: ${{ steps.swift-cache.outputs.cache-primary-key }}
   ipad-simulator-build:
     name: iPad simulator build
+    needs: changes
+    if: needs.changes.outputs.ipad == 'true'
     runs-on: macos-15
     timeout-minutes: 60
     env:
@@ -490,14 +564,15 @@ jobs:
           retention-days: 1
   ipad-ui:
     name: iPad (${{ matrix.size }}, ${{ matrix.appearance }})
-    needs: ipad-simulator-build
+    needs: [changes, ipad-simulator-build]
+    if: needs.changes.outputs.ipad == 'true'
     runs-on: macos-15
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        # Smoke runs one size; main and full dispatches cover both sizes and appearances.
-        include: ${{ fromJSON((github.event_name == 'pull_request' || inputs.ipad_suite == 'smoke') && '[{"size":"11-inch","appearance":"light"}]' || '[{"size":"11-inch","appearance":"light"},{"size":"13-inch","appearance":"dark"}]') }}
+        # Smoke runs one size; nightly and full dispatches cover both sizes and appearances.
+        include: ${{ fromJSON(needs.changes.outputs.suite == 'smoke' && '[{"size":"11-inch","appearance":"light"}]' || '[{"size":"11-inch","appearance":"light"},{"size":"13-inch","appearance":"dark"}]') }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       LEFTBLANK_DISTRIBUTION: appstore
@@ -543,8 +618,8 @@ jobs:
   ipad-memory:
     name: iPad memory safety (${{ matrix.check }})
     # Reuse the Rust engine cached by the simulator build, off the UI path.
-    needs: ipad-simulator-build
-    if: github.event_name != 'pull_request' && inputs.ipad_suite != 'smoke'
+    needs: [changes, ipad-simulator-build]
+    if: needs.changes.outputs.ipad == 'true' && needs.changes.outputs.suite == 'full'
     runs-on: macos-15
     timeout-minutes: 40
     strategy:
@@ -595,8 +670,8 @@ jobs:
           retention-days: 14
   ipad-coverage:
     name: iPad 80% application coverage
-    needs: ipad-ui
-    if: github.event_name != 'pull_request' && inputs.ipad_suite != 'smoke'
+    needs: [changes, ipad-ui]
+    if: needs.changes.outputs.ipad == 'true' && needs.changes.outputs.suite == 'full'
     runs-on: macos-15
     timeout-minutes: 10
     permissions:
@@ -636,36 +711,20 @@ jobs:
           retention-days: 14
   gate:
     name: build and test
-    needs: [integration, appstore, ipad-build, ipad-simulator-build, ipad-ui, ipad-coverage, ipad-memory]
+    needs: [changes, integration, appstore, memory, ipad-build, ipad-simulator-build, ipad-ui, ipad-coverage, ipad-memory]
+    # Always report, so a failed, cancelled or wrongly skipped job fails the
+    # required check instead of leaving it skipped (which GitHub treats as passing).
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 3
     steps:
-      - name: Require Mac and iPad validation to pass
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/ci_changes.py
+          sparse-checkout-cone-mode: false
+      # Each selected job must pass and every other job must be skipped:
+      # path filters and the smoke suite skip jobs, never fail or cancel them.
+      - name: Require every selected Mac and iPad job to pass
         env:
-          MAC_RESULT: ${{ needs.integration.result }}
-          APPSTORE_RESULT: ${{ needs.appstore.result }}
-          APPSTORE_REQUIRED: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
-          IPAD_BUILD_RESULT: ${{ needs.ipad-build.result }}
-          IPAD_SIMULATOR_RESULT: ${{ needs.ipad-simulator-build.result }}
-          IPAD_UI_RESULT: ${{ needs.ipad-ui.result }}
-          IPAD_FULL_RESULTS: ${{ needs.ipad-coverage.result }} ${{ needs.ipad-memory.result }}
-        run: |
-          test "$MAC_RESULT" = success
-          if [ "$APPSTORE_REQUIRED" = true ]; then
-            test "$APPSTORE_RESULT" = success
-          else
-            test "$APPSTORE_RESULT" = skipped
-          fi
-          test "$IPAD_BUILD_RESULT" = success
-          test "$IPAD_SIMULATOR_RESULT" = success
-          test "$IPAD_UI_RESULT" = success
-          # Smoke mode must skip, never fail or cancel, the full-only jobs.
-          if [ "$IPAD_SUITE" = full ]; then
-            expected=success
-          else
-            expected=skipped
-          fi
-          for result in $IPAD_FULL_RESULTS; do
-            test "$result" = "$expected"
-          done
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci_changes.py gate

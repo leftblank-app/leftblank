@@ -63,11 +63,19 @@ Release app. The full functional suite runs with Preview enabled; a second,
 focused App Store configuration check confirms the binary does not link
 Sparkle. Tests also exercise real archive/feed signatures and reject tampering.
 
-On main, the successful test job unlocks a separate signed-preview job. It
+Preview publishes from the nightly `build and test` run on main (18:00 UTC), or
+on demand from a manual main run with `publish_preview` checked
+(`gh workflow run ci.yml --ref main -f publish_preview=true`), which runs only
+the Mac checks. Main pushes do not publish. Once Mac regression and Mac App
+Store validation pass, a signed-preview job starts; iPad failures do not block
+it. Main pushes never cancel the nightly or a manual run; a cancelled
+publication at worst leaves a build release that the next one supersedes. The
+signed-preview job
 compiles Release once, signs nested Sparkle helpers and the app, notarizes,
 staples, checks Gatekeeper and cold-launches the relocated package. Only then
 is the ZIP available as a seven-day Actions artifact and an immutable GitHub
-prerelease `preview-<run number>.<attempt>`. The marketing version does not change.
+prerelease `preview-<run number>.<attempt>`. A failed nightly publication is
+retried by the next nightly, or immediately by a `publish_preview` run. The marketing version does not change.
 
 `preview-latest` is a fixed tag used only to host `appcast.xml`. Its tag is never
 moved or force-pushed. The signed feed points at an immutable build release,

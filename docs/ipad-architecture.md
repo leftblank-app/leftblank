@@ -104,9 +104,11 @@ not a substitute for these measurements.
 | Mac | SwiftPM, `scripts/test.sh`, existing Mac CI and book benchmarks | Existing signed preview and Mac release workflows |
 | iPad | Xcode target, `scripts/build-ipad.sh`, iPad jobs in `.github/workflows/ci.yml` | `ipad-v*` release tags start production signing, upload and storefront preparation |
 
-One `build and test` workflow contains Mac and iPad validation. Mac regression
-and main-only App Store distribution validation run independently. PRs avoid
-the distribution rebuild; main checks it before preview packaging. The iPad build matrix runs engine
+One `build and test` workflow contains Mac and iPad validation, and selects
+each platform's jobs from the changed paths. Mac regression
+and nightly App Store distribution validation run independently. PRs and main
+pushes avoid the distribution rebuild; the nightly run checks it before
+Preview packaging. The iPad build matrix runs engine
 integration, simulator compilation and device compilation in parallel, using
 independent engine caches. It produces the simulator test Products once and
 passes them to a two-size UI matrix. Each size runs the full suite on its own
@@ -116,10 +118,12 @@ builds are unsigned; simulator tests do not establish physical-device performanc
 
 The current main-branch ruleset requires `build and test` and 80% coverage, but
 has no separate iPad check requirements. The existing `build and test` check now
-aggregates Mac regression, Mac App Store validation, all iPad builds, both UI
-sizes, iPad coverage and independent memory checks. A failed, cancelled or unexpectedly skipped prerequisite cannot produce
-a successful aggregate. Only the main-only App Store job's expected skip is
-accepted on PRs. This PR does not change repository rules. The main-only Mac preview
+aggregates Mac regression, Mac App Store validation, Mac memory safety, all
+iPad builds, the UI sizes, iPad coverage and independent memory checks. A
+failed, cancelled or unexpectedly skipped prerequisite cannot produce a
+successful aggregate. It accepts only expected skips: jobs the path selection
+did not choose, full-suite iPad jobs outside the nightly or a full dispatch, and
+the App Store and Mac memory jobs outside nightly and manual main runs. This PR does not change repository rules. The nightly Mac preview
 still depends on Mac validation; platform release targets remain independent.
 
 Existing Mac release tags do not publish an iPad build. Apple supports adding an
