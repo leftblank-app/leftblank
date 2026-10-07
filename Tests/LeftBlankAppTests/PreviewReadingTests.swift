@@ -333,13 +333,19 @@ extension WritingFlowTests {
         // a timer so the real Tinymist WASM renderer can update its actual DOM.
         web.configuration.preferences.inactiveSchedulingPolicy = .none
         web.configuration.userContentController.addUserScript(WKUserScript(
-            source: "window.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 16); window.cancelAnimationFrame = clearTimeout;",
+            source: "window.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 16); window.cancelAnimationFrame = clearTimeout; window.leftblankTestFrames = true;",
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true,
         ))
         web.reload()
-        try await waitForJavaScript(web, condition: "document.querySelectorAll('#typst-app .typst-doc > g').length > 0")
-        try await app.wait { app.workspace.hasSuccessfulPreview }
+        // Wait for the reloaded document itself, not pages still shown by the
+        // previous one, and for its load to finish so the preview coordinator
+        // has applied its state before this test changes it.
+        try await waitForJavaScript(
+            web,
+            condition: "window.leftblankTestFrames === true && document.querySelectorAll('#typst-app .typst-doc > g').length > 0",
+        )
+        try await app.wait { app.workspace.hasSuccessfulPreview && !web.isLoading }
         let initialURL = app.workspace.previewURL
         let before = try await web
             .evaluateJavaScript("document.querySelectorAll('#typst-app .typst-doc > g').length") as? Int
@@ -447,7 +453,7 @@ extension WritingFlowTests {
 }
 
 @MainActor
-private func findWebView(_ view: NSView?) -> WKWebView? {
+func findWebView(_ view: NSView?) -> WKWebView? {
     guard let view else {
         return nil
     }
@@ -458,7 +464,7 @@ private func findWebView(_ view: NSView?) -> WKWebView? {
 }
 
 @MainActor
-private func waitForJavaScript(_ web: WKWebView, condition: String) async throws {
+func waitForJavaScript(_ web: WKWebView, condition: String) async throws {
     let deadline = ContinuousClock.now + .seconds(15)
     while ContinuousClock.now < deadline {
         if await (try? web.evaluateJavaScript(condition)) as? Bool == true {
@@ -468,8 +474,10 @@ private func waitForJavaScript(_ web: WKWebView, condition: String) async throws
     }
     let state = try? await web
         .evaluateJavaScript(
-            "JSON.stringify({visibility:document.visibilityState, requestedScroll:window.leftblankRequestedScroll, scroll:document.getElementById('typst-container-main')?.scrollTop, height:innerHeight, pages:[...document.querySelectorAll('.typst-doc > g.typst-page')].map(p=>({page:p.dataset.pageNumber,top:p.getBoundingClientRect().top,bottom:p.getBoundingClientRect().bottom})), renderers:document.getElementById('typst-container')?.documents?.map(d=>({rendering:d.impl.isRendering,initialized:d.impl.moduleInitialized,anchor:d.impl.svgResizeAnchor,scale:d.impl.lastSvgScale}))})",
+            "JSON.stringify({visibility:document.visibilityState, classes:document.getElementById('typst-app')?.className, dark:window.leftblankPreviewDark, requestedScroll:window.leftblankRequestedScroll, scroll:document.getElementById('typst-container-main')?.scrollTop, height:innerHeight, pages:[...document.querySelectorAll('.typst-doc > g.typst-page')].map(p=>({page:p.dataset.pageNumber,top:p.getBoundingClientRect().top,bottom:p.getBoundingClientRect().bottom})), renderers:document.getElementById('typst-container')?.documents?.map(d=>({rendering:d.impl.isRendering,initialized:d.impl.moduleInitialized,anchor:d.impl.svgResizeAnchor,scale:d.impl.lastSvgScale}))})",
         )
-    Issue.record("Preview did not reach expected state: \(condition); state: \(state ?? "unavailable")")
+    Issue.record(
+        "Preview did not reach expected state: \(condition); state: \(state ?? "unavailable"); loading: \(web.isLoading), in window: \(web.window != nil)",
+    )
     throw CommandError.invalid("Preview state timed out")
 }
