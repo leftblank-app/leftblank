@@ -62,6 +62,18 @@ def wait_for_tests(process, startup_timeout, execution_timeout):
     process.wait(timeout=max(0, deadline - time.monotonic()))
 
 
+def signal_group(pid, signum):
+    """Signal a process group that may already have exited.
+
+    Darwin reports EPERM, not ESRCH, while every remaining group member is an
+    unreaped zombie, e.g. a grandchild that launchd has not reaped yet.
+    """
+    try:
+        os.killpg(pid, signum)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def run(command, timeout, *, capture=False, check=True, startup_timeout=None):
     limit = f'limit {timeout}s' if startup_timeout is None else f'startup {startup_timeout}s, execution {timeout}s'
     print(f"+ {shlex.join(map(str, command))} ({limit})", flush=True)
@@ -78,17 +90,14 @@ def run(command, timeout, *, capture=False, check=True, startup_timeout=None):
         # Let Xcode finalize failure attachments before removing its workers.
         # A hung process group still has a bounded, unconditional cleanup.
         if startup_timeout is not None:
+            signal_group(process.pid, signal.SIGINT)
             try:
-                os.killpg(process.pid, signal.SIGINT)
                 output, _ = process.communicate(timeout=30)
                 if output:
                     print(output, end='', flush=True)
-            except (ProcessLookupError, subprocess.TimeoutExpired):
+            except subprocess.TimeoutExpired:
                 pass
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        signal_group(process.pid, signal.SIGKILL)
         process.communicate()
         raise
     finally:
