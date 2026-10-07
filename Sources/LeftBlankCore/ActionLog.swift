@@ -2,6 +2,9 @@ import Foundation
 
 /// Small synchronous writes keep the last action available after a process crash.
 /// The lock protects the file handle, rotation and sequence number together.
+/// Several logs may share a file, such as a relaunched workspace while the
+/// previous one still finishes its work, so every record is appended at the
+/// file's current end instead of at an offset this instance remembers.
 public final class ActionLog: @unchecked Sendable {
     public let fileURL: URL
     private let directory: URL
@@ -10,7 +13,6 @@ public final class ActionLog: @unchecked Sendable {
     private let session = UUID().uuidString
     private let lock = NSLock()
     private var handle: FileHandle?
-    private var size = 0
     private var sequence = 0
 
     public init(directory: URL, maxBytes: Int = 1_048_576, archivedFiles: Int = 3) throws {
@@ -37,14 +39,16 @@ public final class ActionLog: @unchecked Sendable {
             ]
             var data = try JSONSerialization.data(withJSONObject: entry, options: .sortedKeys)
             data.append(0x0A)
-            if handle == nil {
+            if handle == nil || !handleIsCurrentFile() {
+                try? handle?.close()
                 try openFile()
             }
-            if size > 0, size + data.count > limit {
+            // Another writer may have appended too, so rotate by the file's real size.
+            let size = try handle?.seekToEnd() ?? 0
+            if size > 0, Int(size) + data.count > limit {
                 try rotate()
             }
             try handle?.write(contentsOf: data)
-            size += data.count
             return true
         } catch {
             // Logging must never interrupt writing or saving a manuscript.
@@ -55,12 +59,21 @@ public final class ActionLog: @unchecked Sendable {
     }
 
     private func openFile() throws {
-        if !FileManager.default.fileExists(atPath: fileURL.path) {
-            try Data().write(to: fileURL, options: .atomic)
+        let descriptor = open(fileURL.path, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0o644)
+        guard descriptor >= 0 else {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: fileURL.path])
         }
-        let opened = try FileHandle(forWritingTo: fileURL)
-        handle = opened
-        size = try Int(opened.seekToEnd())
+        handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    }
+
+    /// Another log sharing the file may have rotated it away from this handle.
+    private func handleIsCurrentFile() -> Bool {
+        guard let handle else {
+            return false
+        }
+        var opened = stat(), current = stat()
+        return fstat(handle.fileDescriptor, &opened) == 0 && stat(fileURL.path, &current) == 0
+            && opened.st_ino == current.st_ino && opened.st_dev == current.st_dev
     }
 
     private func rotate() throws {

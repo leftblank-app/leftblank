@@ -75,9 +75,14 @@ extension WritingFlowTests {
         try await app.hover(over: "rect")
         try await app.wait { editor.sourceHover.help?.signature?.contains("rect") == true }
         let panel = try #require(editor.sourceHover.panel)
-        try await app.hover(over: "prose")
+        // A pointer crosses these words within the grace period. Deliver the
+        // moves back to back, as AppKit does, so a slow machine preparing the
+        // next event does not turn the crossing into a dwell.
+        let crossing = try await [app.pointerMove(over: "prose"), app.pointerMove(over: "circle")]
         #expect(editor.sourceHover.panel === panel)
-        try await app.hover(over: "circle")
+        editor.mouseMoved(with: crossing[0])
+        #expect(editor.sourceHover.panel === panel)
+        editor.mouseMoved(with: crossing[1])
         #expect(editor.sourceHover.panel === panel)
         editor.sourceHover.enteredCard()
         try await Task.sleep(for: .milliseconds(650))
@@ -166,6 +171,12 @@ extension WritingFlowTests {
 
 extension WritingFixture {
     func hover(over needle: String, delta: Int = 1) async throws {
+        let event = try await pointerMove(over: needle, delta: delta)
+        try #require(workspace.editor).mouseMoved(with: event)
+    }
+
+    /// A pointer move onto a word, prepared in a displayed window without delivering it.
+    func pointerMove(over needle: String, delta: Int = 1) async throws -> NSEvent {
         let editor = try #require(workspace.editor)
         // A real hover starts in an already displayed window. Showing a child
         // panel must not be the event that first lays out its hidden parent.
@@ -186,6 +197,6 @@ extension WritingFixture {
             context: nil, eventNumber: 0, clickCount: 0, pressure: 0,
         ))
         try #require(editor.sourceOffset(at: event) == offset)
-        editor.mouseMoved(with: event)
+        return event
     }
 }

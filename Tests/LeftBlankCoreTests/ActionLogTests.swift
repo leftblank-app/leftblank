@@ -46,3 +46,31 @@ import Testing
     let current = try String(contentsOf: log.fileURL, encoding: .utf8)
     #expect(current.contains("\"index\":\"29\""))
 }
+
+@Test func actionLogsSharingAFileAppendWithoutOverwritingEachOther() throws {
+    let directory = TestPaths.temporaryDirectory.appendingPathComponent("LeftBlank-log-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    // A relaunched workspace logs while the previous one still records its last events.
+    let previous = try ActionLog(directory: directory)
+    #expect(previous.record("previous.started"))
+    let relaunched = try ActionLog(directory: directory)
+    for index in 0 ..< 5 {
+        #expect(relaunched.record("relaunched.event", fields: ["index": String(index)]))
+        #expect(previous.record("previous.event", fields: ["index": String(index)]))
+    }
+    let entries = try String(contentsOf: relaunched.fileURL, encoding: .utf8).split(separator: "\n").map {
+        try JSONDecoder().decode(JSONValue.self, from: Data($0.utf8))
+    }
+    #expect(entries.count == 11)
+    #expect(entries.filter { $0["event"].string == "relaunched.event" }.compactMap { $0["fields"]["index"].string }
+        == ["0", "1", "2", "3", "4"])
+    #expect(entries.filter { $0["event"].string == "previous.event" }.count == 5)
+
+    // After one log rotates the shared file, the other keeps writing to the current file.
+    let small = try ActionLog(directory: directory, maxBytes: 700, archivedFiles: 2)
+    #expect(small.record("rotating.event"))
+    #expect(previous.record("previous.afterRotation"))
+    let current = try String(contentsOf: relaunched.fileURL, encoding: .utf8)
+    #expect(current.contains("rotating.event") && current.contains("previous.afterRotation"))
+    #expect(!current.contains("relaunched.event"))
+}
