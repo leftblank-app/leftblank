@@ -9,7 +9,8 @@ one PR with tests.
 |---|---|
 | 1. Parser bridge | Implemented: [`Engine/SyntaxBridge`](../Engine/SyntaxBridge), `SyntaxTree` in `LeftBlankCore` |
 | 2. Presentation model | Implemented: `Presentation`, `PresentationStore` and `ChipEditing` in `LeftBlankCore` (no UI yet) |
-| 3–8. TextKit 2, concealment, iPad, chips, images, math | Planned |
+| 8a. Math engine API | Implemented: `InlineMathRenderer` and `EngineMathRenderer` in `LeftBlankCore`, wired to the Mac helper and the iPad embedded engine ([§D](#d-inline-math-engine-api-step-8a-implemented)) |
+| 3–8. TextKit 2, concealment, iPad, chips, images, math boxes | Planned |
 
 Sections A–C record the measurements of the spike (draft PR #75, evaluated on
 2026-10-07 on an Apple M4 Pro, macOS 27.0, Xcode 27.0, and the iPad Pro
@@ -66,7 +67,7 @@ widgets". The new scope:
 | Headings, strong, emphasis, raw, links, refs, labels, list markers | Conceal marker units; style the rest; reveal when the selection touches the construct | Implemented and measured on both platforms |
 | Function chips (`#item("LB-001", "标题", "done")` → `LB-001 标题 [已完成]`) | Replacement box via attachment view provider. Parameter names come from `#let item(id, title, status)`; value labels come from a formatter table | Implemented; form edit and "repeat previous call" are tested |
 | Inline images | `#image("…")` replacement and an inline request carrying the path | Box geometry only; no decoding |
-| Inline math | Equation request; a box once an engine fragment (size, baseline) is cached | Geometry path only; the engine API is the open question (§Risks) |
+| Inline math | Equation request; a box once an engine fragment (size, baseline) is cached | Geometry path only in the spike; the engine API now exists ([§D](#d-inline-math-engine-api-step-8a-implemented)) |
 | iPad parity | The same adapter files compile for `UITextView`; the same tests run in the simulator | 18 behaviour and model tests pass on both; the 2 opt-in benchmarks run on both |
 
 ## A. Text system
@@ -433,6 +434,181 @@ Guard against silent fallback:
   and fail on it.
 - Add a lint rule rejecting `.layoutManager` in `Sources/LeftBlank`.
 
+## D. Inline math engine API (step 8a, implemented)
+
+Equations render with the document's own engine generation, Tinymist 0.15.8 /
+Typst 0.15.1, in a **dedicated session** separate from the manuscript's. On the
+Mac it is its own helper process; on the iPad it is a second embedded session,
+as hover examples use. Nothing goes through the manuscript's LSP session, so
+its preview, diagnostics and main file are untouched. The editor calls one
+protocol from `LeftBlankCore`:
+
+```swift
+public protocol InlineMathRenderer: Sendable {
+    /// Results in request order. Batches and caches internally.
+    func render(_ requests: [MathRenderRequest]) async -> [MathRenderResult]
+    /// Fresh or stale result available now; safe on the main thread during layout.
+    func cached(_ request: MathRenderRequest) -> MathRenderResult?
+}
+
+public struct MathRenderRequest: Hashable, Sendable {
+    public var source: String      // the equation node's text, with its `$` delimiters
+    public var isBlock: Bool       // `$ x $`
+    public var style: MathRenderStyle
+    public init(source: String, isBlock: Bool, style: MathRenderStyle)
+    public init?(_ request: InlineRequest, style: MathRenderStyle)  // from a DisplayPlan
+}
+
+public struct MathRenderStyle: Hashable, Sendable {
+    public var fontSize: Double    // editor font size; the document's body size maps to it
+    public var color: MathColor    // editor theme text colour (sRGB bytes; MathColor(CGColor))
+    public var preamble: String    // MathPreamble.extract(source:nodes:)
+    public var scale: Double       // pixels per point (backing scale)
+    public var root: URL?          // Typst project root; defaults to `directory`
+    public var directory: URL?     // the source's folder, for the preamble's relative imports
+    public init(fontSize: Double, color: MathColor, preamble: String = "", scale: Double = 2,
+                root: URL? = nil, directory: URL? = nil)
+}
+
+public struct MathRenderResult: Sendable {
+    public let request: MathRenderRequest
+    public let image: MathImage?        // with errors or isStale: an earlier rendering of this source
+    public let diagnostics: [MathDiagnostic]  // errors fail; warnings (rules dropped) do not
+    public let isStale: Bool            // not this request's rendering: show it marked
+    public var failed: Bool
+}
+
+public struct MathImage: @unchecked Sendable {
+    public let image: CGImage           // transparent, ink in `color`, already decoded
+    public let size: CGSize             // layout box in points: draw the image into it
+    public let baseline: CGFloat        // top edge to baseline, in points
+    public var descent: CGFloat         // attachment bounds: (0, -descent, width, height)
+    public var scale: CGFloat           // image pixels per point
+    public var fragment: RenderedFragment  // for PresentationOptions.fragments
+}
+
+public struct MathDiagnostic: Hashable, Sendable {
+    public let severity: Severity       // .error or .warning
+    public let message: String          // Typst's message, with hints on later lines
+    public let range: NSRange?          // UTF-16 offset in the request's source, or nil
+}
+```
+
+Construct it with `TinymistMathTypesetter.renderer(stateDirectory:)` on the Mac
+and `TabletWorkspace.makeInlineMathRenderer()` on the iPad, one per window. Both
+return an `EngineMathRenderer` actor; `renderer.cache` (`MathRenderCache`) can
+be cleared with `removeAll()` when an imported file changes on disk. A typical
+editor loop: take the plan's `InlineRequest.math` requests for the visible
+blocks, map them to `MathRenderRequest`, draw `cached(_:)` immediately (stale
+results marked), call `render(_:)` off the main actor, then put each result's
+`image.fragment` into `PresentationOptions.fragments` keyed by `source`.
+
+### How it renders
+
+For each batch of up to 200 equations with one style, `EngineMathRenderer`
+writes one virtual Typst file in the document's folder. It is opened in the
+math session with `didOpen`/`didChange` and never written to disk. The file
+contains:
+
+1. the **document's rules**: top-level `#set`, `#show selector: …`, `#let` and
+   `#import` statements (`MathPreamble`). Whole-document `#show: template` rules
+   and content are left out, because a template's pages and title would shape
+   every equation's page;
+2. overrides, which win because they come later: `page(width: auto,
+   height: auto, margin: 0pt, fill: none)` without furniture, no first-line
+   indent, no equation numbers, and the editor's colour for text and for
+   `math.equation`;
+3. each equation in `box(eq)` on its own page, with a probe in the same line.
+   The probe records `measure(box).width/height`, the descent, the body text
+   size and its page into `#metadata(…)<lb-math-probe>`.
+
+Typst's `measure` returns no baseline, so the probe measures the box after a
+zero-width strut taller than the box. That line's height is the strut plus the
+box's descent, which gives the baseline. Inline equations get a leading of 0
+inside their box, because Typst lets them overhang into half the leading: with
+the default leading, an inline fraction's page clipped its denominator. Display
+equations keep the document's leading between their lines. A box gives a
+display equation its first line's baseline.
+
+`tinymist.exportQuery` returns the probes. `tinymist.exportPng` then renders
+the valid pages at `72 × scale × fontSize / bodySize` ppi, so the document's
+body size becomes the editor's size while relative sizes in its rules
+(`1.2em`) still apply. PNGs are decoded to `CGImage` on the renderer actor.
+The main thread never decodes; it only relays the session's JSON messages.
+
+**Failures stay per equation.** A compile error locates the failing equation
+from Typst's `path:line:column` report. Only that equation fails, with the
+message and a UTF-16 location in its source; the rest of the batch is compiled
+again. If the rules alone fail to compile (an edit in progress, or a missing
+import), the batch renders without them and every result carries a warning.
+An error with no location splits the batch. Equations whose image would exceed
+4,096 px fail with a diagnostic and are never rasterized.
+
+**Cache and staleness.** Results are cached by request (source and style). The
+key contains no revision, so typing elsewhere, moving an equation or repeating
+it costs nothing. The cache holds at most 64 MiB of decoded bitmaps and 4,096
+entries, least recently used first. Engine failures are cached too, so an
+invalid equation does not recompile on every keystroke. An unavailable engine
+is never cached. When the exact request has no image, `cached(_:)` and
+failures return the last image of the same source in another style (another
+size, colour or rules) with `isStale = true`. Concurrent requests for the same
+equation share one compile. Batches are compiled one at a time.
+
+**Session lifetime.** The session starts on the first request. A different project root restarts it. It
+stops after 60 idle seconds (30 on the iPad) and restarts on demand.
+
+### Measurements
+
+`InlineMathEngineTests` (Mac, `LEFTBLANK_INTEGRATION=1`), 2026-10-07, M4 Pro,
+debug Swift, source-built release Tinymist. Unique equations, engine already
+running, 16 pt at 2×:
+
+| Batch | Time | Note |
+|---|---:|---|
+| 1 equation | 1–3 ms | |
+| 20 equations | 9–19 ms | |
+| 200 equations | 85–151 ms | low end on an idle machine; high end while an iPad build ran |
+| SICP, all 1,356 equations (493 unique), book rules imported | 472–651 ms | includes engine start; 9–11 ms when cached; none failed |
+
+Engine start before the first result took 67–110 ms. Memory: 222 cached
+images took 3.8 MiB of decoded bitmaps, and SICP's 493 took 15–17 MiB. The
+math helper process was 67–95 MiB resident. The test budgets are about 20×
+these numbers, for shared CI runners. The iPad simulator test (embedded engine,
+same fixtures) passed on the iPad Air 11-inch (M4) simulator, iOS 27.0; no
+physical iPad has run it yet.
+
+Correctness checks against the real engine. They run on the Mac and, through
+the embedded engine, in the iPad simulator:
+
+- an `x` ends on the baseline (within 0.5 pt);
+- a `y` descends to the bottom of its box, and both share a baseline;
+- a fraction bar lies on the maths axis, 0.25 em above the baseline (±0.5 pt);
+- a display equation's first band of ink ends at the reported baseline;
+- each image is the box size × scale (±1 px);
+- the ink is the light or dark editor colour, even under a document
+  `show math.equation: set text(fill: red)`;
+- 8 pt and 20 pt documents both render at the editor's 16 pt;
+- relative imports resolve beside the document;
+- broken rules give a warning;
+- invalid maths gives the engine's message at the correct UTF-16 offset,
+  including on a later line after CJK text, while the rest of the batch renders.
+
+### Limits
+
+- **Rules inside templates are not seen.** Rules a template applies inside
+  `#show: template` are left out with it. SICP's `book` sets Libertinus Serif
+  at 10 pt that way, so its equations use Typst's default text font and size
+  (scaled to the editor's), with the template's top-level imports and `#let`s.
+- **Rules apply to the whole file.** A rule anywhere at top level styles every
+  equation, even one before it.
+- **Disk changes are not noticed.** The cache knows nothing of files the rules
+  import; call `removeAll()` after they change.
+- **Runaway equations.** An equation that computes for 30 s times out the
+  session request; the Mac helper is killed and restarted. The iPad's embedded
+  worker cannot be killed, as for hover examples.
+- **Not yet profiled on an iPad device.** The second embedded session costs
+  memory alongside the manuscript's.
+
 ## Phased plan
 
 Each step is one PR with tests. Steps 1–2 change no UI.
@@ -468,8 +644,9 @@ Each step is one PR with tests. Steps 1–2 change no UI.
    modification date; bound sizes; keep images out of drawing while scrolling.
    Tests: missing files, very large images, memory after a document switch.
 8. **Inline math.** Engine-rendered fragments (size, baseline, image) by
-   revision and style context; stale marking; reveal on entry. This needs
-   engine work first (risk 4).
+   source and style context; stale marking; reveal on entry. The engine API
+   is done ([§D](#d-inline-math-engine-api-step-8a-implemented)); the editor
+   step draws its images as math boxes.
 
 ## Risks
 
@@ -486,10 +663,11 @@ Each step is one PR with tests. Steps 1–2 change no UI.
 3. **Accessibility reads markup.** The AX API exposes the source, including
    `*` and `#item(...)`. A custom accessibility text for concealed runs needs
    its own design and VoiceOver testing.
-4. **Math.** Tinymist exposes no stable API that returns an equation's rendered
-   fragment with bounds and baseline (see [editor-rendering.md](editor-rendering.md)).
-   On the iPad the engine is in-process. On the Mac it is a subprocess, so math
-   rendering needs a new request in the pinned Tinymist patch set.
+4. **Math (addressed by §D).** Tinymist exposes no API that returns an
+   equation's fragment with bounds and baseline, but none is needed: a
+   synthetic document measures each equation in Typst and exports it as a
+   page, through the existing `exportQuery` and `exportPng` commands. No
+   Tinymist patch was added. Remaining limits are listed in §D.
 5. **Rendering attributes are not rebased on edits.** Unlike temporary
    attributes, syntax colours must be re-applied by revision, without
    regressing the zero-unrelated-writes stability tests.

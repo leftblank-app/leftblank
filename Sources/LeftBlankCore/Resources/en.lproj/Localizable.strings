@@ -925,3 +925,6 @@
 "Resize Writing and Preview" = "Resize Writing and Preview";
 "Drag to resize. Double-click to split evenly." = "Drag to resize. Double-click to split evenly.";
 "Drag to resize. Double-tap to split evenly." = "Drag to resize. Double-tap to split evenly.";
+"The equation could not be rendered." = "The equation could not be rendered.";
+"The equation is too large to show in the editor." = "The equation is too large to show in the editor.";
+"The document's rules for equations do not compile: %@" = "The document's rules for equations do not compile: %@";
