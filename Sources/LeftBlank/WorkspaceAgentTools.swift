@@ -172,6 +172,87 @@ extension Workspace: AgentToolHost {
     }
 
     func agentCompile(_ snapshot: AgentProjectSnapshot, entry: String) async throws -> JSONValue {
+        var successful = false
+        let output = try await runIsolatedEngine(snapshot, entry: entry, command: "tinymist.exportPdf") {
+            response, directory in
+            let pdf = response["path"].string.flatMap { path -> Data? in
+                let url = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
+                guard url.path.hasPrefix(directory.path + "/") else {
+                    return nil
+                }
+                return try? Data(contentsOf: url)
+            }
+            successful = pdf?.starts(with: Data("%PDF".utf8)) == true
+        }
+        let diagnostics = JSONValue.array(output.diagnostics)
+        guard output.status == .completed else {
+            return .object(["status": .string(output.status.rawValue), "project_sources_compiled": .bool(false),
+                            "engine_message": output.message.map(JSONValue.string) ?? .null,
+                            "diagnostics": diagnostics])
+        }
+        // A fresh engine/output directory rules out stale PDFs. Package and system-font
+        // inputs are not yet frozen, so do not claim the stronger design guarantee.
+        return .object(["status": .string(successful ? "unverified" : "failed"),
+                        "project_sources_compiled": .bool(successful),
+                        "verification": .string("project_snapshot"),
+                        "limitation": .string(
+                            "Project files and unsaved text were captured. External packages and system fonts are not pinned yet; strict compilation verification is unavailable.",
+                        ),
+                        "diagnostics": diagnostics])
+    }
+
+    func agentExport(
+        _ snapshot: AgentProjectSnapshot,
+        entry: String,
+        export: AgentEngineExport,
+    ) async throws -> AgentEngineOutput {
+        try await runIsolatedEngine(snapshot, entry: entry, command: export.command, options: export.options)
+    }
+
+    func agentEditorContext(in document: LibraryDocument) -> AgentEditorContext? {
+        guard !isLibraryHome, managedDocumentID == document.id else {
+            return nil
+        }
+        // A hidden preview keeps its last position, which the user no longer sees.
+        let page = layout == .writing ? nil : previewReading.anchor.map { $0.page + 1 }
+        var file: AgentEditorContext.File?
+        if documentURL.path.hasPrefix(document.folderURL.path + "/") {
+            let path = String(documentURL.path.dropFirst(document.folderURL.path.count + 1))
+            if (try? AgentProjectFiles.url(path, in: document.folderURL)) != nil {
+                file = AgentEditorContext.File(
+                    path: path,
+                    text: text,
+                    selection: editor?.selectedRange() ?? selection,
+                    visible: visibleSourceRange(),
+                    saved: text == savedText,
+                )
+            }
+        }
+        return AgentEditorContext(layout: layout.rawValue, previewPage: page, file: file)
+    }
+
+    private func visibleSourceRange() -> NSRange? {
+        guard layout != .preview, let editor, let manager = editor.layoutManager, let container = editor.textContainer
+        else {
+            return nil
+        }
+        let rect = editor.visibleRect.offsetBy(dx: -editor.textContainerOrigin.x, dy: -editor.textContainerOrigin.y)
+        guard !rect.isEmpty else {
+            return nil
+        }
+        let glyphs = manager.glyphRange(forBoundingRect: rect, in: container)
+        return manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+    }
+
+    /// Copies the snapshot to a private folder and runs one command on a fresh engine, so neither the live
+    /// engine nor an earlier export can affect the result. `inspect` reads written output before cleanup.
+    private func runIsolatedEngine(
+        _ snapshot: AgentProjectSnapshot,
+        entry: String,
+        command: String,
+        options: JSONValue? = nil,
+        inspect: (JSONValue, URL) -> Void = { _, _ in },
+    ) async throws -> AgentEngineOutput {
         let directory = stateDirectory.appendingPathComponent("AgentCompiles/" + UUID().uuidString)
         let root = directory.appendingPathComponent("Project"), output = directory.appendingPathComponent("Output")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -209,41 +290,34 @@ extension Workspace: AgentToolHost {
                 ])
             }
         }
-        func failure(_ status: String, message: String? = nil) -> JSONValue {
-            .object(["status": .string(status), "project_sources_compiled": .bool(false),
-                     "engine_message": message.map { .string(AgentTools.excerpt(
-                         $0.replacingOccurrences(of: directory.path, with: "<compile>"), limit: 2000,
-                     )) } ?? .null,
-                     "diagnostics": .array(Array(issues.keys.sorted().flatMap { issues[$0] ?? [] }.prefix(100)))])
+        func finish(
+            _ status: AgentEngineOutput.Status,
+            response: JSONValue = .null,
+            message: String? = nil,
+        ) -> AgentEngineOutput {
+            AgentEngineOutput(
+                status: status,
+                response: response,
+                message: message.map { AgentTools.excerpt(
+                    $0.replacingOccurrences(of: directory.path, with: "<compile>"), limit: 2000,
+                ) },
+                diagnostics: Array(issues.keys.sorted().flatMap { issues[$0] ?? [] }.prefix(100)),
+            )
         }
         do { try await engine.start(root: root, outputDirectory: output) }
-        catch { return failure("engine_unavailable") }
+        catch { return finish(.engineUnavailable) }
         let source = root.appendingPathComponent(entry)
-        let result: JSONValue
+        let response: JSONValue
         do {
             try engine.open(source, text: snapshot.texts[entry] ?? "", version: 1)
-            result = try await engine.command("tinymist.exportPdf", arguments: [source.path])
-        } catch ServiceError.timeout { return failure("timeout") }
-        catch let ServiceError.remote(message) { return failure("failed", message: message) }
-        catch { return failure("engine_unavailable") }
+            // Without options the command writes into the private output folder; with them, data stays in memory.
+            let arguments: [Any] = options.map { [source.path, $0.foundationValue, ["write": false]] } ?? [source.path]
+            response = try await engine.command(command, arguments: arguments)
+        } catch ServiceError.timeout { return finish(.timeout) }
+        catch let ServiceError.remote(message) { return finish(.failed, message: message) }
+        catch { return finish(.engineUnavailable) }
         try Task.checkCancellation()
-        let pdf = result["path"].string.flatMap { path -> Data? in
-            let url = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
-            guard url.path.hasPrefix(directory.path + "/") else {
-                return nil
-            }
-            return try? Data(contentsOf: url)
-        }
-        let successful = pdf?.starts(with: Data("%PDF".utf8)) == true
-        // A fresh engine/output directory rules out stale PDFs. Package and system-font
-        // inputs are not yet frozen, so do not claim the stronger design guarantee.
-        return .object(["status": .string(successful ? "unverified" : "failed"),
-                        "project_sources_compiled": .bool(successful),
-                        "verification": .string("project_snapshot"),
-                        "limitation": .string(
-                            "Project files and unsaved text were captured. External packages and system fonts are not pinned yet; strict compilation verification is unavailable.",
-                        ),
-                        "diagnostics": .array(issues.keys.sorted().flatMap { issues[$0] ?? [] }.prefix(100)
-                            .map(\.self))])
+        inspect(response, directory)
+        return finish(.completed, response: response)
     }
 }

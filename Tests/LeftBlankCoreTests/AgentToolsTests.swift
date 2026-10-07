@@ -558,7 +558,7 @@ struct AgentToolsTests {
     }
 }
 
-private func testImage(width: Int, height: Int, type: UTType) -> Data? {
+func testImage(width: Int, height: Int, type: UTType) -> Data? {
     guard let space = CGColorSpace(name: CGColorSpace.sRGB),
           let context = CGContext(
               data: nil,
@@ -578,7 +578,7 @@ private func testImage(width: Int, height: Int, type: UTType) -> Data? {
 }
 
 @MainActor
-private final class AgentFixture {
+final class AgentFixture {
     let root: URL
     let library: DocumentLibrary
     let history: DocumentHistory
@@ -603,7 +603,7 @@ private final class AgentFixture {
 }
 
 @MainActor
-private final class DiskAgentHost: AgentToolHost {
+final class DiskAgentHost: AgentToolHost {
     var writes = 0
     var failPath: String?
     func agentState() -> JSONValue {
@@ -636,5 +636,20 @@ private final class DiskAgentHost: AgentToolHost {
     func agentCompile(_ snapshot: AgentProjectSnapshot, entry: String) async -> JSONValue {
         await Task.yield()
         return .object(["status": .string("unverified")])
+    }
+
+    var exports: [AgentEngineExport] = []
+    var exportOutput: (AgentEngineExport) -> AgentEngineOutput = { _ in AgentEngineOutput(status: .engineUnavailable) }
+    func agentExport(_ snapshot: AgentProjectSnapshot, entry: String, export: AgentEngineExport) async
+        -> AgentEngineOutput
+    {
+        await Task.yield()
+        exports.append(export)
+        return exportOutput(export)
+    }
+
+    var editorContext: AgentEditorContext?
+    func agentEditorContext(in document: LibraryDocument) -> AgentEditorContext? {
+        editorContext
     }
 }

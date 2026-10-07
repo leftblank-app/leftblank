@@ -10,6 +10,11 @@ public protocol AgentToolHost: AnyObject {
     func agentFinishMetadataChange(_ document: LibraryDocument?) async
     func agentDiagnostics(in document: LibraryDocument) -> [JSONValue]
     func agentCompile(_ snapshot: AgentProjectSnapshot, entry: String) async throws -> JSONValue
+    /// Runs one export on a fresh engine over a private copy of the snapshot.
+    func agentExport(_ snapshot: AgentProjectSnapshot, entry: String, export: AgentEngineExport) async throws
+        -> AgentEngineOutput
+    /// Nil unless the document is open in this host.
+    func agentEditorContext(in document: LibraryDocument) -> AgentEditorContext?
 }
 
 /// All callers use this dispatcher. The macOS transport supplies a trusted grant and a platform host.
@@ -36,7 +41,7 @@ public final class AgentToolDispatcher {
 
     public func call(_ name: String, arguments: JSONValue, access: AgentToolAccess) async -> AgentToolResult {
         let exclusive = AgentTools.definitions.first(where: { $0.name == name })?.readOnly != true
-        let compiling = name == "compile_document"
+        let compiling = Self.engineTools.contains(name)
         if compiling {
             guard await compiles.acquire(exclusive: true) else {
                 return failure(CancellationError())
@@ -253,6 +258,9 @@ public final class AgentToolDispatcher {
                 "Restore the document before reading or editing its current files.",
             )
         }
+        if name == "get_editor_context" {
+            return try editorContext(document)
+        }
         let snapshot = try await capture(document)
         let projectRevision = projectRevision(snapshot, document: document)
         switch name {
@@ -335,6 +343,15 @@ public final class AgentToolDispatcher {
             // "unverified" compiled cleanly; only its package and font inputs are not pinned.
             let compiled = ["succeeded", "unverified"].contains(result["status"]?.string ?? "")
             return AgentToolResult(.object(result), isError: !compiled)
+        case "render_page":
+            return try await renderPage(snapshot, document: document, revision: projectRevision, args: args)
+        case "query_document": return try await queryDocument(
+                snapshot,
+                document: document,
+                revision: projectRevision,
+                args: args,
+                access: access,
+            )
         default: return try await edit(name, args: args, document: document, snapshot: snapshot)
         }
     }
