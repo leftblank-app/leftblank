@@ -148,7 +148,11 @@ public enum TextKit2Geometry {
 
     /// The character under `point`, not the nearest insertion position.
     public static func character(at point: CGPoint, in manager: NSTextLayoutManager, text: NSString) -> Int? {
-        guard let insertion = insertionOffset(at: point, in: manager) else {
+        // The margins hold no text; keep such points away from selection navigation.
+        guard let container = manager.textContainer, point.x >= 0, point.y >= 0,
+              point.x <= container.size.width,
+              let insertion = insertionOffset(at: point, in: manager)
+        else {
             return nil
         }
         // The insertion point is the nearest boundary; the character under the
@@ -172,8 +176,9 @@ public enum TextKit2Geometry {
             return nil
         }
         manager.textViewportLayoutController.layoutViewport()
-        guard let start = insertionOffset(at: CGPoint(x: rect.minX, y: rect.minY), in: manager),
-              let end = insertionOffset(at: CGPoint(x: rect.maxX, y: rect.maxY), in: manager)
+        let width = manager.textContainer?.size.width ?? rect.maxX
+        guard let start = insertionOffset(at: CGPoint(x: max(0, rect.minX), y: max(0, rect.minY)), in: manager),
+              let end = insertionOffset(at: CGPoint(x: min(width, rect.maxX), y: rect.maxY), in: manager)
         else {
             return nil
         }
