@@ -25,6 +25,7 @@ extension WritingFlowTests {
             await app.layout()
         }
         #expect(app.workspace.isLibraryHome == closeFirst)
+        #expect(app.workspace.discoveryMode == (closeFirst ? .templates : nil))
         app.workspace.openDiscovery(.templates)
         await app.layout()
         #expect(app.workspace.libraryOpen == !closeFirst)

@@ -20,6 +20,10 @@ final class LibraryController: ObservableObject {
     private var started = false
     private var accountMonitor: LibraryAccountMonitor?
     private let locationURL: URL
+    private let recentURL: URL
+    /// Library documents opened and not yet closed, most recent first; Command-W returns to the next one.
+    private(set) var recentDocumentIDs: [UUID]
+    static let recentLimit = 50
     var onSyncChange: ((Bool) -> Void)?
 
     init(
@@ -28,6 +32,8 @@ final class LibraryController: ObservableObject {
     ) {
         self.workspace = workspace
         locationURL = workspace.stateDirectory.appendingPathComponent("library-location.json")
+        recentURL = workspace.stateDirectory.appendingPathComponent("recent-documents.json")
+        recentDocumentIDs = (try? JSONDecoder().decode([UUID].self, from: Data(contentsOf: recentURL))) ?? []
         store = DocumentLibrary(
             rootURL: workspace.stateDirectory.appendingPathComponent("Library"),
             cloudResolver: cloudResolver,
@@ -212,8 +218,50 @@ final class LibraryController: ObservableObject {
         }
         workspace.managedDocumentID = result.document.id
         workspace.managedTitle = result.document.title
+        noteOpened(result.document.id)
         workspace.onTitleChange?(workspace.title)
         workspace.libraryOpen = false
+    }
+
+    func noteOpened(_ id: UUID) {
+        guard recentDocumentIDs.first != id else {
+            return
+        }
+        updateRecent { $0 = [id] + $0.filter { $0 != id } }
+    }
+
+    func forgetRecent(_ id: UUID) {
+        updateRecent { $0.removeAll { $0 == id } }
+    }
+
+    /// Recently opened documents that can still be reopened, most recent first.
+    var reopenableRecentIDs: [UUID] {
+        let available = Set(documents.filter { !$0.isTrashed }.map(\.id))
+        return recentDocumentIDs.filter { available.contains($0) }
+    }
+
+    /// Opens the first recent document that still reads; unreadable entries are dropped.
+    func reopenRecent(_ candidates: [UUID]) async -> Bool {
+        for id in candidates {
+            do { try await open(id)
+                return true
+            } catch {
+                workspace?.recordOperation("library.reopenFailed", ["documentID": id.uuidString])
+                forgetRecent(id)
+            }
+        }
+        return false
+    }
+
+    private func updateRecent(_ change: (inout [UUID]) -> Void) {
+        let previous = recentDocumentIDs
+        change(&recentDocumentIDs)
+        recentDocumentIDs = Array(recentDocumentIDs.prefix(Self.recentLimit))
+        guard recentDocumentIDs != previous else {
+            return
+        }
+        do { try JSONEncoder().encode(recentDocumentIDs).write(to: recentURL, options: .atomic) }
+        catch { workspace?.recordOperation("library.recentFailed", ["error": error.localizedDescription]) }
     }
 
     func rename(_ id: UUID, title: String) async throws {
@@ -247,14 +295,15 @@ final class LibraryController: ObservableObject {
             }
         }
         _ = try await store.trash(id)
+        forgetRecent(id)
         workspace.recordOperation("library.trash", ["documentID": id.uuidString, "active": String(wasActive)])
         await refresh()
         if wasActive {
             // Clear the trashed buffer first, so an unavailable replacement can
             // safely leave the library open without editing a trashed document.
             workspace.showLibraryHome()
-            if let next = documents.first(where: { $0.trashedAt == nil }) {
-                try await open(next.id)
+            if let next = reopenableRecentIDs.first ?? documents.first(where: { $0.trashedAt == nil })?.id {
+                try await open(next)
                 workspace.libraryOpen = true
             }
         }
@@ -424,6 +473,7 @@ final class LibraryController: ObservableObject {
             workspace.editor?.isEditable = workspace.editorIsEditable
         }
         let report = try await store.setICloudEnabled(enabled)
+        updateRecent { $0 = $0.map { report.idMappings[$0] ?? $0 } }
         cloudEnabled = report.isICloud
         try Data(enabled ? "icloud".utf8 : "local".utf8).write(to: locationURL, options: .atomic)
         onSyncChange?(enabled)

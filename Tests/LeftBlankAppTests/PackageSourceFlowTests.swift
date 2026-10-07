@@ -61,6 +61,7 @@ extension WritingFlowTests {
         editor.insertSnippet(Snippet(text: "More"), replacing: NSRange(location: editor.string.utf16.count, length: 0))
         #expect(!delegate.windowShouldClose(app.window))
         #expect(workspace.isLibraryHome)
+        #expect(workspace.discoveryMode == .templates)
         #expect(try String(contentsOf: app.document, encoding: .utf8).hasSuffix("More"))
         #expect(!delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
         #expect(delegate.windowShouldClose(app.window) == false)

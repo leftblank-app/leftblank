@@ -55,7 +55,99 @@ extension WritingFlowTests {
         #expect(settings.isVisible)
         #expect(!delegate.windowShouldClose(app.window))
         #expect(app.workspace.isLibraryHome)
+        #expect(app.workspace.discoveryMode == .templates, "With no earlier document, closing offers templates")
         #expect(app.window.isVisible && settings.isVisible)
         #expect(try String(contentsOf: app.document, encoding: .utf8) == source)
+    }
+
+    @Test func closeDocumentReturnsToPreviouslyOpenedWritingThenTemplates() async throws {
+        let app = try WritingFixture(text: "= External\n", startService: false)
+        defer { app.close() }
+        let library = app.workspace.library
+        await library.start()
+        var ids: [String: UUID] = [:]
+        for name in ["First", "Second", "Third"] {
+            try await library.create(title: name, text: "= \(name)\n")
+            let id = try #require(app.workspace.managedDocumentID)
+            ids[name] = id
+        }
+        // Opening order, not modification order, decides where Command-W returns.
+        try await library.open(#require(ids["Second"]))
+        try await library.open(#require(ids["First"]))
+        let editor = try #require(app.workspace.editor)
+        editor.insertSnippet(
+            Snippet(text: "Unsaved ending.\n"),
+            replacing: NSRange(location: editor.string.utf16.count, length: 0),
+        )
+        let delegate = AppDelegate(workspace: app.workspace)
+        for expected in ["Second", "Third"] {
+            #expect(!delegate.windowShouldClose(app.window))
+            try await app.wait {
+                app.workspace.managedDocumentID == ids[expected] && !app.workspace.documentTransitionInProgress
+            }
+            #expect(!app.workspace.isLibraryHome)
+            #expect(app.workspace.editor?.string == "= \(expected)\n")
+            #expect(app.workspace.editor?.isEditable == true)
+            #expect(app.workspace.discoveryMode == nil)
+        }
+        #expect(try await library.store.read(#require(ids["First"])).text == "= First\nUnsaved ending.\n")
+
+        #expect(!delegate.windowShouldClose(app.window))
+        #expect(app.workspace.isLibraryHome)
+        #expect(app.workspace.discoveryMode == .templates)
+        #expect(!app.workspace.libraryOpen, "The template page is the main view, not a sheet")
+        #expect(library.recentDocumentIDs.isEmpty)
+        #expect(try await library.store.list().count == 3, "Closing never removes writing from the library")
+        #expect(try String(contentsOf: app.document, encoding: .utf8) == "= External\n")
+    }
+
+    @Test func closeDocumentSkipsUnavailableRecentWritingAcrossLaunches() async throws {
+        let app = try WritingFixture(text: "= External\n", startService: false)
+        defer { app.close() }
+        let library = app.workspace.library
+        await library.start()
+        var ids: [UUID] = []
+        for name in ["First", "Second", "Third"] {
+            try await library.create(title: name, text: "= \(name)\n")
+            let id = try #require(app.workspace.managedDocumentID)
+            ids.append(id)
+        }
+        let (first, second, third) = (ids[0], ids[1], ids[2])
+        #expect(library.recentDocumentIDs == [third, second, first])
+        // Trashed elsewhere (another Mac or an agent) and removed from disk without this window noticing.
+        _ = try await library.store.trash(second)
+        let missing = UUID()
+        try JSONEncoder().encode([third, missing, second, first]).write(
+            to: app.workspace.stateDirectory.appendingPathComponent("recent-documents.json"),
+        )
+        #expect(app.workspace.prepareToClose())
+        library.stop()
+
+        let relaunched = Workspace(stateDirectory: app.workspace.stateDirectory)
+        defer { relaunched.shutdown() }
+        await relaunched.library.start()
+        #expect(relaunched.managedDocumentID == third)
+        #expect(relaunched.library.recentDocumentIDs == [third, missing, second, first])
+        relaunched.closeDocument()
+        try await app.wait { relaunched.managedDocumentID == first && !relaunched.documentTransitionInProgress }
+        #expect(relaunched.text == "= First\n")
+        #expect(relaunched.library.recentDocumentIDs.first == first)
+        #expect(!relaunched.library.recentDocumentIDs.contains(third))
+
+        // A listed document that can no longer be read falls back to the template page.
+        try await relaunched.library.restore(second)
+        try FileManager.default
+            .removeItem(at: #require(relaunched.library.documents.first { $0.id == second }?.folderURL))
+        relaunched.closeDocument()
+        try await app.wait { relaunched.isLibraryHome && !relaunched.documentTransitionInProgress }
+        #expect(relaunched.discoveryMode == .templates)
+        #expect(!relaunched.library.recentDocumentIDs.contains(first))
+        #expect(!relaunched.library.recentDocumentIDs.contains(second))
+        #expect(try await relaunched.library.store.read(first).text == "= First\n")
+        let log = try String(
+            contentsOf: relaunched.stateDirectory.appendingPathComponent("Logs/events.jsonl"),
+            encoding: .utf8,
+        )
+        #expect(log.contains("library.reopenFailed"))
     }
 }
