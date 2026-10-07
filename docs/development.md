@@ -32,7 +32,7 @@ The organization has about five concurrent macOS runners, so `build and test` (`
 
 ## Scope and verification
 
-LeftBlank remains a development preview. It has one active editing buffer, with the main compilation entry preserved when navigating into included files. It does not provide collaborative accounts, Vim emulation, arbitrary visual editing of typeset pages. Source-level visual editing is planned in [visual editing](visual-editing.md).
+LeftBlank remains a development preview. It has one active editing buffer, with the main compilation entry preserved when navigating into included files. It does not provide collaborative accounts, Vim emulation, arbitrary visual editing of typeset pages. Source-level visual editing (concealed markup, chips with forms, inline images and equations) is described in [visual editing](visual-editing.md).
 
 Unicode editing, marked-text protection, undo and saving have automated coverage. Complete third-party input-method and VoiceOver flows, and a physical Mac running macOS 14, still need manual verification. Real 1.4 MB SICP and 3.3 MB War and Peace fixtures exercise highlighting, typing, pointer placement and scrolling in [book benchmarks](large-document-performance.md). [Template and package discovery](discovery.md) includes a downloadable, editable SICP example; [the complete books and conversion scripts](../Examples/Books/README.md) are checked in with their own attribution and licenses. Verification evidence and remaining limitations live in [the progress record](progress.md).
 
@@ -43,7 +43,7 @@ Unicode editing, marked-text protection, undo and saving have automated coverage
 - [Architecture](architecture.md)
 - [Implementation and verification](progress.md)
 - [Writing features](editor-evolution.md)
-- [Visual editing plan and parser bridge (LB-019)](visual-editing.md)
+- [Visual editing and parser bridge (LB-019)](visual-editing.md)
 - [Interaction and performance](interaction.md)
 - [Brand assets and favicons](../Brand/README.md)
 - [Localization](localization.md)

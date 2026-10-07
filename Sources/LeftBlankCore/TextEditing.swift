@@ -73,3 +73,13 @@ public enum TextEditing {
         return result as String
     }
 }
+
+/// Literal text equality for whole documents. Swift's `==` compares Unicode
+/// canonical equivalence, which for a 3 MB book bridged from a text view takes
+/// tens of milliseconds; editors only need the same UTF-16 sequence.
+public enum TextIdentity {
+    public static func equal(_ lhs: String, _ rhs: String) -> Bool {
+        let left = lhs as NSString
+        return left.length == (rhs as NSString).length && left.isEqual(to: rhs)
+    }
+}

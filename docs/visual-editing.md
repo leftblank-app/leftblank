@@ -1,24 +1,14 @@
 # Visual editing (LB-019)
 
-The product decision below is approved: one TextKit 2 visual layer, shared by
-the Mac and the iPad, over a typst-syntax presentation model in
-`LeftBlankCore`. Delivery follows the [phased plan](#phased-plan); each step is
-one PR with tests.
-
-| Step | State |
-|---|---|
-| 1. Parser bridge | Implemented: [`Engine/SyntaxBridge`](../Engine/SyntaxBridge), `SyntaxTree` in `LeftBlankCore` |
-| 2. Presentation model | Implemented: `Presentation`, `PresentationStore` and `ChipEditing` in `LeftBlankCore` (no UI yet) |
-| 8a. Math engine API | Implemented: `InlineMathRenderer` and `EngineMathRenderer` in `LeftBlankCore`, wired to the Mac helper and the iPad embedded engine ([§D](#d-inline-math-engine-api-step-8a-implemented)) |
-| 3–8. TextKit 2, concealment, iPad, chips, images, math boxes | Planned |
-
-Sections A–C record the measurements of the spike (draft PR #75, evaluated on
-2026-10-07 on an Apple M4 Pro, macOS 27.0, Xcode 27.0, and the iPad Pro
-11-inch (M5) simulator running iOS 27.0). The spike's prototype package
-(`Benchmarks/VisualEditing`) and its reproduction scripts stay on that branch;
-names such as `DisplaySubstitution` and `TextKit2Geometry` refer to prototype
-components that later steps will productionize. Numbers come from instrumented
-debug builds unless stated otherwise.
+The Mac and the iPad edit Typst source through one TextKit 2 visual layer over
+a typst-syntax presentation model, both in `LeftBlankCore`: markup outside the
+caret's construct is concealed, function calls with literal arguments are chips
+with forms, and `#image` files and equations are drawn inline. Source stays
+the document of record. [§E](#e-the-delivered-editor) describes the delivered
+editor and its measurements; §A–C record the spike that chose this design
+(draft PR #75, M4 Pro, macOS 27.0, Xcode 27.0, iPad Pro 11-inch (M5)
+simulator); §B2 and §D describe the parser bridge and the math engine API.
+Numbers come from instrumented debug builds unless stated otherwise.
 
 ## Decision
 
@@ -42,11 +32,10 @@ library linked into the app. The model is pure Swift in `LeftBlankCore`.
 In the prototype, 94% of the visual-layer source compiles unchanged on both
 platforms. The per-platform code is one ~45-line view shim on each side (§C).
 
-TextKit 2 still has large-document gaps that this layer must work around (§B).
-Jumps must not trust `scrollRangeToVisible`. iPad typing in multi-megabyte
-books needs device profiling before visual editing is enabled there by default.
-The TextKit 1 implementation of the same plan also works on both platforms
-(measured). It stays as the documented fallback.
+TextKit 2 has large-document gaps that this layer works around (§B, §E):
+jumps never trust `scrollRangeToVisible`, and hit tests after a jump use the
+laid-out viewport. The spike's TextKit 1 implementation was measured as a
+baseline only; neither editor keeps a TextKit 1 path.
 
 This supersedes the scope line in [editor-evolution.md](editor-evolution.md)
 (updated there),
@@ -62,13 +51,12 @@ widgets". The new scope:
 
 ## Targets and how the layer maps them
 
-| Target | Mechanism | Status in the spike |
+| Target | Mechanism | Delivered |
 |---|---|---|
-| Headings, strong, emphasis, raw, links, refs, labels, list markers | Conceal marker units; style the rest; reveal when the selection touches the construct | Implemented and measured on both platforms |
-| Function chips (`#item("LB-001", "标题", "done")` → `LB-001 标题 [已完成]`) | Replacement box via attachment view provider. Parameter names come from `#let item(id, title, status)`; value labels come from a formatter table | Implemented; form edit and "repeat previous call" are tested |
-| Inline images | `#image("…")` replacement and an inline request carrying the path | Box geometry only; no decoding |
-| Inline math | Equation request; a box once an engine fragment (size, baseline) is cached | Geometry path only in the spike; the engine API now exists ([§D](#d-inline-math-engine-api-step-8a-implemented)) |
-| iPad parity | The same adapter files compile for `UITextView`; the same tests run in the simulator | 18 behaviour and model tests pass on both; the 2 opt-in benchmarks run on both |
+| Headings, strong, emphasis, raw, links, refs, labels, list markers | Conceal marker units; style the rest; reveal when the selection touches the construct | Mac and iPad |
+| Function chips (`#item("LB-001", "标题", "done")` → `LB-001 标题 [已完成]`) | Replacement box with a view; parameter names from the `#let` signature; value labels from the document's own `.at(parameter)` tables | Mac and iPad, with the shared form and Repeat Previous Call |
+| Inline images | `#image("…")` replacement, decoded off the main thread | Mac and iPad (SVG and PDF on the Mac only) |
+| Inline math | Engine-typeset images (§D) as boxes; source while the caret is inside | Mac and iPad |
 
 ## A. Text system
 
@@ -409,31 +397,6 @@ Production estimate:
 - **Ratio.** Roughly 85% shared, 15% platform-specific. The form UI can be one
   SwiftUI view.
 
-### Mac migration path
-
-Today's TextKit 1 dependencies are all in two files plus a few tests. The iPad
-touches none.
-
-| Dependency | Call sites | TextKit 2 replacement |
-|---|---|---|
-| Explicit TK1 stack, `allowsNonContiguousLayout = false` (`ManuscriptView.swift`) | 4 | `NSTextView(usingTextLayoutManager: true)`, plus precise jumps instead of contiguous layout |
-| Syntax and reading colours as temporary attributes (`ManuscriptStyler.swift`, `ManuscriptView.load`) | 10 | `NSTextLayoutManager` rendering attributes, which are not rebased on edits. Re-apply changed runs per revision, or use `renderingAttributesValidator`. Reading fonts become the visual layer |
-| `sourceOffset` hit test for hover and cmd-click | 4 | `TextKit2Geometry.insertionOffset` plus a segment-frame containment check |
-| `prepareForPointerInteraction` (`ensureLayout(forBoundingRect:)`) | 2 | `textViewportLayoutController.layoutViewport()` |
-| Outline and rail tracking (`glyphRange(forBoundingRect:)`) | 3 | `viewportRange` of the viewport layout controller |
-| Tests (`editorColor`, glyph rects in the benchmark, drag point, outline full layout) | about 15 lines | Read rendering attributes; use the geometry helpers; ensure layout for ranges |
-
-Already TK2-safe: `firstRect(forCharacterRange:)` (hover anchor, typing and
-writing assistance), `characterIndexForInsertion` (drop) and
-`textContainerInset`.
-
-Guard against silent fallback:
-
-- Never call `layoutManager` or `textContainer.layoutManager` on a TK2 view.
-- Observe `willSwitchToNSLayoutManagerNotification` in debug builds and tests,
-  and fail on it.
-- Add a lint rule rejecting `.layoutManager` in `Sources/LeftBlank`.
-
 ## D. Inline math engine API (step 8a, implemented)
 
 Equations render with the document's own engine generation, Tinymist 0.15.8 /
@@ -612,57 +575,155 @@ the embedded engine, in the iPad simulator:
   not memory. The second embedded session costs memory alongside the
   manuscript's.
 
-## Phased plan
+## E. The delivered editor
 
-Each step is one PR with tests. Steps 1–2 change no UI.
+Both editors run on TextKit 2 with one visual layer from `LeftBlankCore`
+(`Sources/LeftBlankCore/VisualEditing`). TextKit 1, the 0.1 pt marker font,
+the regex/lexer `SourcePresentation` and the hand-written `ObjectScanner` are
+gone; code-block highlighting, literal-object editing and preview call sites
+read `SyntaxTree` too. There is no setting and no fallback.
 
-1. **Parser bridge (done).** Add `Engine/SyntaxBridge`, build it on CI for
-   macOS and iOS, re-export it from TinymistBridge, and add the `SyntaxTree`
-   wrapper to `LeftBlankCore`. Tests: kind-code table, UTF-16 with
-   CJK/emoji/CRLF, surrogate rejection, incremental edit equal to a fresh parse
-   (Rust and Swift), book parse time.
-2. **Presentation model (done).** Add `Presentation` and plan storage to
-   `LeftBlankCore`, alongside `SourcePresentation`. Tests: per-construct
-   golden plans, erroneous constructs, the seeded incremental-equals-full
-   invariant, chip edits and repeat-previous.
-3. **Mac on TextKit 2, no visual change.** Make the view TK2 behind a setting;
-   port the styler, hit testing, pointer preparation and outline tracking to
-   rendering attributes and `TextKit2Geometry`; route every jump through
-   precise reveal; add the TK1 fallback guard. Tests: the existing editor
-   suites, plus book benchmark gates for jumps on target, zero hit error and
-   the typing budget.
-4. **Mac true concealment.** Replace the 0.1 pt font with `DisplaySubstitution`
-   and instant reveal. Tests: the spike's behaviour suite (widths, hit
-   round trips, IME rect, deferral, undo, copy, AX), reading-mode and font-size
-   transitions, CJK/emoji fallback fonts.
-5. **iPad visual layer.** `TabletEditor` forwards edits and selection to the
-   same session. Tests: the shared behaviour suite in the simulator, UI tests
-   for tap-to-reveal and the hardware keyboard, and a device typing profile on
-   SICP that applies the TK1 gate above.
-6. **Chips and forms.** Signature-driven forms in one SwiftUI view, value
-   labels, Tab placeholders and "repeat previous call" on both platforms.
-   Tests: form round trips, one-undo, label updates after edits and after
-   signature edits.
-7. **Inline images.** Decode off the main thread and cache by path and
-   modification date; bound sizes; keep images out of drawing while scrolling.
-   Tests: missing files, very large images, memory after a document switch.
-8. **Inline math.** Engine-rendered fragments (size, baseline, image) by
-   source and style context; stale marking; reveal on entry. The engine API
-   is done ([§D](#d-inline-math-engine-api-step-8a-implemented)); the editor
-   step draws its images as math boxes.
+```mermaid
+flowchart LR
+    View[NSTextView / UITextView] -->|didProcessEditing, selection| Session[VisualEditorSession, main]
+    Session -->|edits + selection, batched| Engine[PresentationEngine actor]
+    Engine --> Tree[SyntaxTree] & Store[PresentationStore]
+    Engine -->|snapshot + definitions + preamble| Session
+    Session -->|NSTextContentStorageDelegate| Paragraphs[display paragraphs]
+    Session --> Colors[RenderingAttributes: semantic colours]
+    Session --> Boxes[VisualAttachment: chip, bullet, image, equation]
+    Boxes --> Images[InlineImageCache] & Math[InlineMathRenderer]
+```
+
+| Part | What it does |
+|---|---|
+| `PresentationEngine` | Actor owning the tree, the plan store, the source copy, chip value labels and the math preamble. Receives batches of native edits with the current selection; one request is in flight at a time and later edits queue. |
+| `PresentationSnapshot` | The plan as a value. The main thread rebases it across each native edit in O(blocks): later entries move, entries the edit touches are dropped. A reply is rebased by edits made meanwhile, and only entries that changed are invalidated. |
+| `VisualEditorSession` | `NSTextContentStorageDelegate`: builds each paragraph's display text (same UTF-16 length; U+200B conceals, U+FFFC boxes; heading sizes, strong, emphasis, code, links, references, labels, list markers, revealed markers). Invalidates changed paragraphs with attribute-only edits (no undo record, no selection change); defers while text is marked. |
+| `RenderingAttributes` | Tinymist semantic colours as rendering attributes, so a reply never re-lays out text. A mirror answers reads; changed spans are pushed, and many changes become one ordered rebuild (single removals cost O(runs) in TextKit 2: 3 s for 100,000 in War and Peace). |
+| `TextKit2Geometry` | Caret, segments, hit tests and reveal without `layoutManager`. Mac jumps lay out the target and the text above it, and repeat until it stops moving; iPad jumps anchor the viewport on the target (`relocateViewport`). Hit tests that matter after a jump use the laid-out viewport fragments (`viewportInsertionOffset`). |
+| `ChipForm` | One SwiftUI form for both platforms, generated from the `#let` signature. Labelled values become pickers. Apply writes one replacement (`ChipEditing.edit`), so one undo restores the call. |
+| `InlineImageCache` | Decodes `#image` files off the main thread (ImageIO thumbnails, at most 960 px; SVG and PDF through `NSImage` on the Mac), caches by path and modification date (64 entries), and shows at most 480 × 360 pt. A missing or undecodable file shows its name. |
+| Math | `EngineMathRenderer` (§D): the Mac's own Tinymist helper, the iPad's second embedded session. Visible equations are requested in one batch per layout pass; cached and stale images show at once; the caret entering an equation shows its source. |
+
+**Reveal.** A construct shows its source while the selection touches it; the
+others in the paragraph stay concealed (Obsidian's live preview). Typing never
+waits: the edited paragraph shows the rebased plan until the engine's reply.
+
+**Chips.** A call becomes a chip when its arguments are literals and a `#let`
+signature precedes it. Value labels come from the document itself: a parameter
+used as `(key: value, …).at(parameter)` takes the keys as values and the first
+string of each value as its label, and a parameter forwarded to such a function
+inherits them. For the tracker's `#let status(s) = {(todo: ("待办", gray), …).at(s)}`
+and `#let item(id, title, s, …) = [… #status(s)]`, `#item("LB-019", "…", "doing")`
+reads `LB-019 … [进行中]`. Clicking or tapping a chip opens its form; hovering
+it shows the function's help. **Repeat Previous Call** (⌃⌘R on both platforms,
+and in the Mac command palette) copies the nearest earlier chip's call, keeps
+labelled values and turns the rest into Tab placeholders.
+
+**Guards.** One `layoutManager` access switches a view to TextKit 1 for good
+and disables the layer. SwiftLint rejects the identifier in sources and tests;
+the Mac view observes `willSwitchToNSLayoutManagerNotification`, logs
+`editor.textKit1Fallback` and records it, and every Mac editor test fails if
+its view is no longer on TextKit 2.
+
+### Large documents, measured
+
+Mac: `scripts/benchmark-books.sh` (debug build, M4 Pro). Before is today's
+[TextKit 1 report](large-document-performance.md).
+
+| | W&P TK1 | W&P TK2 + visual | SICP TK1 | SICP TK2 + visual |
+|---|---:|---:|---:|---:|
+| Open (s) | 4.09 | 0.56 | 3.32 | 0.52 |
+| Typing median / p95 / max (ms) | 9.29 / – / 52.2 | 5.5 / 5.8 / 6.9 | 6.70 / – / 10.9 | 3.8 / 4.2 / 4.6 |
+| Navigate + draw median / max (ms) | 4.20 / – | 7.1 / 10.1 | 6.07 / – | 14.8 / 25.0 |
+| Scroll + draw p95 (ms) | 5.04 | 2.6 | 3.89 | 3.0 |
+| Paragraphs TextKit built in the run | – | 1,299 of 67,963 | – | 995 of 20,512 |
+
+CI runs the same benchmark on GitHub's macOS 15 runners (Xcode 26.3), which
+are slower and stricter about TextKit 2 (below). There, against the TextKit 1
+editor's last run on the same runners: War and Peace types at 11.8 / 38.4 /
+103.5 ms median / p95 / max (TextKit 1: 6.0 / 39.3 max), at most 17 ms of
+main-thread CPU per key, with the slowest jump at 54 ms (11); SICP types at
+10.6 / 26.2 / 67.1 ms (3.2 / 12.4 max) with the slowest jump at 181 ms (41).
+Both books stay within the gates (typing p95 100 ms, any key 250 ms, any
+jump 200 ms) and build about 1,300 and 1,000 paragraphs.
+| Jumps on target, max hit error | 6/6, ≤ 1 | 6/6, 0 | 6/6, ≤ 1 | 6/6, 0 |
+| Line drift after scrolling away and back (pt) | 0 | 0 | 0 | 0 |
+
+iPad Air (5th generation, M1, iPadOS 26.5), production `TabletEditor`,
+`TabletLargeDocumentTests` (books copied to the app's `Documents/Books`):
+
+| | SICP before (main) | SICP now | W&P before (main) | W&P now |
+|---|---:|---:|---:|---:|
+| Typing median / p95 (ms) | 870 / 945 | 33–48 / 34–49 | did not finish 80 keys in 15 min | 96–101 / 97–151 |
+| Jumps on target (viewport check), max tap error | – | 6/6, 0 | – | 6/6, 0 |
+| Jump median / max (ms) | 143 / 276 | 42–83 / 145–239 | – | 152–154 / 390–401 |
+| Memory after open / after typing (MiB) | 320 / 322 | 302–334 / 268–287 | – | 757–850 / 815–835 |
+
+What made iPad typing slow was not TextKit 2 itself: every keystroke rebuilt
+the line index and word count of the whole text, compared the whole text as
+Swift strings (Unicode-normalizing) up to four times, JSON-encoded the text for
+recovery, sent the full text to Tinymist, and resolved the source path on disk.
+These are now incremental, compared literally or by version, coalesced (160 ms
+for Tinymist, 400 ms for recovery, as on the Mac) and cached. The Mac had one
+of these too: its toolbar compared the whole text with the saved text as
+Swift strings on every keystroke (20 ms per key in War and Peace). What remains in
+War and Peace is UIKit's own TextKit 2 viewport pass, which estimates the size
+of every paragraph between the nearer end of the document and the viewport: a
+bare `UITextView` takes 60–92 ms per key in the middle of War and Peace, 5 ms
+near either end, and a third of that with fewer, longer paragraphs. Layout
+traps found and fixed on the way:
+
+- Revealing the restored caret before the first layout pass makes TextKit 2
+  lay out every paragraph above it; each later keystroke then pays for all of
+  them (40 ms in War and Peace on the Mac). The caret is revealed after it.
+- Installing a book's first plan after layout began invalidated every
+  paragraph and threw TextKit's geometry away; scrolling then drifted by
+  374,000 pt. The first plan is synchronous (about 0.1 s for a book).
+- On iOS, after a distant jump, a fragment laid out on its own and the
+  viewport's fragments can disagree by 100,000 characters at the same height.
+  Taps, hit tests and jump checks use the viewport's fragments.
+- Every edit walks each text element TextKit has built after it, so one
+  step that builds a whole book slows every later keystroke (45 ms in War
+  and Peace on CI). The book benchmark counts the paragraphs TextKit builds
+  and fails above 5,000; on CI's macOS 15 it found two such steps.
+- Re-wrapping (a window resize, a pane opening, or on CI the window shrinking
+  to the runner's screen) discards TextKit 2's layout, and NSTextView then
+  finds a far-down viewport by laying out every paragraph above it, on macOS
+  27 too: all 80,000 paragraphs of a long test document, all 41,302 of War
+  and Peace on CI. The Mac view keeps the top line in place by location
+  across width changes: it lays out the text around that line, and again
+  after the next pass, whose first sizing clamps the scroll.
+- Scrolling a jump target a third of a screen down, onto text not laid out,
+  made TextKit lay out forward from the nearest laid-out fragment above:
+  17,000 paragraphs and 1.3 s for one SICP jump on macOS 15. Jumps lay out
+  a screen of text around the target first. The view also never scrolls past
+  the end of its text.
+- On iPadOS, re-wrapping (rotation, Split View) does not lay the book out, but
+  UIKit's first sizing of the re-wrapped text clamped the scroll and threw
+  the reader back to the start of the book. The iPad view puts its top line
+  back through the viewport, as jumps do.
+
+## Follow-ups
+
+- **iPad War and Peace typing.** About 100 ms per key, at the budget's edge,
+  set by UIKit's viewport pass. A content manager that groups short lines into
+  larger elements would cut it roughly threefold (measured with joined
+  paragraphs); SICP-sized books already have headroom.
+- **Math in templates.** Equations ignore rules inside `#show: template` (§D).
+- **Accessibility** reads markup (risk 3).
 
 ## Risks
 
-1. **TextKit 2 estimated geometry.** Native `scrollRangeToVisible` missed 1 of
-   6 War and Peace jumps on the Mac, with a 3.2 M-unit hit error. Estimated
-   heights are off by up to 6.5×, and laid-out geometry is discarded after
-   edits. Precise reveal fixes jumps (measured). The scroller thumb remains
-   approximate.
-2. **iPad TextKit 2 large documents.** In the simulator, typing on War and
-   Peace took 92 ms median (inside `UITextView.replace`). Hit testing after
-   distant jumps was wrong in 3 of 12 jumps, and a full layout used 1.7 GB. All
-   of this exists in today's iPad editor. Profile on a device and apply the TK1
-   gate.
+1. **TextKit 2 estimated geometry (handled).** Native `scrollRangeToVisible`
+   missed 1 of 6 War and Peace jumps on the Mac and nearly every distant jump
+   on the iPad; estimated heights are off by up to 6.5×. Jumps use precise
+   reveal on the Mac and viewport relocation on the iPad; both books land 6/6
+   with zero hit error (§E). The scroller thumb remains approximate.
+2. **iPad TextKit 2 large documents (measured on a device).** SICP types in
+   33–48 ms; War and Peace in about 100 ms, set by UIKit's viewport pass (§E).
+   No full-layout pass is used (it cost 1.7 GB in the simulator).
 3. **Accessibility reads markup.** The AX API exposes the source, including
    `*` and `#item(...)`. A custom accessibility text for concealed runs needs
    its own design and VoiceOver testing.
@@ -671,16 +732,16 @@ Each step is one PR with tests. Steps 1–2 change no UI.
    synthetic document measures each equation in Typst and exports it as a
    page, through the existing `exportQuery` and `exportPng` commands. No
    Tinymist patch was added. Remaining limits are listed in §D.
-5. **Rendering attributes are not rebased on edits.** Unlike temporary
-   attributes, syntax colours must be re-applied by revision, without
-   regressing the zero-unrelated-writes stability tests.
+5. **Rendering attributes (handled).** On macOS 27 and iPadOS 26 TextKit
+   moves them with edits, as temporary attributes were; the session's mirror
+   follows the same rule, and identical syntax replies write nothing.
 6. **Atomic chips.** If the product wants chips that never reveal source,
    arrow keys and the `NSTextView` hit test land inside the call. That would
    need custom `NSTextSelectionDataSource` navigation, which the spike did not
    attempt.
-7. **Plan storage cost (addressed in step 2).** The spike's flat arrays
-   shifted in O(n) per keystroke (3.7 ms on SICP). `PresentationStore` keeps
-   entries relative to paragraph blocks instead.
+7. **Plan storage cost (handled).** `PresentationStore` keeps entries
+   relative to paragraph blocks; the main thread's snapshot rebases in
+   O(blocks), and parsing never runs on the main thread after open.
 8. **Attachment views exist only in ordered-in windows.** Tests that inspect
    chip views need a visible (off-screen) window.
 
@@ -688,6 +749,15 @@ Each step is one PR with tests. Steps 1–2 change no UI.
 
 The spike branch (draft PR #75) keeps the prototype and its scripts:
 `scripts/visual-editing-spike.sh` runs the Rust tests and parser benchmark on
-both books, compiles today's `SourcePresentation` scan with `-O`, and runs the
-prototype's Swift tests on macOS and in the iPad simulator. Its raw reports are
-`docs/benchmarks/visual-editing-*.json` on that branch.
+both books, compiles the regex scan the editor used then with `-O`, and runs
+the prototype's Swift tests on macOS and in the iPad simulator. Its raw reports
+are `docs/benchmarks/visual-editing-*.json` on that branch.
+
+The delivered editor's numbers come from `scripts/benchmark-books.sh` (Mac)
+and, on a device, from `TabletLargeDocumentTests`: copy books into the app's
+container (`xcrun devicectl device copy to --domain-type appDataContainer
+--domain-identifier app.leftblank.writer --source Examples/Books/SICP/main.typ
+--destination Documents/Books/sicp.typ`), then run that suite with
+`xcodebuild test-without-building … -only-testing:LeftBlankTabletTests/TabletLargeDocumentTests`;
+`TEST_RUNNER_LEFTBLANK_IPAD_BOOK=sicp` selects one book. Reports land in the
+app's `Documents/Benchmarks`.

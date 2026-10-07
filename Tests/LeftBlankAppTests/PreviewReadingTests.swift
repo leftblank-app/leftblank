@@ -40,19 +40,17 @@ extension WritingFlowTests {
         #expect(editor.string == app.workspace.text)
     }
 
-    @Test func readingStylesRevealSourceWithoutChangingUndoOrText() throws {
+    @Test func readingStylesRevealSourceWithoutChangingUndoOrText() async throws {
         let source = "= 中文😀标题\n\n*bold* and _italic_ and `code`.\n\nEnd\n"
         let app = try WritingFixture(text: source, startService: false)
         defer { app.close() }
         let editor = try #require(app.workspace.editor)
-        editor.highlight()
-        let storage = try #require(editor.textStorage)
-        let hiddenFont = try #require(storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
-        #expect(hiddenFont.pointSize < 1)
+        await app.settle(editor)
+        #expect(editor.displayedCharacter(at: 0) == "\u{200B}")
         #expect(editor.string == source)
         editor.setSelectedRange(NSRange(location: 3, length: 0))
-        editor.highlight()
-        #expect((storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize ?? 0 > 1)
+        await app.settle(editor)
+        #expect(editor.displayedCharacter(at: 0) == "=")
         let bold = (source as NSString).range(of: "bold")
         editor.insertSnippet(Snippet(text: "changed"), replacing: bold)
         #expect(app.workspace.text.contains("*changed*"))

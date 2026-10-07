@@ -642,6 +642,26 @@ final class WritingTests: XCTestCase {
         expect(poll(timeout: 10) { !panes().divider.exists }) == true
     }
 
+    /// The visual layer with a hardware keyboard: a call with literal values
+    /// becomes a chip, and Repeat Previous Call (Control-Command-R) inserts a
+    /// copy whose free values are Tab placeholders. The source stays exact.
+    func testRepeatPreviousCallFillsPlaceholdersFromTheKeyboard() {
+        let app = startWriting()
+        let editor = app.textViews["manuscript"].firstMatch
+        editor.tap()
+        editor.typeKey("a", modifierFlags: .command)
+        let definition = "#let item(id, s) = [#id #(todo: \"To do\", done: \"Done\").at(s)]\n\n#item(\"A1\", \"todo\")\n\n"
+        editor.typeText(definition)
+        editor.typeKey("r", modifierFlags: [.control, .command])
+        let repeated = NSPredicate { _, _ in (editor.value as? String)?.hasSuffix("#item(\"\", \"todo\")") == true }
+        waitForState(repeated, in: app, name: "Repeated call")
+        editor.typeText("B2")
+        expect(editor.value as? String) == definition + "#item(\"B2\", \"todo\")"
+        editor.typeKey("z", modifierFlags: .command)
+        editor.typeKey("z", modifierFlags: .command)
+        expect((editor.value as? String)?.hasSuffix("#item(\"A1\", \"todo\")\n\n")) == true
+    }
+
     func testRenderedFunctionHelpKeepsTheManuscript() {
         let app = startWriting()
         let editor = app.textViews["manuscript"].firstMatch

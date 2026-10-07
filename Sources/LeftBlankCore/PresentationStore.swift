@@ -284,3 +284,159 @@ public struct PresentationStore {
         }
     }
 }
+
+public extension PresentationStore {
+    /// The plan as an immutable value another thread can read.
+    var snapshot: PresentationSnapshot {
+        PresentationSnapshot(blocks: blocks.map { .init(start: $0.start, length: $0.length, plan: $0.plan) })
+    }
+}
+
+/// A store's plan, read by the text system on the main thread while the store
+/// itself lives on a background actor. Between a native edit and the store's
+/// reply, `edit` rebases it: later entries move, and entries the edit touches
+/// are dropped, so that text shows as source until it is planned again.
+public struct PresentationSnapshot: Equatable, Sendable {
+    struct Block: Equatable, Sendable {
+        var start: Int
+        var length: Int
+        /// Entries relative to `start`.
+        var plan: DisplayPlan
+
+        var range: NSRange {
+            NSRange(location: start, length: length)
+        }
+    }
+
+    var blocks: [Block]
+
+    /// A plan of plain source for text of `length` UTF-16 units.
+    public init(length: Int = 0) {
+        blocks = [Block(start: 0, length: length, plan: DisplayPlan())]
+    }
+
+    init(blocks: [Block]) {
+        self.blocks = blocks.isEmpty ? [Block(start: 0, length: 0, plan: DisplayPlan())] : blocks
+    }
+
+    public var length: Int {
+        blocks.last.map { NSMaxRange($0.range) } ?? 0
+    }
+
+    /// Entries that intersect or touch `range`, with absolute ranges.
+    public func plan(in range: NSRange) -> DisplayPlan {
+        var result = DisplayPlan()
+        var index = Presentation.firstIndex(blocks) { NSMaxRange($0.range) >= range.location }
+        while index < blocks.count, blocks[index].start <= NSMaxRange(range) {
+            result.append(blocks[index].plan.offset(by: blocks[index].start))
+            index += 1
+        }
+        return result.restricted(to: range)
+    }
+
+    /// Mirrors one native replacement of `range` (old coordinates) by text of
+    /// `replacementLength` UTF-16 units.
+    public mutating func edit(_ range: NSRange, replacementLength: Int) {
+        let delta = replacementLength - range.length
+        guard range.location >= 0, NSMaxRange(range) <= length else {
+            self = PresentationSnapshot(length: max(0, length + delta))
+            return
+        }
+        let first = min(Presentation.firstIndex(blocks) { NSMaxRange($0.range) >= range.location }, blocks.count - 1)
+        var last = first
+        while last + 1 < blocks.count, blocks[last + 1].start <= NSMaxRange(range) {
+            last += 1
+        }
+        let start = blocks[first].start
+        var plan = DisplayPlan()
+        for block in blocks[first ... last] {
+            plan.append(block.plan.offset(by: block.start - start))
+        }
+        let local = NSRange(location: range.location - start, length: range.length)
+        let merged = Block(
+            start: start,
+            length: NSMaxRange(blocks[last].range) - start + delta,
+            plan: plan.rebased(editing: local, delta: delta),
+        )
+        blocks.replaceSubrange(first ... last, with: [merged])
+        for index in blocks.indices.dropFirst(first + 1) {
+            blocks[index].start += delta
+        }
+    }
+
+    /// Source ranges whose display differs between `old` and this snapshot,
+    /// both describing the same text.
+    public func changedRanges(from old: PresentationSnapshot) -> [NSRange] {
+        var previous: [Int: Block] = [:]
+        for block in old.blocks {
+            previous[block.start] = block
+        }
+        var changed: [NSRange] = []
+        for block in blocks {
+            guard let before = previous[block.start], before.length == block.length else {
+                changed.append(block.range)
+                continue
+            }
+            guard before.plan != block.plan else {
+                continue
+            }
+            changed += block.plan.differences(from: before.plan).map { $0.offset(by: block.start) }
+        }
+        return Presentation.merged(changed)
+    }
+}
+
+extension DisplayPlan {
+    /// The plan after replacing `range` by `range.length + delta` units.
+    func rebased(editing range: NSRange, delta: Int) -> DisplayPlan {
+        func keep(_ value: NSRange) -> NSRange? {
+            if NSMaxRange(value) <= range.location {
+                return value
+            }
+            return value.location >= NSMaxRange(range) ? value.offset(by: delta) : nil
+        }
+        var plan = DisplayPlan()
+        plan.conceals = conceals.compactMap(keep)
+        plan.replacements = replacements.compactMap { replacement in
+            keep(replacement.range).map { replacement.offset(by: $0.location - replacement.range.location) }
+        }
+        plan.styles = styles.compactMap { run in keep(run.range).map { StyleRun(range: $0, style: run.style) } }
+        plan.requests = requests.compactMap { request in
+            keep(request.range).map { request.offset(by: $0.location - request.range.location) }
+        }
+        plan.revealed = revealed.compactMap(keep)
+        plan.extents = extents.compactMap(keep)
+        return plan
+    }
+
+    /// Ranges of the entries that affect drawing and differ from `old`.
+    func differences(from old: DisplayPlan) -> [NSRange] {
+        Self.differences(conceals, old.conceals) { $0 }
+            + Self.differences(replacements, old.replacements, \.range)
+            + Self.differences(styles, old.styles, \.range)
+            + Self.differences(requests, old.requests, \.range)
+    }
+
+    /// Entries present in only one of two location-sorted lists.
+    static func differences<T: Equatable>(_ lhs: [T], _ rhs: [T], _ range: (T) -> NSRange) -> [NSRange] {
+        var result: [NSRange] = []
+        var left = 0, right = 0
+        while left < lhs.count || right < rhs.count {
+            let leftLocation = left < lhs.count ? range(lhs[left]).location : Int.max
+            let rightLocation = right < rhs.count ? range(rhs[right]).location : Int.max
+            let location = min(leftLocation, rightLocation)
+            var leftGroup: [T] = [], rightGroup: [T] = []
+            while left < lhs.count, range(lhs[left]).location == location {
+                leftGroup.append(lhs[left])
+                left += 1
+            }
+            while right < rhs.count, range(rhs[right]).location == location {
+                rightGroup.append(rhs[right])
+                right += 1
+            }
+            result += leftGroup.filter { !rightGroup.contains($0) }.map(range)
+            result += rightGroup.filter { !leftGroup.contains($0) }.map(range)
+        }
+        return result
+    }
+}

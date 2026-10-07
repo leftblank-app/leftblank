@@ -122,7 +122,7 @@ private struct DocumentTitle: View {
                 .frame(height: 16).frame(height: 30)
                 .learningHelp(L10n.text("Click to rename. Double-click to open your writing."))
             }
-            if workspace.text != workspace.savedText, workspace.fileURL != nil {
+            if workspace.hasUnsavedChanges {
                 Circle().fill(Theme.accent).frame(width: 5, height: 5).accessibilityLabel(L10n.text("Unsaved"))
             }
         }.frame(height: 30).foregroundStyle(Theme.text)

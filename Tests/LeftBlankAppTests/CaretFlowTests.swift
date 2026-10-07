@@ -23,7 +23,7 @@ extension WritingFlowTests {
                     editor.setSelectedRange(NSRange(location: source.utf16.count, length: 0))
                     editor.highlight()
                     let range = (source as NSString).range(of: needle)
-                    editor.scrollRangeToVisible(range)
+                    editor.reveal(range)
                     let screenRect = editor.firstRect(
                         forCharacterRange: NSRange(location: range.location, length: 0),
                         actualRange: nil,

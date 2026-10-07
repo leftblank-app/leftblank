@@ -42,8 +42,9 @@ extension WritingFlowTests {
         let origin = editor.enclosingScrollView?.contentView.bounds.origin
         let storage = try #require(editor.textStorage)
         let edits = AppearanceEditRecorder(storage)
-        let keyword = (text as NSString).range(of: "#let").location
-        let syntaxColor = try #require(editorColor(editor, at: keyword))
+        await app.settle(editor)
+        // The heading's reading colour, drawn by the visual layer.
+        let syntaxColor = try #require(editorColor(editor, at: (text as NSString).range(of: "quiet").location))
         let settingsView = NSHostingView(rootView: WritingSettingsView(
             workspace: app.workspace,
             library: app.workspace.library,
@@ -67,7 +68,7 @@ extension WritingFlowTests {
                 (preference == .dark ? 0x1C1F23 : 0xFFFFFF))
             #expect(resolvedHex(Theme.sourceText, appearance: appearance) ==
                 (preference == .dark ? 0xD5D9DE : 0x37474F))
-            #expect(resolvedHex(syntaxColor, appearance: appearance) == (preference == .dark ? 0xA5B8C8 : 0x496B7D))
+            #expect(resolvedHex(syntaxColor, appearance: appearance) == (preference == .dark ? 0xEEE8DA : 0x263238))
             #expect(editor.string == text && app.workspace.text == text)
             #expect(editor.selectedRange() == selection)
             #expect(editor.enclosingScrollView?.contentView.bounds.origin == origin)

@@ -1,7 +1,8 @@
 # Real-book editor performance
 
-Measured on 2026-10-01, Apple M4 Pro, macOS 27.0, native AppKit editor,
-Tinymist 0.15.8 / Typst 0.15.1. These are instrumented debug test runs, not a
+Measured on 2026-10-08, Apple M4 Pro, macOS 27.0, the TextKit 2 editor with
+the visual layer ([visual editing](visual-editing.md#e-the-delivered-editor)),
+Tinymist 0.15.8 / Typst 0.15.1; iPad numbers are in the same section. These are instrumented debug test runs, not a
 release-mode FPS claim. Both fixture sources, licenses and generators are in
 [Examples/Books](../Examples/Books/README.md).
 
@@ -13,14 +14,26 @@ Scheme second edition: 1.45 MB of manuscript, 1,098 Scheme blocks, 1,356 math
 expressions and 84 SVG figures. It imports its own local typography module.
 Neither book is repeated to manufacture a larger buffer.
 
-| Book | Source bytes | Open (s) | Typing median / max (ms) | Navigate + draw median (ms) | Scroll + draw p95 (ms) |
+| Book | Source bytes | Open (s) | Typing median / p95 / max (ms) | Navigate + draw median / max (ms) | Scroll + draw p95 (ms) |
 |---|---:|---:|---:|---:|---:|
-| war-and-peace | 3,302,718 | 4.09 | 9.29 / 52.23 | 4.20 | 5.04 |
-| sicp | 1,446,633 | 3.32 | 6.70 / 10.88 | 6.07 | 3.89 |
+| war-and-peace | 3,302,718 | 0.56 | 5.52 / 5.75 / 6.87 | 7.14 / 10.13 | 2.56 |
+| sicp | 1,446,633 | 0.52 | 3.78 / 4.15 / 4.64 | 14.83 / 25.01 | 2.98 |
 
-SICP exported to **448 pages** in 2.41 seconds after engine startup.
-The test/editor process ended at 290.7 MiB for War and Peace and
-287.8 MiB for SICP. These are process physical-footprint snapshots,
+Both books land all six jumps in the viewport with zero hit-test error, and a
+line returns to the same place in the viewport after scrolling three screens
+away and back. TextKit builds about 1,300 of War and Peace's 67,963
+paragraphs and 1,000 of SICP's 20,512 over the whole run; the benchmark fails
+above 5,000, because every edit walks the elements built after it. On CI's
+macOS 15 runners the same run types at 11.8 / 38.4 / 103.5 ms in War and Peace
+and 10.6 / 26.2 / 67.1 ms in SICP (median / p95 / max); see
+[visual editing](visual-editing.md#large-documents-measured). The previous TextKit 1 editor (2026-10-01) opened War and Peace
+in 4.09 s and SICP in 3.32 s, typed at 9.29 / 52.23 and 6.70 / 10.88 ms
+(median / max), navigated in 4.20 and 6.07 ms median, and scrolled at 5.04 and
+3.89 ms p95. SICP ended at 219.4 MiB (287.8 before).
+
+SICP exported to **448 pages** in 0.21 seconds after engine startup.
+The test/editor process ended at 222.0 MiB for War and Peace and
+219.4 MiB for SICP (290.7 and 287.8 with TextKit 1). These are process physical-footprint snapshots,
 not peak memory and not total application memory: Tinymist and WebKit are separate
 processes. Each current report comes from its own fresh test process.
 
@@ -31,8 +44,10 @@ restored for reliable pointer geometry. The earlier run failed distant pointer
 round-trip checks; current checks pass. Its scrolling measurement only included
 layout, so it is not directly comparable to the new draw measurement.
 
-Raw reports: [War and Peace before](benchmarks/war-and-peace-before.json),
-[War and Peace after](benchmarks/war-and-peace.json), [SICP](benchmarks/sicp.json).
+Raw reports: [War and Peace](benchmarks/war-and-peace.json) and
+[SICP](benchmarks/sicp.json) on TextKit 2; [War and Peace](benchmarks/war-and-peace-textkit1.json)
+and [SICP](benchmarks/sicp-textkit1.json) on TextKit 1; and the
+[earliest War and Peace run](benchmarks/war-and-peace-before.json).
 Absolute timings vary with hardware, instrumentation, caches and background load.
 
 ## What changed
@@ -47,9 +62,28 @@ Absolute timings vary with hardware, instrumentation, caches and background load
 - Semantic-token decoding runs off the main actor. Embedded-language analysis is
   cached and bounded; the offline Scheme grammar covers the real book's code.
   Nested highlight spans keep their specificity when their ranges coincide.
-- TextKit uses contiguous layout. Noncontiguous layout shifted a previously
-  drawn line by 27 points during the first hit test after a distant jump. The
-  increased initial layout cost is preferable to moving the cursor incorrectly.
+- TextKit 2 lays out only the viewport, so opening no longer lays out the
+  whole book (TextKit 1 needed contiguous layout for reliable pointer
+  geometry). Its estimated geometry is handled explicitly: jumps reveal their
+  target precisely, the restored caret is revealed after the first layout pass
+  (before it, TextKit lays out every paragraph above it and each keystroke pays
+  for them), and the first visual plan is computed before layout, so it never
+  invalidates a laid-out book.
+
+## iPad
+
+iPad Air (5th generation, M1), iPadOS 26.5, `TabletLargeDocumentTests` on the
+production editor ([how to run it](visual-editing.md#reproduce-the-spike)):
+
+| Book | Typing median / p95 (ms) | Jumps on target, tap error | Jump median / max (ms) | Memory after typing (MiB) |
+|---|---:|---:|---:|---:|
+| sicp, before | 870 / 945 | – | 143 / 276 | 322 |
+| sicp | 33–48 / 34–49 | 6/6, 0 | 42–83 / 145–239 | 268–287 |
+| war-and-peace, before | did not finish 80 keys in 15 minutes | – | – | – |
+| war-and-peace | 96–101 / 97–151 | 6/6, 0 | 152–154 / 390–401 | 802–835 |
+
+Ranges are over runs. The causes and what remains are in
+[visual editing](visual-editing.md#large-documents-measured).
 
 The native text storage remains authoritative; we did not introduce a second
 rope buffer or a terminal editor with another selection/undo model. These fixes
@@ -75,10 +109,14 @@ Each scenario uses production Workspace, NSTextView and real Tinymist:
    timing starts; report this separately as `initial_presentation_ms` and the
    total opening-to-ready time as `editor_ready_seconds`.
 2. Jump among six distant offsets, apply styles, force layout and draw the
-   visible region into a bitmap. Map a rendered glyph back to a native insertion
-   point and check the position, rather than only checking a selection integer.
+   visible region into a bitmap. Require each target's glyph inside the visible
+   rect, and map it back to a native insertion point with zero error, rather
+   than only checking a selection integer.
 3. Search later text and scroll through 60 frames with native visible-region
-   layout and bitmap painting.
+   layout and bitmap painting. Scrolling three screens down and back must show
+   the first visible line at the same place in the viewport (TextKit 2 moves
+   the clip origin when it replaces estimated heights, so positions are
+   compared within the viewport).
 4. Insert 80 mixed Latin/CJK/emoji characters through the native editor, include
    metric reads, then undo and verify the original source exactly.
 5. For SICP, export through Tinymist and require more than 400 PDF pages.

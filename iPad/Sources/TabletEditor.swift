@@ -8,8 +8,13 @@ struct TabletEditor: UIViewRepresentable {
     @ObservedObject var workspace: TabletWorkspace
 
     func makeUIView(context: Context) -> UITextView {
-        let view = TabletTextView()
+        // TextKit 2: the visual layer (VisualEditorSession) is shared with the Mac.
+        let view = TabletTextView(usingTextLayoutManager: true)
         view.workspace = workspace
+        view.installVisualLayer(style: TabletTheme.visualStyle(workspace.fontSize))
+        view.session?.mathRenderer = workspace.makeInlineMathRenderer()
+        view.textStorage.delegate = context.coordinator
+        context.coordinator.textView = view
         view.sourceHover.install()
         view.delegate = context.coordinator
         view.addInteraction(UIDropInteraction(delegate: view))
@@ -48,7 +53,12 @@ struct TabletEditor: UIViewRepresentable {
         defer { coordinator.updating = false }
         let font = UIFontMetrics(forTextStyle: .body).scaledFont(for:
             .monospacedSystemFont(ofSize: workspace.fontSize, weight: .regular))
-        let replaced = view.text != workspace.text
+        // Comparing a book's text costs milliseconds per update; a version this
+        // view produced needs no comparison.
+        let synced = coordinator.synced?.generation == workspace.generation
+            && coordinator.synced?.version == workspace.version
+        let replaced = !synced && !TextIdentity.equal(workspace.text, view.textStorage.string)
+        coordinator.synced = (workspace.generation, workspace.version)
         if replaced {
             (view as? TabletTextView)?.clearSnippet()
             view.text = workspace.text
@@ -64,31 +74,37 @@ struct TabletEditor: UIViewRepresentable {
                 workspace.assistance.invalidate()
             }
         }
-        let syntaxReady = workspace.highlightedText == workspace.text
-        let syntaxChanged = syntaxReady && coordinator.styledText != workspace.highlightedText
+        let syntaxReady = workspace.highlightedVersion == workspace.version
+        let syntaxChanged = syntaxReady && coordinator.styledRevision != workspace.highlightRevision
         guard replaced || coordinator.fontSize != font.pointSize || syntaxChanged else {
             return
         }
+        let session = (view as? TabletTextView)?.session
+        if replaced || coordinator.fontSize != font.pointSize {
+            // Font changes are rare; the source keeps one base style, and the
+            // visual layer draws reading styles in its display paragraphs.
+            var style = TabletTheme.visualStyle(font.pointSize)
+            style.text = TabletTheme.sourceText
+            var base = style.baseAttributes
+            base[.font] = font
+            let selected = view.selectedRange
+            view.textStorage.setAttributes(base, range: NSRange(location: 0, length: view.textStorage.length))
+            view.selectedRange = selected
+            view.typingAttributes = base
+            session?.style = style
+        }
         coordinator.fontSize = font.pointSize
+        if replaced {
+            // Another file of the project may have changed what equations import.
+            (session?.mathRenderer as? EngineMathRenderer)?.cache.removeAll()
+            session?.documentURL = workspace.sourceURL
+            session?.open(selection: view.selectedRange)
+        }
         if syntaxReady {
-            coordinator.styledText = workspace.highlightedText
+            coordinator.styledRevision = workspace.highlightRevision
+            // Semantic colours are rendering attributes: no re-layout, no undo.
+            session?.colors.setColors(workspace.tokens.map { ($0.range, TabletTheme.color(for: $0)) })
         }
-        // Recolor on settled syntax revisions, never on caret movement or every
-        // keystroke. UIKit preserves composition, typing attributes and undo.
-        let storage = view.textStorage
-        let selected = view.selectedRange
-        storage.beginEditing()
-        storage.addAttributes(
-            [.foregroundColor: TabletTheme.nativeText, .font: font],
-            range: NSRange(location: 0, length: storage.length),
-        )
-        for token in syntaxReady ? workspace.tokens : [] where NSMaxRange(token.range) <= storage.length {
-            let color = TabletTheme.color(for: token)
-            storage.addAttribute(.foregroundColor, value: color, range: token.range)
-        }
-        storage.endEditing()
-        view.selectedRange = selected
-        view.typingAttributes = [.foregroundColor: TabletTheme.nativeText, .font: font]
     }
 
     func makeCoordinator() -> Coordinator {
@@ -96,10 +112,18 @@ struct TabletEditor: UIViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, @preconcurrency NSTextStorageDelegate {
         var workspace: TabletWorkspace
+        weak var textView: TabletTextView?
         var updating = false
-        var styledText: String?
+        var styledRevision = -1
+        /// The workspace generation and version whose text this view shows.
+        var synced: (generation: UUID, version: Int)?
+        /// Characters changed since the workspace last received the text.
+        var unsynced = false
+        /// The native replacement since then, while there is exactly one.
+        private var change: TextReplacement?
+        private var changes = 0
         var fontSize: CGFloat = 0
         init(_ workspace: TabletWorkspace) {
             self.workspace = workspace
@@ -113,6 +137,39 @@ struct TabletEditor: UIViewRepresentable {
             return true
         }
 
+        func textStorage(
+            _ textStorage: NSTextStorage,
+            didProcessEditing editedMask: NSTextStorage.EditActions,
+            range editedRange: NSRange,
+            changeInLength delta: Int,
+        ) {
+            guard editedMask.contains(.editedCharacters), !updating else {
+                return
+            }
+            unsynced = true
+            changes += 1
+            change = changes == 1 && editedRange.length - delta >= 0 ? TextReplacement(
+                range: NSRange(location: editedRange.location, length: editedRange.length - delta),
+                text: (textStorage.string as NSString).substring(with: editedRange),
+            ) : nil
+            textView?.session?.textDidChange(edited: editedRange, delta: delta)
+        }
+
+        /// Whether the view's text is ahead of the workspace. As the storage's
+        /// delegate this is known; otherwise (a bare coordinator) compare.
+        private func changed(_ textView: UITextView) -> Bool {
+            textView.textStorage.delegate === self ? unsynced : !TextIdentity.equal(textView.text, workspace.text)
+        }
+
+        private func takeChange() -> TextReplacement? {
+            defer {
+                unsynced = false
+                change = nil
+                changes = 0
+            }
+            return change
+        }
+
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             (scrollView as? TabletTextView)?.sourceHover.viewportChanged()
         }
@@ -121,7 +178,11 @@ struct TabletEditor: UIViewRepresentable {
             guard !updating, textView.markedTextRange == nil else {
                 return
             }
-            workspace.edited(textView.text, selection: textView.selectedRange)
+            // UIKit reports the selection first, which may already have synced.
+            if changed(textView) {
+                workspace.edited(textView.text, selection: textView.selectedRange, change: takeChange())
+                synced = (workspace.generation, workspace.version)
+            }
             (textView as? TabletTextView)?.scheduleTypingAssistance()
         }
 
@@ -129,8 +190,12 @@ struct TabletEditor: UIViewRepresentable {
             guard !updating else {
                 return
             }
-            if textView.markedTextRange == nil, textView.text != workspace.text {
-                workspace.edited(textView.text, selection: textView.selectedRange)
+            if textView.markedTextRange == nil {
+                (textView as? TabletTextView)?.session?.selectionDidChange(textView.selectedRange)
+            }
+            if textView.markedTextRange == nil, changed(textView) {
+                workspace.edited(textView.text, selection: textView.selectedRange, change: takeChange())
+                synced = (workspace.generation, workspace.version)
             } else if workspace.selection != textView.selectedRange {
                 workspace.assistance.invalidate()
                 workspace.selection = textView.selectedRange
@@ -143,6 +208,8 @@ struct TabletEditor: UIViewRepresentable {
 @MainActor final class TabletTextView: UITextView, UIDropInteractionDelegate {
     weak var workspace: TabletWorkspace?
     lazy var sourceHover = TabletSourceHover(editor: self)
+    /// The visual layer: concealment, styles, chips, images and equations.
+    var session: VisualEditorSession?
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         sourceHover.dismiss()
@@ -163,8 +230,44 @@ struct TabletEditor: UIViewRepresentable {
     var typingList = CompletionList(items: [], prefix: "")
     var typingSignature: LanguageSignature?
 
+    /// The top line to put back after UIKit re-wraps for a new width
+    /// (rotation, Split View): its first sizing of the re-wrapped text clamps
+    /// the scroll, which threw the reader back to the start of a book.
+    private var resizeAnchor: Int?
+
+    override var frame: CGRect {
+        get { super.frame }
+        set {
+            noteWidth(newValue.width)
+            super.frame = newValue
+        }
+    }
+
+    override var bounds: CGRect {
+        get { super.bounds }
+        set {
+            noteWidth(newValue.width)
+            super.bounds = newValue
+        }
+    }
+
+    private func noteWidth(_ width: CGFloat) {
+        guard resizeAnchor == nil, width != bounds.width, bounds.width > 0, contentOffset.y > 0,
+              let manager = textLayoutManager
+        else {
+            return
+        }
+        resizeAnchor = TextKit2Geometry.viewportInsertionOffset(at: containerVisibleRect().origin, in: manager)
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
+        if let anchor = resizeAnchor, let manager = textLayoutManager {
+            resizeAnchor = nil
+            TextKit2Geometry.revealByRelocating(
+                anchor, in: manager, visible: containerVisibleRect, scroll: scrollContainer, margins: [0],
+            )
+        }
         positionTypingAssistance()
     }
 
@@ -198,7 +301,7 @@ struct TabletEditor: UIViewRepresentable {
         if let range = snippet?.current {
             selectedRange = range
             workspace?.selection = range
-            scrollRangeToVisible(range)
+            reveal(range)
         }
     }
 
@@ -293,6 +396,7 @@ struct TabletEditor: UIViewRepresentable {
             ("[", .command, #selector(outdentSource), "Outdent"),
             ("/", .command, #selector(commentSource), "Toggle Comment"),
             ("f", [.alternate, .shift], #selector(formatSource), "Format Document"),
+            ("r", [.control, .command], #selector(repeatCall), "Repeat Previous Call"),
         ]
         var commands = definitions.map { key, flags, selector, title in
             let command = UIKeyCommand(input: key, modifierFlags: flags, action: selector)
@@ -337,7 +441,7 @@ struct TabletEditor: UIViewRepresentable {
             return workspace?.serviceReady == true && workspace?.busy == false && markedTextRange == nil
         }
         if [#selector(indentSource), #selector(outdentSource), #selector(commentSource), #selector(formatSource),
-            #selector(nextPlaceholder(_:))].contains(action)
+            #selector(nextPlaceholder(_:)), #selector(repeatCall)].contains(action)
         {
             return isEditable && markedTextRange == nil
         }
@@ -408,7 +512,11 @@ struct TabletEditor: UIViewRepresentable {
         }
         selectedRange = range
         workspace?.selection = range
-        scrollRangeToVisible(range)
+        reveal(range)
+    }
+
+    @objc private func repeatCall() {
+        Task { await repeatPreviousCall() }
     }
 }
 

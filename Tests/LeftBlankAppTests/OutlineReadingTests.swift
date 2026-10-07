@@ -30,10 +30,7 @@ extension WritingFlowTests {
 
         // Scroll without moving the caret: the final section still has a mark,
         // even when its row is hidden under a folded chapter.
-        let scroll = try #require(editor.enclosingScrollView)
-        try editor.layoutManager?.ensureLayout(for: #require(editor.textContainer))
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: editor.bounds.height - scroll.contentSize.height))
-        scroll.reflectScrolledClipView(scroll.contentView)
+        editor.reveal(NSRange(location: editor.string.utf16.count, length: 0))
         try await app.wait { (workspace.activeOutlineIndex ?? 0) >= 45 }
         let active = try #require(workspace.activeOutlineIndex)
         let buckets = workspace.outlineNavigation.minimapBuckets()
