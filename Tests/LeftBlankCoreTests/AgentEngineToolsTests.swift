@@ -10,45 +10,76 @@ struct AgentEngineToolsTests {
         defer { fixture.close() }
         let document = try await fixture.library.create(title: "Render", text: "= Pages\n")
         let id = JSONValue.string(document.id.uuidString)
-        let pages = try [#require(testImage(width: 6, height: 4, type: .png)),
-                         #require(testImage(width: 3000, height: 1000, type: .png))]
+        // Page sizes in pt: small, A4, 500 cm square, and a 10 000 cm strip no resolution can fit.
+        let pages: [(width: Double, height: Double)] = [(200, 100), (595.28, 841.89), (14173.2, 14173.2),
+                                                        (283_465, 10)]
+        var largestEdge = 0
         fixture.host.exportOutput = { export in
-            guard case let .png(page, _) = export else {
+            guard case let .png(page, ppi) = export else {
                 return AgentEngineOutput(status: .engineUnavailable)
             }
-            let items: [JSONValue] = page <= pages.count ? [.object([
-                "page": .number(Double(page - 1)),
-                "data": .string(pages[page - 1].base64EncodedString()),
-            ])] : []
+            var items: [JSONValue] = []
+            if page <= pages.count {
+                // Typst rounds pt × px-per-pt, with at least one pixel.
+                let width = max(1, Int((pages[page - 1].width * ppi / 72).rounded()))
+                let height = max(1, Int((pages[page - 1].height * ppi / 72).rounded()))
+                largestEdge = max(largestEdge, width, height)
+                let png = testImage(width: width, height: height, type: .png) ?? Data()
+                items = [.object(["page": .number(Double(page - 1)), "data": .string(png.base64EncodedString())])]
+            }
             return AgentEngineOutput(
                 status: .completed,
                 response: .object(["total_pages": .number(Double(pages.count)), "items": .array(items)]),
                 diagnostics: [.object(["severity": .string("warning")])],
             )
         }
+        func render(_ arguments: [String: JSONValue]) async -> AgentToolResult {
+            fixture.host.exports = []
+            largestEdge = 0
+            return await fixture.call("render_page", arguments.merging(["document_id": id]) { $1 })
+        }
         let revision = await fixture.call("get_document", ["document_id": id]).value["project_revision"]
-        let first = await fixture.call("render_page", ["document_id": id])
-        #expect(!first.isError)
-        #expect(fixture.host.exports == [.png(page: 1, ppi: 144)])
-        #expect(first.images == [AgentToolImage(data: pages[0], mimeType: "image/png")])
-        #expect(first.value["page"].int == 1 && first.value["page_count"].int == 2)
-        #expect(first.value["width"].int == 6 && first.value["height"].int == 4)
+        let first = await render(["expected_project_revision": revision])
+        #expect(!first.isError, "\(first.value)")
+        #expect(fixture.host.engines == 1)
+        #expect(fixture.host.exports.last == .png(page: 1, ppi: 144))
+        #expect((2 ... AgentPageFit.maximumProbes + 1).contains(fixture.host.exports.count))
+        #expect(first.images.first?.mimeType == "image/png")
+        #expect(first.value["page"].int == 1 && first.value["page_count"].int == 4)
+        #expect(first.value["width"].int == 400 && first.value["height"].int == 200)
+        #expect(first.value["ppi"].int == 144 && first.value["requested_ppi"].int == 144)
+        #expect(first.value["ppi_reduced"].foundationValue as? Bool == false)
         #expect(first.value["downscaled"].foundationValue as? Bool == false)
         #expect(first.value["status"].string == "unverified")
         #expect(same(first.value["compiled_project_revision"], revision))
         #expect(first.value["is_current"].foundationValue as? Bool == true)
         #expect(first.value["diagnostics"].array.count == 1)
-        let large = await fixture.call(
-            "render_page",
-            ["document_id": id, "page": .number(2), "ppi": .number(288), "expected_project_revision": revision],
-        )
-        #expect(fixture.host.exports.last == .png(page: 2, ppi: 288))
-        #expect(large.value["width"].int == AgentImage.maximumEdge)
-        #expect(large.value["downscaled"].foundationValue as? Bool == true)
-        let beyond = await fixture.call("render_page", ["document_id": id, "page": .number(3)])
+        let a4 = await render(["page": .number(2), "ppi": .number(288)])
+        #expect(a4.value["ppi_reduced"].foundationValue as? Bool == true)
+        #expect((a4.value["ppi"].foundationValue as? Double ?? 0) > 170)
+        #expect((a4.value["height"].int ?? .max) <= AgentImage.maximumEdge)
+        #expect((a4.value["height"].int ?? 0) > 1990)
+        #expect(a4.value["downscaled"].foundationValue as? Bool == false)
+        let huge = await render(["page": .number(3)])
+        #expect(!huge.isError, "\(huge.value)")
+        let width = huge.value["width"].int ?? .max, height = huge.value["height"].int ?? .max
+        #expect(max(width, height) <= AgentImage.maximumEdge)
+        #expect(Double(width * height) <= AgentPageFit.maximumPixels && width > 1700)
+        #expect(huge.value["ppi_reduced"].foundationValue as? Bool == true)
+        #expect((huge.value["ppi"].foundationValue as? Double ?? .infinity) < 10)
+        // Nothing larger than the final image was ever rasterized.
+        #expect(largestEdge == width)
+        let strip = await render(["page": .number(4)])
+        #expect(strip.isError && strip.images.isEmpty)
+        #expect(strip.value["error"]["code"].string == "page_too_large")
+        #expect(largestEdge <= Int(AgentPageFit.probeEdge))
+        let beyond = await render(["page": .number(5)])
         #expect(beyond.isError && beyond.images.isEmpty)
         #expect(beyond.value["error"]["code"].string == "page_out_of_range")
-        #expect(beyond.value["page_count"].int == 2)
+        #expect(beyond.value["page_count"].int == 4)
+        #expect(fixture.host.exports.count == 1)
+        #expect(AgentPageFit.ppi(requested: 144, width: 595.28, height: 841.89) == 144)
+        #expect(AgentPageFit.ppi(requested: 144, width: 200_000, height: 10) == nil)
         let calls = fixture.host.exports.count
         for invalid: [String: JSONValue] in [["page": .number(0)], ["ppi": .number(500)], ["ppi": .number(1.5)],
                                              ["scale": .number(2)]]

@@ -57,6 +57,44 @@ extension WritingFlowTests {
         #expect(broken.value["engine_message"].string?.contains(workspace.stateDirectory.path) == false)
     }
 
+    @Test func agentRendersHugePagesWithinPixelLimitsWithRealEngine() async throws {
+        let app = try WritingFixture(text: "= Poster fixture\n", startService: false)
+        defer { app.close() }
+        let workspace = app.workspace
+        let document = try await workspace.library.store.create(
+            title: "Poster",
+            text: "#set page(width: 500cm, height: 500cm)\n#set text(size: 400pt)\nPoster\n" +
+                "#page(width: 10000cm, height: 1cm)[Strip]\n",
+        )
+        let tools = AgentToolDispatcher(
+            library: workspace.library.store,
+            history: workspace.history.store,
+            host: workspace,
+        )
+        let access = AgentToolAccess(documentIDs: [document.id], canWrite: false)
+        let id = JSONValue.string(document.id.uuidString)
+        let poster = await tools.call("render_page", arguments: .object([
+            "document_id": id, "ppi": .number(288),
+        ]), access: access)
+        #expect(!poster.isError, "\(poster.value)")
+        let bitmap = try #require(poster.images.first.flatMap { NSBitmapImageRep(data: $0.data) })
+        #expect(max(bitmap.pixelsWide, bitmap.pixelsHigh) <= 2048)
+        #expect(bitmap.pixelsWide * bitmap.pixelsHigh <= 3_145_728)
+        // 500 cm is about 196.85 in, so the image is square and close to the area bound.
+        #expect(bitmap.pixelsWide == bitmap.pixelsHigh && bitmap.pixelsWide > 1700)
+        #expect(poster.value["ppi_reduced"].foundationValue as? Bool == true)
+        #expect(poster.value["requested_ppi"].int == 288)
+        let ppi = try #require(poster.value["ppi"].foundationValue as? Double)
+        #expect(abs(Double(bitmap.pixelsWide) - 196.85 * ppi) <= 1)
+        #expect(poster.value["downscaled"].foundationValue as? Bool == false)
+        let strip = await tools.call("render_page", arguments: .object([
+            "document_id": id, "page": .number(2),
+        ]), access: access)
+        #expect(strip.isError && strip.images.isEmpty)
+        #expect(strip.value["error"]["code"].string == "page_too_large")
+        #expect(strip.value["page_count"].int == 2)
+    }
+
     @Test func agentQueriesMetadataFromTheLiveBufferWithRealEngine() async throws {
         let app = try WritingFixture(text: "= Query fixture\n", startService: false)
         defer { app.close() }

@@ -640,16 +640,32 @@ final class DiskAgentHost: AgentToolHost {
 
     var exports: [AgentEngineExport] = []
     var exportOutput: (AgentEngineExport) -> AgentEngineOutput = { _ in AgentEngineOutput(status: .engineUnavailable) }
-    func agentExport(_ snapshot: AgentProjectSnapshot, entry: String, export: AgentEngineExport) async
-        -> AgentEngineOutput
-    {
+    var engines = 0
+    func agentEngine<T>(
+        _ snapshot: AgentProjectSnapshot,
+        entry: String,
+        _ body: (any AgentEngineSession) async throws -> T,
+    ) async throws -> T {
         await Task.yield()
-        exports.append(export)
-        return exportOutput(export)
+        engines += 1
+        return try await body(FakeEngineSession(host: self))
     }
 
     var editorContext: AgentEditorContext?
     func agentEditorContext(in document: LibraryDocument) -> AgentEditorContext? {
         editorContext
+    }
+}
+
+@MainActor
+private final class FakeEngineSession: AgentEngineSession {
+    let host: DiskAgentHost
+    init(host: DiskAgentHost) {
+        self.host = host
+    }
+
+    func run(_ export: AgentEngineExport) -> AgentEngineOutput {
+        host.exports.append(export)
+        return host.exportOutput(export)
     }
 }

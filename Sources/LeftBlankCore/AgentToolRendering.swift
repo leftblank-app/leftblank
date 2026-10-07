@@ -2,7 +2,7 @@ import Foundation
 
 /// One Tinymist export that a host runs on a fresh engine over a captured project snapshot.
 public enum AgentEngineExport: Sendable, Equatable {
-    case png(page: Int, ppi: Int)
+    case png(page: Int, ppi: Double)
     case query(selector: String, field: String?, one: Bool)
 
     public static let ppiRange = 36 ... 288
@@ -19,11 +19,47 @@ public enum AgentEngineExport: Sendable, Equatable {
     public var options: JSONValue {
         switch self {
         case let .png(page, ppi):
-            .object(["pages": .array([.string(String(page))]), "ppi": .number(Double(ppi))])
+            .object(["pages": .array([.string(String(page))]), "ppi": .number(ppi)])
         case let .query(selector, field, one):
             .object(["format": .string("json"), "selector": .string(selector), "one": .bool(one)]
                 .merging(field.map { ["field": .string($0)] } ?? [:]) { $1 })
         }
+    }
+}
+
+/// A fresh engine over a private copy of one snapshot. Exports on it share one compilation.
+@MainActor
+public protocol AgentEngineSession: AnyObject {
+    func run(_ export: AgentEngineExport) async throws -> AgentEngineOutput
+}
+
+/// Chooses a render resolution before rasterizing, so a huge page cannot exhaust memory.
+enum AgentPageFit {
+    static let maximumEdge = Double(AgentImage.maximumEdge)
+    static let maximumPixels = 3_145_728.0
+    static let minimumPPI = 1.0
+    /// 1e-5 px per pt keeps the first probe under 256 px for pages up to about 9 km.
+    static let firstProbePPI = 72e-5
+    /// Probes this long on their longer edge measure the page within 0.4%.
+    static let preciseProbeEdge = 128.0
+    static let probeEdge = 256.0
+    static let maximumProbes = 5
+
+    /// The page size in pt cannot exceed this, given a probe's pixels. Typst rounds pt × px-per-pt.
+    static func bound(pixels: Int, ppi: Double) -> Double {
+        (Double(pixels) + 0.5) * 72 / ppi * 1.001
+    }
+
+    /// The largest ppi up to `requested`, in 0.01 steps, that keeps both edges and the area in bounds.
+    static func ppi(requested: Double, width: Double, height: Double) -> Double? {
+        let fitted = min(
+            requested,
+            72 * maximumEdge / width,
+            72 * maximumEdge / height,
+            72 * (maximumPixels / (width * height)).squareRoot(),
+        )
+        let rounded = (fitted * 100).rounded(.down) / 100
+        return rounded >= minimumPPI ? rounded : nil
     }
 }
 
@@ -149,17 +185,66 @@ extension AgentToolDispatcher {
         args: AgentArguments,
     ) async throws -> AgentToolResult {
         let page = args.integer("page", default: 1)
-        let ppi = args.integer("ppi", default: AgentEngineExport.defaultPPI)
-        let output = try await export(
-            .png(page: page, ppi: ppi),
+        let requested = Double(args.integer("ppi", default: AgentEngineExport.defaultPPI))
+        var value: [String: JSONValue] = [:]
+        let rendered: (AgentEngineOutput, AgentImage.Prepared, Double)? = try await withEngine(
             snapshot: snapshot,
             document: document,
             revision: revision,
             args: args,
-        )
-        var value = await provenance(document, revision: revision)
+        ) { session in
+            // Measure the page with tiny probes first; each later probe stays under 256 px.
+            var probe = AgentPageFit.firstProbePPI, width = 0.0, height = 0.0
+            for _ in 0 ..< AgentPageFit.maximumProbes {
+                let output = try await session.run(.png(page: page, ppi: probe))
+                guard let image = try pageImage(output, page: page, into: &value) else {
+                    return nil
+                }
+                width = AgentPageFit.bound(pixels: image.width, ppi: probe)
+                height = AgentPageFit.bound(pixels: image.height, ppi: probe)
+                if Double(max(image.width, image.height)) >= AgentPageFit.preciseProbeEdge {
+                    break
+                }
+                probe = 72 * AgentPageFit.probeEdge / max(width, height)
+            }
+            guard let ppi = AgentPageFit.ppi(requested: requested, width: width, height: height) else {
+                value["error"] = AgentToolError(
+                    "page_too_large",
+                    "Even at 1 ppi the page exceeds 2048 px per edge or 3 megapixels.",
+                ).json
+                return nil
+            }
+            let output = try await session.run(.png(page: page, ppi: ppi))
+            return try pageImage(output, page: page, into: &value).map { (output, $0, ppi) }
+        }
+        await value.merge(provenance(document, revision: revision)) { old, _ in old }
+        guard let (output, prepared, ppi) = rendered else {
+            return AgentToolResult(.object(value), isError: true)
+        }
+        value.merge([
+            "page": .number(Double(page)),
+            "ppi": .number(ppi),
+            "requested_ppi": .number(requested),
+            "ppi_reduced": .bool(ppi < requested),
+            "mime_type": .string(prepared.image.mimeType),
+            "bytes": .number(Double(prepared.image.data.count)),
+            "width": .number(Double(prepared.width)),
+            "height": .number(Double(prepared.height)),
+            "downscaled": .bool(prepared.converted),
+            "diagnostics": .array(output.diagnostics),
+        ]) { $1 }
+        return AgentToolResult(.object(value), images: [prepared.image])
+    }
+
+    /// The page's image, or nil after recording why there is none in `value`.
+    private func pageImage(
+        _ output: AgentEngineOutput,
+        page: Int,
+        into value: inout [String: JSONValue],
+    ) throws -> AgentImage.Prepared? {
         guard output.status == .completed else {
-            return engineFailure(output, value: value, code: "render_failed")
+            value.merge(engineFailure(output, code: "render_failed")) { $1 }
+            return nil
         }
         guard let count = output.response["total_pages"].int else {
             throw AgentToolError("render_failed", "The engine returned no page count.")
@@ -170,25 +255,14 @@ extension AgentToolDispatcher {
                 "page_out_of_range",
                 "The document has \(count) page\(count == 1 ? "" : "s").",
             ).json
-            return AgentToolResult(.object(value), isError: true)
+            return nil
         }
         guard let encoded = output.response["items"].array.first(where: { $0["page"].int == page - 1 })?["data"]
             .string, let data = Data(base64Encoded: encoded)
         else {
             throw AgentToolError("render_failed", "The engine returned no image for the page.")
         }
-        let prepared = try AgentImage.prepare(data)
-        value.merge([
-            "page": .number(Double(page)),
-            "ppi": .number(Double(ppi)),
-            "mime_type": .string(prepared.image.mimeType),
-            "bytes": .number(Double(prepared.image.data.count)),
-            "width": .number(Double(prepared.width)),
-            "height": .number(Double(prepared.height)),
-            "downscaled": .bool(prepared.converted),
-            "diagnostics": .array(output.diagnostics),
-        ]) { $1 }
-        return AgentToolResult(.object(value), images: [prepared.image])
+        return try AgentImage.prepare(data)
     }
 
     func queryDocument(
@@ -207,16 +281,15 @@ extension AgentToolDispatcher {
             throw AgentToolError("invalid_params", "field must be a Typst field name.")
         }
         let one = args.bool("one", default: false)
-        let output = try await export(
-            .query(selector: selector, field: field, one: one),
-            snapshot: snapshot,
-            document: document,
-            revision: revision,
-            args: args,
-        )
+        let output = try await withEngine(snapshot: snapshot, document: document, revision: revision, args: args) {
+            try await $0.run(.query(selector: selector, field: field, one: one))
+        }
         var value = await provenance(document, revision: revision)
         guard output.status == .completed else {
-            return engineFailure(output, value: value, code: "query_failed")
+            return AgentToolResult(
+                .object(value.merging(engineFailure(output, code: "query_failed")) { $1 }),
+                isError: true,
+            )
         }
         guard let encoded = output.response["data"].string, let data = Data(base64Encoded: encoded),
               let result = try? JSONDecoder().decode(JSONValue.self, from: data)
@@ -243,13 +316,13 @@ extension AgentToolDispatcher {
         return AgentToolResult(.object(value))
     }
 
-    private func export(
-        _ request: AgentEngineExport,
+    private func withEngine<T>(
         snapshot: AgentProjectSnapshot,
         document: LibraryDocument,
         revision: String,
         args: AgentArguments,
-    ) async throws -> AgentEngineOutput {
+        _ body: (any AgentEngineSession) async throws -> T,
+    ) async throws -> T {
         if let expected = args["expected_project_revision"].string, expected != revision {
             throw AgentToolError("revision_conflict", "Read the current project revision first.")
         }
@@ -259,9 +332,9 @@ extension AgentToolDispatcher {
         guard let host else {
             throw AgentToolError("unavailable", "The application has closed.")
         }
-        let output = try await host.agentExport(snapshot, entry: entry(document), export: request)
+        let result = try await host.agentEngine(snapshot, entry: entry(document), body)
         try Task.checkCancellation()
-        return output
+        return result
     }
 
     /// Which input produced a result. Packages and system fonts are not pinned, as for compile_document.
@@ -275,12 +348,7 @@ extension AgentToolDispatcher {
         ]
     }
 
-    private func engineFailure(
-        _ output: AgentEngineOutput,
-        value: [String: JSONValue],
-        code: String,
-    ) -> AgentToolResult {
-        var value = value
+    private func engineFailure(_ output: AgentEngineOutput, code: String) -> [String: JSONValue] {
         // Tinymist reports a document that does not compile this way for every export.
         let compileFailed = output.message?.contains("document is not available for export") == true
         let issue = switch output.status {
@@ -290,10 +358,11 @@ extension AgentToolDispatcher {
         case .timeout: AgentToolError("timeout", "The engine timed out.")
         case .engineUnavailable, .completed: AgentToolError("engine_unavailable", "The engine could not start.")
         }
-        value["status"] = .string(output.status.rawValue)
-        value["error"] = issue.json
-        value["engine_message"] = output.message.map { .string(AgentTools.excerpt($0, limit: 2000)) } ?? .null
-        value["diagnostics"] = .array(output.diagnostics)
-        return AgentToolResult(.object(value), isError: true)
+        return [
+            "status": .string(output.status.rawValue),
+            "error": issue.json,
+            "engine_message": output.message.map { .string(AgentTools.excerpt($0, limit: 2000)) } ?? .null,
+            "diagnostics": .array(output.diagnostics),
+        ]
     }
 }

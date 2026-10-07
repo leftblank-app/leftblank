@@ -298,7 +298,7 @@ public enum AgentTools {
                     "ppi": integer(
                         AgentEngineExport.ppiRange.lowerBound,
                         AgentEngineExport.ppiRange.upperBound,
-                        "Pixels per inch. Default 144. Images over 2048 px are downscaled.",
+                        "Requested pixels per inch. Default 144. Lowered for pages over 2048 px per edge or 3 MP.",
                     ),
                     "expected_project_revision": expectedProject,
                 ],

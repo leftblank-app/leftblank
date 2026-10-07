@@ -172,41 +172,63 @@ extension Workspace: AgentToolHost {
     }
 
     func agentCompile(_ snapshot: AgentProjectSnapshot, entry: String) async throws -> JSONValue {
-        var successful = false
-        let output = try await runIsolatedEngine(snapshot, entry: entry, command: "tinymist.exportPdf") {
-            response, directory in
-            let pdf = response["path"].string.flatMap { path -> Data? in
+        try await agentEngine(snapshot, entry: entry) { session in
+            guard let session = session as? IsolatedAgentEngine else {
+                throw ServiceError.unavailable
+            }
+            let output = try await session.run(command: "tinymist.exportPdf", options: nil)
+            let diagnostics = JSONValue.array(output.diagnostics)
+            guard output.status == .completed else {
+                return .object(["status": .string(output.status.rawValue), "project_sources_compiled": .bool(false),
+                                "engine_message": output.message.map(JSONValue.string) ?? .null,
+                                "diagnostics": diagnostics])
+            }
+            let pdf = output.response["path"].string.flatMap { path -> Data? in
                 let url = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
-                guard url.path.hasPrefix(directory.path + "/") else {
+                guard url.path.hasPrefix(session.directory.path + "/") else {
                     return nil
                 }
                 return try? Data(contentsOf: url)
             }
-            successful = pdf?.starts(with: Data("%PDF".utf8)) == true
-        }
-        let diagnostics = JSONValue.array(output.diagnostics)
-        guard output.status == .completed else {
-            return .object(["status": .string(output.status.rawValue), "project_sources_compiled": .bool(false),
-                            "engine_message": output.message.map(JSONValue.string) ?? .null,
+            let successful = pdf?.starts(with: Data("%PDF".utf8)) == true
+            // A fresh engine/output directory rules out stale PDFs. Package and system-font
+            // inputs are not yet frozen, so do not claim the stronger design guarantee.
+            return .object(["status": .string(successful ? "unverified" : "failed"),
+                            "project_sources_compiled": .bool(successful),
+                            "verification": .string("project_snapshot"),
+                            "limitation": .string(
+                                "Project files and unsaved text were captured. External packages and system fonts are not pinned yet; strict compilation verification is unavailable.",
+                            ),
                             "diagnostics": diagnostics])
         }
-        // A fresh engine/output directory rules out stale PDFs. Package and system-font
-        // inputs are not yet frozen, so do not claim the stronger design guarantee.
-        return .object(["status": .string(successful ? "unverified" : "failed"),
-                        "project_sources_compiled": .bool(successful),
-                        "verification": .string("project_snapshot"),
-                        "limitation": .string(
-                            "Project files and unsaved text were captured. External packages and system fonts are not pinned yet; strict compilation verification is unavailable.",
-                        ),
-                        "diagnostics": diagnostics])
     }
 
-    func agentExport(
+    /// Copies the snapshot to a private folder and starts a fresh engine, so neither the live engine
+    /// nor an earlier export can affect results. The engine and folder end with the call.
+    func agentEngine<T>(
         _ snapshot: AgentProjectSnapshot,
         entry: String,
-        export: AgentEngineExport,
-    ) async throws -> AgentEngineOutput {
-        try await runIsolatedEngine(snapshot, entry: entry, command: export.command, options: export.options)
+        _ body: (any AgentEngineSession) async throws -> T,
+    ) async throws -> T {
+        let directory = stateDirectory.appendingPathComponent("AgentCompiles/" + UUID().uuidString)
+        let root = directory.appendingPathComponent("Project"), output = directory.appendingPathComponent("Output")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try await Task.detached(priority: .utility) {
+            try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            for (path, data) in snapshot.files {
+                let file = root.appendingPathComponent(path)
+                try FileManager.default.createDirectory(
+                    at: file.deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                )
+                try data.write(to: file, options: .atomic)
+            }
+        }.value
+        try Task.checkCancellation()
+        let session = IsolatedAgentEngine(directory: directory, source: root.appendingPathComponent(entry))
+        defer { session.engine.stop() }
+        await session.start(text: snapshot.texts[entry] ?? "", output: output)
+        return try await body(session)
     }
 
     func agentEditorContext(in document: LibraryDocument) -> AgentEditorContext? {
@@ -243,35 +265,28 @@ extension Workspace: AgentToolHost {
         let glyphs = manager.glyphRange(forBoundingRect: rect, in: container)
         return manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
     }
+}
 
-    /// Copies the snapshot to a private folder and runs one command on a fresh engine, so neither the live
-    /// engine nor an earlier export can affect the result. `inspect` reads written output before cleanup.
-    private func runIsolatedEngine(
-        _ snapshot: AgentProjectSnapshot,
-        entry: String,
-        command: String,
-        options: JSONValue? = nil,
-        inspect: (JSONValue, URL) -> Void = { _, _ in },
-    ) async throws -> AgentEngineOutput {
-        let directory = stateDirectory.appendingPathComponent("AgentCompiles/" + UUID().uuidString)
-        let root = directory.appendingPathComponent("Project"), output = directory.appendingPathComponent("Output")
-        defer { try? FileManager.default.removeItem(at: directory) }
-        try await Task.detached(priority: .utility) {
-            try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-            for (path, data) in snapshot.files {
-                let file = root.appendingPathComponent(path)
-                try FileManager.default.createDirectory(
-                    at: file.deletingLastPathComponent(),
-                    withIntermediateDirectories: true,
-                )
-                try data.write(to: file, options: .atomic)
-            }
-        }.value
-        try Task.checkCancellation()
-        let engine = TinymistClient()
-        defer { engine.stop() }
-        var issues: [String: [JSONValue]] = [:]
-        engine.onNotification = { method, params in
+@MainActor
+private final class IsolatedAgentEngine: AgentEngineSession {
+    let engine = TinymistClient()
+    let directory: URL
+    let source: URL
+    private var root: URL {
+        directory.appendingPathComponent("Project")
+    }
+
+    private var started = false
+    private var issues: [String: [JSONValue]] = [:]
+
+    init(directory: URL, source: URL) {
+        self.directory = directory
+        self.source = source
+    }
+
+    func start(text: String, output: URL) async {
+        let root = root
+        engine.onNotification = { [weak self] method, params in
             guard method == "textDocument/publishDiagnostics", let uri = params["uri"].string,
                   let url = URL(string: uri),
                   url.path.hasPrefix(root.path + "/")
@@ -279,7 +294,7 @@ extension Workspace: AgentToolHost {
                 return
             }
             let path = String(url.path.dropFirst(root.path.count + 1))
-            issues[path] = params["diagnostics"].array.prefix(100).map { item in
+            self?.issues[path] = params["diagnostics"].array.prefix(100).map { item in
                 .object([
                     "path": .string(path),
                     "message": .string(AgentTools.excerpt(item["message"].string ?? "", limit: 2000)),
@@ -290,34 +305,45 @@ extension Workspace: AgentToolHost {
                 ])
             }
         }
-        func finish(
-            _ status: AgentEngineOutput.Status,
-            response: JSONValue = .null,
-            message: String? = nil,
-        ) -> AgentEngineOutput {
-            AgentEngineOutput(
-                status: status,
-                response: response,
-                message: message.map { AgentTools.excerpt(
-                    $0.replacingOccurrences(of: directory.path, with: "<compile>"), limit: 2000,
-                ) },
-                diagnostics: Array(issues.keys.sorted().flatMap { issues[$0] ?? [] }.prefix(100)),
-            )
+        do {
+            try await engine.start(root: root, outputDirectory: output)
+            try engine.open(source, text: text, version: 1)
+            started = true
+        } catch {}
+    }
+
+    func run(_ export: AgentEngineExport) async throws -> AgentEngineOutput {
+        try await run(command: export.command, options: export.options)
+    }
+
+    /// Without options the command writes into the private output folder; with them, data stays in memory.
+    func run(command: String, options: JSONValue?) async throws -> AgentEngineOutput {
+        guard started else {
+            return finish(.engineUnavailable)
         }
-        do { try await engine.start(root: root, outputDirectory: output) }
-        catch { return finish(.engineUnavailable) }
-        let source = root.appendingPathComponent(entry)
         let response: JSONValue
         do {
-            try engine.open(source, text: snapshot.texts[entry] ?? "", version: 1)
-            // Without options the command writes into the private output folder; with them, data stays in memory.
             let arguments: [Any] = options.map { [source.path, $0.foundationValue, ["write": false]] } ?? [source.path]
             response = try await engine.command(command, arguments: arguments)
         } catch ServiceError.timeout { return finish(.timeout) }
         catch let ServiceError.remote(message) { return finish(.failed, message: message) }
         catch { return finish(.engineUnavailable) }
         try Task.checkCancellation()
-        inspect(response, directory)
         return finish(.completed, response: response)
+    }
+
+    private func finish(
+        _ status: AgentEngineOutput.Status,
+        response: JSONValue = .null,
+        message: String? = nil,
+    ) -> AgentEngineOutput {
+        AgentEngineOutput(
+            status: status,
+            response: response,
+            message: message.map { AgentTools.excerpt(
+                $0.replacingOccurrences(of: directory.path, with: "<compile>"), limit: 2000,
+            ) },
+            diagnostics: Array(issues.keys.sorted().flatMap { issues[$0] ?? [] }.prefix(100)),
+        )
     }
 }

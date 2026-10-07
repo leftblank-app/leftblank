@@ -10,9 +10,12 @@ public protocol AgentToolHost: AnyObject {
     func agentFinishMetadataChange(_ document: LibraryDocument?) async
     func agentDiagnostics(in document: LibraryDocument) -> [JSONValue]
     func agentCompile(_ snapshot: AgentProjectSnapshot, entry: String) async throws -> JSONValue
-    /// Runs one export on a fresh engine over a private copy of the snapshot.
-    func agentExport(_ snapshot: AgentProjectSnapshot, entry: String, export: AgentEngineExport) async throws
-        -> AgentEngineOutput
+    /// Runs `body` on a fresh engine over a private copy of the snapshot; both end with the call.
+    func agentEngine<T>(
+        _ snapshot: AgentProjectSnapshot,
+        entry: String,
+        _ body: (any AgentEngineSession) async throws -> T,
+    ) async throws -> T
     /// Nil unless the document is open in this host.
     func agentEditorContext(in document: LibraryDocument) -> AgentEditorContext?
 }
