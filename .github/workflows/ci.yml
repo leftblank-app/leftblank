@@ -173,6 +173,14 @@ jobs:
           cargo +1.92.0 test --locked --manifest-path Engine/SyntaxBridge/Cargo.toml
       - name: Functional integration tests and 80% coverage gate
         run: scripts/test.sh
+      - name: Crash reports
+        if: failure()
+        run: |
+          shopt -s nullglob
+          for report in ~/Library/Logs/DiagnosticReports/*.ips; do
+            echo "== $report"
+            python3 -c 'import json,sys; t=open(sys.argv[1]).read().split("\n",1); d=json.loads(t[1]); th=[x for x in d.get("threads",[]) if x.get("triggered")] or d.get("threads",[])[:1]; imgs=d.get("usedImages",[]); [print(f.get("symbol","?"), "+", f.get("symbolLocation",0), imgs[f["imageIndex"]].get("name","?") if "imageIndex" in f else "") for x in th for f in x.get("frames",[])[:60]]; print(d.get("exception"))' "$report" || head -c 4000 "$report"
+          done
       # Codecov uploads are temporarily disabled while CLI downloads fail TLS handshakes.
       - name: Real book editing and navigation benchmarks
         run: scripts/benchmark-books.sh
