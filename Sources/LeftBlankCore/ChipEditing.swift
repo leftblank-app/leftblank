@@ -119,7 +119,7 @@ public enum ChipEditing {
                 text += "\(name): "
             }
             let value = argument.isString ? Presentation.encodeString(argument.literal) : argument.literal
-            if let name = argument.name, formatter.valueLabels[name] != nil {
+            if let name = argument.name, formatter.labels(callee: previous.callee, parameter: name) != nil {
                 text += value
             } else if argument.isString {
                 placeholders.append(NSRange(location: (text as NSString).length + 1, length: 0))

@@ -15,133 +15,141 @@ public struct StructuredObject: Equatable, Sendable {
     public var caption: String?
     private var options: [String] = []
 
+    private static let names: Set = ["table", "image", "figure", "align"]
+    private static let alignments: Set = ["left", "center", "right"]
+
     public static func at(_ selection: NSRange, in source: String) -> Self? {
-        let scanner = ObjectScanner(source)
-        guard selection.location >= 0, selection.length >= 0, selection.location <= scanner.units.count,
-              selection.length <= scanner.units.count - selection.location
+        let text = source as NSString
+        guard selection.location >= 0, selection.length >= 0, selection.location <= text.length,
+              selection.length <= text.length - selection.location, let nodes = SyntaxTree(source)?.nodes()
         else {
             return nil
         }
-        var found: Self?
-        _ = scanner.scan(from: 0, frames: []) { index in
-            guard let call = scanner.call(at: index + 1), ["table", "image", "figure", "align"].contains(call.name)
+        let syntax = ObjectSyntax(nodes, source: text)
+        // Pre-order, so an enclosing object wins; a nested one is offered when it does not parse.
+        for (index, node) in nodes.enumerated() where node.kind == .hash {
+            guard let call = syntax.embeddedCall(after: index), let name = syntax.callee(call),
+                  names.contains(name)
             else {
-                return nil
+                continue
             }
-            let range = NSRange(location: index, length: call.end - index)
-            // An attached content block is one more argument. Keep such calls in source mode.
-            if call.end == scanner.units.count || scanner.units[call.end] != 91,
-               selection.location >= index, NSMaxRange(selection) <= call.end,
-               let object = parse(scanner.text(range), range: range)
+            let range = NSRange(
+                location: node.range.location,
+                length: NSMaxRange(nodes[call].range) - node.range.location,
+            )
+            if selection.location >= range.location, NSMaxRange(selection) <= NSMaxRange(range),
+               let object = parse(text.substring(with: range), range: range)
             {
-                found = object
-                return scanner.units.count
+                return object
             }
-            return call.end
         }
-        return found
+        return nil
     }
 
+    /// Parses `original`, which must be exactly one embedded `#call(…)`. An attached
+    /// content block is one more argument, so such calls stay in source mode.
     private static func parse(_ original: String, range: NSRange) -> Self? {
-        // Comments/raw blocks have distinct lexical rules. Keep them entirely in source mode.
-        guard !original.contains("//"), !original.contains("/*"), !original.contains("`") else {
+        guard let nodes = SyntaxTree(original)?.nodes(), let root = nodes.first, !root.isErroneous else {
             return nil
         }
-        let scanner = ObjectScanner(String(original.dropFirst()))
-        guard let call = scanner.call(at: 0), call.end == scanner.units.count else {
+        let syntax = ObjectSyntax(nodes, source: original as NSString)
+        guard syntax.tree.children[0].count == 2, let call = syntax.embeddedCall(after: 1),
+              nodes[1].range.location == 0,
+              NSMaxRange(nodes[call].range) == root.range.length, let name = syntax.callee(call),
+              let args = syntax.arguments(call)
+        else {
             return nil
         }
-        if call.name == "table" {
-            var result = Self(kind: .table, range: range, original: original)
-            var columns: Int?, cells: [String] = [], names = Set<String>()
-            for arg in call.args {
-                if let content = ObjectScanner.content(arg) {
-                    cells.append(content)
-                    continue
-                }
-                let nested = ObjectScanner(arg)
-                if let header = nested.call(at: 0), header.name == "table.header", header.end == nested.units.count {
-                    guard !result.hasHeader, cells.isEmpty else {
-                        return nil
-                    }
-                    let contents = header.args.compactMap(ObjectScanner.content)
-                    guard contents.count == header.args.count else {
-                        return nil
-                    }
-                    result.hasHeader = true
-                    cells += contents
-                    // Header width must match the explicit column count.
-                    guard let columns, contents.count == columns else {
-                        return nil
-                    }
-                    continue
-                }
-                guard let (key, value) = ObjectScanner.named(arg), names.insert(key).inserted else {
-                    return nil
-                }
-                switch key {
-                case "columns":
-                    guard let count = Int(value), (1 ... 20).contains(count) else {
-                        return nil
-                    }
-                    columns = count
-                case "align":
-                    guard ["left", "center", "right"].contains(value) else {
-                        return nil
-                    }
-                    result.alignment = value
-                case "inset", "gutter", "row-gutter", "column-gutter", "stroke", "fill":
-                    // These options stay byte-for-byte intact; they never depend on row/column indices.
-                    guard ObjectScanner.scalar(value) || ["none", "auto"].contains(value) else {
-                        return nil
-                    }
-                    result.options.append(arg)
-                default: return nil
-                }
-            }
-            guard let columns, !cells.isEmpty, cells.count.isMultiple(of: columns),
-                  cells.count / columns <= 100
-            else {
-                return nil
-            }
-            result.rows = stride(from: 0, to: cells.count, by: columns).map { Array(cells[$0 ..< $0 + columns]) }
-            return result
+        if name == "table" {
+            return table(args, syntax: syntax, range: range, original: original)
         }
         var result = Self(kind: .image, range: range, original: original)
-        var imageCall = call
-        if imageCall.name == "align" {
-            guard imageCall.args.count == 2, ["left", "center", "right"].contains(imageCall.args[0]),
-                  let nested = ObjectScanner.exactCall(imageCall.args[1])
+        var imageCall = call, imageArgs = args
+        if syntax.callee(imageCall) == "align" {
+            guard imageArgs.count == 2, nodes[imageArgs[0]].kind == .ident,
+                  alignments.contains(syntax.text(imageArgs[0])), let nested = syntax.arguments(imageArgs[1])
             else {
                 return nil
             }
-            result.alignment = imageCall.args[0]
-            imageCall = nested
+            result.alignment = syntax.text(imageArgs[0])
+            (imageCall, imageArgs) = (imageArgs[1], nested)
         }
-        if imageCall.name == "figure" {
-            guard imageCall.args.count == 2, let nested = ObjectScanner.exactCall(imageCall.args[0]),
-                  let (key, value) = ObjectScanner.named(imageCall.args[1]), key == "caption",
-                  let caption = ObjectScanner.string(value)
+        if syntax.callee(imageCall) == "figure" {
+            guard imageArgs.count == 2, let nested = syntax.arguments(imageArgs[0]),
+                  let (key, value) = syntax.named(imageArgs[1]), key == "caption", nodes[value].kind == .str,
+                  let caption = Presentation.decodeString(syntax.text(value))
             else {
                 return nil
             }
             result.caption = caption
-            imageCall = nested
+            (imageCall, imageArgs) = (imageArgs[0], nested)
         }
-        guard imageCall.name == "image", (1 ... 2).contains(imageCall.args.count),
-              let path = imageCall.args.first.flatMap(ObjectScanner.string)
+        guard syntax.callee(imageCall) == "image", (1 ... 2).contains(imageArgs.count),
+              nodes[imageArgs[0]].kind == .str, let path = Presentation.decodeString(syntax.text(imageArgs[0]))
         else {
             return nil
         }
         result.path = path
-        if imageCall.args.count == 2 {
-            guard let (key, value) = ObjectScanner.named(imageCall.args[1]), key == "width",
-                  ObjectScanner.scalar(value)
+        if imageArgs.count == 2 {
+            guard let (key, value) = syntax.named(imageArgs[1]), key == "width", nodes[value].kind == .numeric,
+                  scalar(syntax.text(value))
             else {
                 return nil
             }
-            result.width = value
+            result.width = syntax.text(value)
         }
+        return result
+    }
+
+    private static func table(_ args: [Int], syntax: ObjectSyntax, range: NSRange, original: String) -> Self? {
+        var result = Self(kind: .table, range: range, original: original)
+        var columns: Int?, cells: [String] = [], names = Set<String>()
+        for arg in args {
+            if let content = syntax.content(arg) {
+                cells.append(content)
+                continue
+            }
+            if syntax.callee(arg) == "table.header" {
+                guard !result.hasHeader, cells.isEmpty, let header = syntax.arguments(arg) else {
+                    return nil
+                }
+                let contents = header.compactMap(syntax.content)
+                // Header width must match the explicit column count.
+                guard contents.count == header.count, let columns, contents.count == columns else {
+                    return nil
+                }
+                result.hasHeader = true
+                cells += contents
+                continue
+            }
+            guard let (key, value) = syntax.named(arg), names.insert(key).inserted else {
+                return nil
+            }
+            let kind = syntax.tree.nodes[value].kind, text = syntax.text(value)
+            switch key {
+            case "columns":
+                guard kind == .int, let count = Int(text), (1 ... 20).contains(count) else {
+                    return nil
+                }
+                columns = count
+            case "align":
+                guard kind == .ident, alignments.contains(text) else {
+                    return nil
+                }
+                result.alignment = text
+            case "inset", "gutter", "row-gutter", "column-gutter", "stroke", "fill":
+                // These options stay byte-for-byte intact; they never depend on row/column indices.
+                guard kind == .numeric && scalar(text) || kind == .noneKeyword || kind == .autoKeyword else {
+                    return nil
+                }
+                result.options.append(syntax.text(arg))
+            default: return nil
+            }
+        }
+        guard let columns, !cells.isEmpty, cells.count.isMultiple(of: columns), cells.count / columns <= 100 else {
+            return nil
+        }
+        result.rows = stride(from: 0, to: cells.count, by: columns).map { Array(cells[$0 ..< $0 + columns]) }
         return result
     }
 
@@ -158,9 +166,8 @@ public struct StructuredObject: Equatable, Sendable {
         switch kind {
         case .table:
             guard let columns = rows.first?.count, (1 ... 20).contains(columns), (1 ... 100).contains(rows.count),
-                  rows.allSatisfy({ $0.count == columns }), !hasHeader || rows.count >= 1,
-                  alignment.isEmpty || ["left", "center", "right"].contains(alignment),
-                  rows.joined().allSatisfy({ ObjectScanner.content("[" + $0 + "]") == $0 })
+                  rows.allSatisfy({ $0.count == columns }),
+                  alignment.isEmpty || Self.alignments.contains(alignment)
             else {
                 throw ObjectEditError.invalid
             }
@@ -174,19 +181,26 @@ public struct StructuredObject: Equatable, Sendable {
             }
             replacement = "#table(\n  " + args.joined(separator: ",\n  ") + ",\n)"
         case .image:
-            guard !path.isEmpty, width.isEmpty || ObjectScanner.scalar(width),
-                  alignment.isEmpty || ["left", "center", "right"].contains(alignment)
+            guard !path.isEmpty, width.isEmpty || Self.scalar(width),
+                  alignment.isEmpty || Self.alignments.contains(alignment)
             else {
                 throw ObjectEditError.invalid
             }
-            var call = "image(" + ObjectScanner.quote(path) + (width.isEmpty ? "" : ", width: " + width) + ")"
+            var call = "image(" + Presentation.encodeString(path) + (width.isEmpty ? "" : ", width: " + width) + ")"
             if let caption {
-                call = "figure(\n  \(call),\n  caption: \(ObjectScanner.quote(caption)),\n)"
+                call = "figure(\n  \(call),\n  caption: \(Presentation.encodeString(caption)),\n)"
             }
             if !alignment.isEmpty {
                 call = "align(\(alignment), \(call))"
             }
             replacement = "#" + call
+        }
+        // Each cell must stay one balanced content block: the result reads back as this object.
+        guard let written = Self.parse(replacement, range: range),
+              (written.kind, written.rows, written.hasHeader, written.alignment) == (kind, rows, hasHeader, alignment),
+              (written.path, written.width, written.caption, written.options) == (path, width, caption, options)
+        else {
+            throw ObjectEditError.invalid
         }
         return TextReplacement(range: range, text: replacement)
     }
@@ -213,6 +227,11 @@ public struct StructuredObject: Equatable, Sendable {
             }
         } }
     }
+
+    /// A plain length such as `80%` or `2.5em`.
+    private static func scalar(_ text: String) -> Bool {
+        text.range(of: #"^[0-9]+(?:\.[0-9]+)?(?:%|pt|mm|cm|in|em)$"#, options: .regularExpression) != nil
+    }
 }
 
 public enum ObjectEditError: LocalizedError {
@@ -226,305 +245,112 @@ public enum ObjectEditError: LocalizedError {
     }
 }
 
-/// Mode-aware Typst source scanning shared by object editing and preview navigation.
-struct ObjectScanner {
-    struct Call { let name: String
-        let args: [String]
-        let end: Int
+/// Call and argument structure of literal objects, read from the typst-syntax tree.
+private struct ObjectSyntax {
+    /// Code that runs inside a cell. Such cells are generated, so they stay in source mode.
+    static let statements: Set<SyntaxKind> = [
+        .letBinding, .setRule, .showRule, .moduleImport, .moduleInclude, .conditional, .whileLoop, .forLoop,
+        .contextual, .funcReturn, .loopBreak, .loopContinue, .destructAssignment,
+    ]
+
+    let tree: Presentation.Tree
+    let source: NSString
+
+    init(_ nodes: [SyntaxNode], source: NSString) {
+        tree = Presentation.Tree(nodes)
+        self.source = source
     }
 
-    enum Mode { case markup, code, math }
-    struct Frame { let closer: UInt16
-        let mode: Mode
+    func text(_ index: Int) -> String {
+        source.substring(with: tree.nodes[index].range)
     }
 
-    let units: [UInt16]
-    init(_ text: String) {
-        units = Array(text.utf16)
-    }
-
-    func text(_ range: NSRange)
-        -> String
-    {
-        String(decoding: units[range.location ..< NSMaxRange(range)], as: UTF16.self)
-    }
-
-    /// Escapes, raw text, comments, and (outside markup) strings, which hide every delimiter.
-    func ignored(at index: Int, mode: Mode) -> Int? {
-        if units[index] == 92 {
-            return min(index + 2, units.count)
-        }
-        if units[index] == 34, mode != .markup {
-            var end = index + 1
-            while end < units.count {
-                if units[end] == 92 {
-                    end += 2
-                    continue
-                }
-                if units[end] == 34 {
-                    return end + 1
-                }
-                end += 1
-            }
-            return units.count
-        }
-        if units[index] == 96 {
-            var start = index
-            while start < units.count, units[start] == 96 {
-                start += 1
-            }
-            let count = start - index
-            var end = start
-            while end < units.count {
-                if end + count <= units.count,
-                   units[end ..< end + count].allSatisfy({ $0 == 96 })
-                {
-                    return end + count
-                }
-                end += 1
-            }
-            return units.count
-        }
-        if index + 1 < units.count, units[index] == 47 {
-            if units[index + 1] == 47 {
-                return units[index...].firstIndex(of: 10) ?? units.count
-            }
-            if units[index + 1] == 42 {
-                var end = index + 2, depth = 1
-                while end + 1 < units.count {
-                    if units[end] == 47, units[end + 1] == 42 {
-                        depth += 1
-                        end += 2
-                    } else if units[end] == 42, units[end + 1] == 47 {
-                        depth -= 1
-                        end += 2
-                        if depth == 0 {
-                            return end
-                        }
-                    } else {
-                        end += 1
-                    }
-                }
-                return units.count
-            }
-        }
-        return nil
-    }
-
-    func balanced(at start: Int) -> Int? {
-        guard let frame = Self.frame(units[start], in: .code) else {
-            return nil
-        }
-        return scan(from: start + 1, frames: [frame])
-    }
-
-    /// Walks the source with each open delimiter's lexical mode: `"` starts a string only in code
-    /// and math, and `#` starts embedded code in markup and math. With open `frames`, returns the
-    /// index after the outermost one closes, or nil for unbalanced or unsupported input. Without
-    /// frames it leniently scans a whole document and offers each embedded `#` to `visit`, which
-    /// may return the index to continue from.
-    /// A `lenient` scan with open frames also returns where the outermost one closes, but accepts
-    /// statements and stray closers as a whole-document scan does. `code` sees each code-mode index.
-    func scan(
-        from start: Int,
-        frames initial: [Frame],
-        lenient: Bool = false,
-        visit: (Int) -> Int? = { _ in nil },
-        code: (Int) -> Void = { _ in },
-    ) -> Int? {
-        let strict = !initial.isEmpty && !lenient
-        var frames = initial, index = start
-        while index < units.count {
-            let mode = frames.last?.mode ?? .markup, unit = units[index]
-            if let end = ignored(at: index, mode: mode) {
-                index = end
-                continue
-            }
-            if unit == frames.last?.closer || unit == 59 && frames.last?.closer == 10 {
-                frames.removeLast()
-                index += 1
-                if !initial.isEmpty, frames.isEmpty {
-                    return index
-                }
-                continue
-            }
-            if mode == .code {
-                code(index)
-            }
-            if mode != .code, unit == 35 {
-                if let end = visit(index) {
-                    index = end
-                    continue
-                }
-                guard let end = embedded(at: index + 1, frames: &frames, strict: strict) else {
-                    return nil
-                }
-                index = end
-                continue
-            }
-            if let frame = Self.frame(unit, in: mode) {
-                frames.append(frame)
-            } else if [41, 93, 125].contains(unit) {
-                guard !strict else {
-                    return nil
-                }
-                // Recover from prose such as "1)" by closing back to the matching delimiter.
-                if let match = frames.lastIndex(where: { $0.closer == unit }) {
-                    frames.removeSubrange(match...)
-                    if !initial.isEmpty, frames.isEmpty {
-                        return index + 1
-                    }
-                }
-            }
-            index += 1
-        }
-        return initial.isEmpty ? units.count : nil
-    }
-
-    /// Consumes the start of the code after a markup `#`: a string, an identifier chain, and an
-    /// attached delimiter. Statements such as `#let` run to the end of the line; inside content
-    /// they stay in source mode.
-    private func embedded(at start: Int, frames: inout [Frame], strict: Bool) -> Int? {
-        guard start < units.count else {
-            return start
-        }
-        if units[start] == 34 {
-            return ignored(at: start, mode: .code)
-        }
-        var index = start
-        while index < units.count, (48 ... 57).contains(units[index]) || (65 ... 90).contains(units[index])
-            || (97 ... 122).contains(units[index]) || [45, 46, 95].contains(units[index])
-        {
-            index += 1
-        }
-        let name = text(NSRange(location: start, length: index - start))
-        if ["let", "set", "show", "import", "include", "if", "for", "while", "return", "context"].contains(name) {
-            guard !strict else {
-                return nil
-            }
-            frames.append(Frame(closer: 10, mode: .code))
-            return index
-        }
-        if index < units.count, [40, 91, 123].contains(units[index]), let frame = Self.frame(units[index], in: .code) {
-            frames.append(frame)
-            return index + 1
-        }
-        return index
-    }
-
-    /// Parentheses and braces keep the surrounding mode; brackets hold markup and `$` math.
-    static func frame(_ unit: UInt16, in mode: Mode) -> Frame? {
-        switch unit {
-        case 40: Frame(closer: 41, mode: mode)
-        case 91: Frame(closer: 93, mode: .markup)
-        case 123: Frame(closer: 125, mode: mode)
-        case 36: Frame(closer: 36, mode: .math)
-        default: nil
-        }
-    }
-
-    func call(at start: Int) -> Call? {
-        var index = start
-        while index < units.count,
-              (97 ... 122).contains(units[index]) || units[index] == 46 || units[index] == 45
-        {
-            index += 1
-        }
-        guard index > start, index < units.count, units[index] == 40,
-              let (ranges, end) = arguments(at: index), ranges.allSatisfy({ $0.length > 0 })
+    /// The call that a markup `#` at `hash` embeds.
+    func embeddedCall(after hash: Int) -> Int? {
+        let nodes = tree.nodes, call = hash + 1
+        guard nodes[hash].kind == .hash, call < nodes.count, nodes[call].kind == .funcCall,
+              nodes[call].parent == nodes[hash].parent, nodes[call].range.location == NSMaxRange(nodes[hash].range)
         else {
-            return nil
-        }
-        return Call(name: text(NSRange(location: start, length: index - start)), args: ranges.map(text), end: end)
-    }
-
-    /// Trimmed ranges of the comma-separated arguments in the parentheses at `open`, and the
-    /// index after them. A trailing comma adds no argument; an empty middle one has length 0.
-    func arguments(at open: Int) -> ([NSRange], Int)? {
-        guard units[open] == 40, let end = balanced(at: open) else {
-            return nil
-        }
-        var ranges: [NSRange] = [], from = open + 1, index = open + 1
-        while index < end - 1 {
-            if let ignored = ignored(at: index, mode: .code) {
-                index = ignored
-                continue
-            }
-            if [36, 40, 91, 123].contains(units[index]), let nested = balanced(at: index) {
-                index = nested
-                continue
-            }
-            if units[index] == 44 {
-                ranges.append(trimmed(from, index))
-                from = index + 1
-            }
-            index += 1
-        }
-        let tail = trimmed(from, end - 1)
-        if tail.length > 0 {
-            ranges.append(tail)
-        }
-        return (ranges, end)
-    }
-
-    func trimmed(_ start: Int, _ end: Int) -> NSRange {
-        var start = start, end = end
-        while start < end, Self.space(units[start]) {
-            start += 1
-        }
-        while end > start, Self.space(units[end - 1]) {
-            end -= 1
-        }
-        return NSRange(location: start, length: end - start)
-    }
-
-    static func space(_ unit: UInt16) -> Bool {
-        [9, 10, 13, 32].contains(unit)
-    }
-
-    static func exactCall(_ text: String) -> Call? {
-        let scanner = Self(text)
-        guard let call = scanner.call(at: 0), call.end == scanner.units.count else {
             return nil
         }
         return call
     }
 
-    static func content(_ text: String) -> String? {
-        let scanner = Self(text)
-        guard scanner.units.first == 91, scanner.balanced(at: 0) == scanner.units.count else {
+    /// The callee of a call: `name`, or `module.name` such as `table.header`.
+    func callee(_ call: Int) -> String? {
+        guard tree.nodes[call].kind == .funcCall, let callee = tree.children[call].first else {
             return nil
         }
-        return String(text.dropFirst().dropLast())
-    }
-
-    static func named(_ text: String) -> (String, String)? {
-        guard let colon = text.firstIndex(of: ":") else {
-            return nil
+        let parts = tree.children[callee].map { tree.nodes[$0].kind }
+        switch tree.nodes[callee].kind {
+        case .ident: return text(callee)
+        case .fieldAccess where parts == [.ident, .dot, .ident]: return text(callee)
+        default: return nil
         }
-        return (
-            String(text[..<colon]).trimmingCharacters(in: .whitespacesAndNewlines),
-            String(text[text.index(after: colon)...]).trimmingCharacters(in: .whitespacesAndNewlines),
-        )
     }
 
-    static func scalar(_ text: String) -> Bool {
-        text.range(of: #"^[0-9]+(?:\.[0-9]+)?(?:%|pt|mm|cm|in|em)$"#, options: .regularExpression) != nil
-    }
-
-    static func string(_ text: String) -> String? {
-        // JSON shares this conservative quoted-string subset with Typst.
-        guard text.first == "\"", let data = text.data(using: .utf8),
-              let value = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) as? String
+    /// The arguments inside the parentheses of `call`. Nil for a call with an attached
+    /// content block, a comment or a spread, which a rewrite could not keep.
+    func arguments(_ call: Int) -> [Int]? {
+        guard callee(call) != nil, let args = tree.children[call].last, tree.nodes[args].kind == .args,
+              tree.children[call].count == 2
         else {
             return nil
         }
-        return value
+        let parts = tree.children[args]
+        guard parts.count >= 2, let first = parts.first, let last = parts.last, tree.nodes[first].kind == .leftParen,
+              tree.nodes[last].kind == .rightParen
+        else {
+            return nil
+        }
+        var result: [Int] = [], separated = true
+        for part in parts.dropFirst().dropLast() {
+            switch tree.nodes[part].kind {
+            case .comma:
+                guard !separated else {
+                    return nil
+                }
+                separated = true
+            case .lineComment, .blockComment, .spread, .error:
+                return nil
+            default:
+                guard separated else {
+                    return nil
+                }
+                result.append(part)
+                separated = false
+            }
+        }
+        return result
     }
 
-    static func quote(_ text: String) -> String {
-        "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
-            .replacingOccurrences(of: "\t", with: "\\t") + "\""
+    /// `key: value`, with the value's index.
+    func named(_ index: Int) -> (String, Int)? {
+        let parts = tree.children[index]
+        guard tree.nodes[index].kind == .named, parts.count == 3, tree.nodes[parts[0]].kind == .ident,
+              tree.nodes[parts[1]].kind == .colon
+        else {
+            return nil
+        }
+        return (text(parts[0]), parts[2])
+    }
+
+    /// The source between the brackets of a literal content block.
+    func content(_ index: Int) -> String? {
+        let nodes = tree.nodes, node = nodes[index]
+        guard node.kind == .contentBlock, !node.isErroneous, node.range.length >= 2,
+              tree.children[index].first.map({ nodes[$0].kind }) == .leftBracket,
+              tree.children[index].last.map({ nodes[$0].kind }) == .rightBracket
+        else {
+            return nil
+        }
+        guard !runs(index) else {
+            return nil
+        }
+        return source.substring(with: NSRange(location: node.range.location + 1, length: node.range.length - 2))
+    }
+
+    private func runs(_ index: Int) -> Bool {
+        Self.statements.contains(tree.nodes[index].kind) || tree.children[index].contains(where: runs)
     }
 }

@@ -22,6 +22,6 @@ GitHub Actions builds on macOS arm64, runs functional tests and coverage, and up
 
 ## Scope
 
-This iteration did not convert Typst functions or package templates into visual widgets. The approved [visual editing plan](visual-editing.md) supersedes that boundary: calls whose arguments are all literals, to functions with a visible `#let` signature, may render as chips with a generated form; content-bearing calls, expressions, errors and templates stay source. Equations and diagrams appear in the real preview until engine-rendered fragments exist. Future embedded previews must retain document context and source mapping. This iteration does not change exported colors or introduce system-wide key recording.
+This iteration did not convert Typst functions or package templates into visual widgets. [Visual editing](visual-editing.md) supersedes that boundary: calls whose arguments are all literals, to functions with a visible `#let` signature, render as chips with a generated form; content-bearing calls, expressions, errors and templates stay source. Inline equations are typeset by the engine in the editor; diagrams appear in the real preview. Future embedded previews must retain document context and source mapping. This iteration does not change exported colors or introduce system-wide key recording.
 
 References: [Tinymist preview configuration](https://myriad-dreamin.github.io/tinymist/config/vscode.html), [Typst packages](https://github.com/typst/packages), [Typst scripting and packages](https://typst.app/docs/reference/scripting/).

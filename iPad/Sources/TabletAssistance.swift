@@ -45,6 +45,8 @@ extension TabletWorkspace {
         guard let url = sourceURL, serviceReady, !busy, editor?.markedTextRange == nil else {
             return nil
         }
+        // Edits reach Tinymist coalesced; a request must see the current text.
+        try? flushChanges()
         return .init(source: text, url: url, version: version, generation: generation, selection: selection)
     }
 

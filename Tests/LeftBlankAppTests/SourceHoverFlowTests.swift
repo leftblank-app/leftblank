@@ -128,6 +128,9 @@ extension WritingFlowTests {
         let previousLanguage = L10n.language
         defer { L10n.setLanguage(previousLanguage) }
         L10n.setLanguage(.simplifiedChinese)
+        // With literal arguments the call is a chip; hover its source.
+        editor.setSelectedRange(NSRange(location: (source as NSString).range(of: "#greet").location + 3, length: 0))
+        await app.settle(editor)
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             app.window.appearance = NSAppearance(named: appearance)
             await app.layout()
@@ -186,7 +189,7 @@ extension WritingFixture {
         let range = (editor.string as NSString).range(of: needle)
         try #require(range.location != NSNotFound)
         let offset = range.location + delta
-        editor.scrollRangeToVisible(NSRange(location: offset, length: 1))
+        editor.reveal(NSRange(location: offset, length: 1))
         await layout()
         editor.prepareForPointerInteraction()
         let rect = editor.firstRect(forCharacterRange: NSRange(location: offset, length: 1), actualRange: nil)

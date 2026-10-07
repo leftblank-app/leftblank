@@ -151,14 +151,13 @@ extension WritingFlowTests {
         let app = try WritingFixture(text: original, startService: false)
         defer { app.close() }
         let editor = try #require(app.workspace.editor)
-        let storage = try #require(editor.textStorage)
         for offset in [0, 5, 12, original.utf16.count, 0] {
             editor.setSelectedRange(NSRange(location: offset, length: 0))
-            editor.highlight()
+            await app.settle(editor)
             #expect(app.workspace.position == TextPosition(offset: editor.selectedRange().location, in: original))
             #expect(app.workspace.wordCount == original.filter { !$0.isWhitespace }.count)
-            let marker = try #require(storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
-            #expect((marker.pointSize > 1) == (offset < 8))
+            // The heading marker shows only while the caret is in the heading.
+            #expect((editor.displayedCharacter(at: 0) == "=") == (offset < 8))
         }
         editor.insertSnippet(Snippet(text: "新行😀\n"), replacing: NSRange(location: 0, length: 0))
         #expect(app.workspace.wordCount == editor.string.filter { !$0.isWhitespace }.count)

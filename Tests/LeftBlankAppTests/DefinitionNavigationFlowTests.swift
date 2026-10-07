@@ -133,7 +133,7 @@ extension WritingFixture {
         let range = (editor.string as NSString).range(of: needle)
         try #require(range.location != NSNotFound)
         let offset = range.location + 1
-        editor.scrollRangeToVisible(NSRange(location: offset, length: 1))
+        editor.reveal(NSRange(location: offset, length: 1))
         editor.prepareForPointerInteraction()
         let rect = editor.firstRect(forCharacterRange: NSRange(location: offset, length: 1), actualRange: nil)
         let point = window.convertFromScreen(NSRect(x: rect.minX + 1, y: rect.midY, width: 0, height: 0)).origin

@@ -169,3 +169,11 @@ custom_rules:
       - keyword
     message: "Use PhosphorIcon (macOS) or TabletIcon (iPad) with bundled Phosphor Regular assets instead of SF Symbols."
     severity: error
+  text_kit_1_layout_manager:
+    name: "TextKit 1 layout manager"
+    included: '(^|/)(Sources|iPad/Sources|Tests|iPad/Tests)/.*\.swift$'
+    regex: '\blayoutManager\b'
+    match_kinds:
+      - identifier
+    message: "One layoutManager access permanently switches a TextKit 2 view to TextKit 1, which disables the visual layer."
+    severity: error

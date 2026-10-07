@@ -11,24 +11,12 @@ struct ManuscriptView: NSViewRepresentable {
         scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
         scroll.backgroundColor = Theme.nativeEditor
-        // Explicit TextKit 1: native selection/IME plus NSLayoutManager's
-        // drawing-only syntax attributes, with no implicit engine fallback.
-        let storage = NSTextStorage()
-        let manager = NSLayoutManager()
-        // Keep TextKit's default contiguous geometry. With styled paragraphs,
-        // noncontiguous layout can shift an already drawn line during a hit test
-        // after a distant jump (covered by the real-book benchmark).
-        manager.allowsNonContiguousLayout = false
-        let container = NSTextContainer(size: NSSize(width: scroll.contentSize.width, height: .greatestFiniteMagnitude))
-        storage.addLayoutManager(manager)
-        manager.addTextContainer(container)
-        let editor = ManuscriptTextView(
-            frame: NSRect(origin: .zero, size: scroll.contentSize),
-            textContainer: container,
-        )
+        let editor = ManuscriptTextView.make(frame: NSRect(origin: .zero, size: scroll.contentSize))
         editor.workspace = workspace
+        // Equations typeset in their own Tinymist helper, never the manuscript's.
+        editor.session?.mathRenderer = TinymistMathTypesetter.renderer(stateDirectory: workspace.stateDirectory)
         editor.delegate = context.coordinator
-        storage.delegate = context.coordinator
+        editor.textStorage?.delegate = context.coordinator
         editor.isRichText = false
         editor.registerForDraggedTypes(ResourcePasteboard.types)
         editor.isEditable = workspace.editorIsEditable
@@ -76,7 +64,7 @@ struct ManuscriptView: NSViewRepresentable {
                 selection: workspace.selection,
             )
         }
-        if editor.appliedFontSize != workspace.fontSize {
+        if editor.appliedFontSize != workspace.fontSize || editor.session?.isEnabled != workspace.styledSource {
             editor.highlight()
         }
     }
@@ -97,7 +85,6 @@ struct ManuscriptView: NSViewRepresentable {
             }
             workspace.edited(editor.string, change: editor.takeCharacterEdit())
             editor.workspaceRevision = workspace.revision
-            editor.scheduleHighlight()
             editor.scheduleTypingAssistance()
         }
 
@@ -118,7 +105,7 @@ struct ManuscriptView: NSViewRepresentable {
                 return
             }
             workspace.selection = editor.selectedRange()
-            editor.scheduleHighlight()
+            editor.selectionChanged()
             editor.scheduleTypingAssistance()
         }
     }
@@ -210,7 +197,6 @@ final class ManuscriptTextView: NSTextView {
     lazy var sourceHover = SourceHoverController(editor: self)
     private var sourceTrackingArea: NSTrackingArea?
     private var selectingWithMouse = false
-    private var highlightTask: Task<Void, Never>?
     private var placeholders: [NSRange] = []
     private var placeholderIndex = 0
     var typingTask: Task<Void, Never>?
@@ -220,10 +206,11 @@ final class ManuscriptTextView: NSTextView {
     var typingSignature: LanguageSignature?
     var typingSource = ""
     var typingSelection = NSRange(location: 0, length: 0)
-    private var highlighting = false
     private(set) var appliedFontSize: CGFloat = 0
-    private var styler = ManuscriptStyler()
-    private let readingAnalysis = ReadingAnalysis()
+    private var appliedSyntaxRevision = -1
+    /// The visual layer: concealment, styles, chips, images and equations.
+    var session: VisualEditorSession?
+    var chipPopover: NSPopover?
     private weak var observedUndoManager: UndoManager?
     var workspaceRevision = -1
     private var loading = false
@@ -232,6 +219,8 @@ final class ManuscriptTextView: NSTextView {
 
     private var viewportTask: Task<Void, Never>?
     private var hoverViewportBounds: NSRect?
+    /// Whether AppKit switched this view to TextKit 1. Tests require false.
+    var switchedToTextKit1 = false
 
     func observeViewport(_ clip: NSClipView) {
         hoverViewportBounds = clip.bounds
@@ -271,14 +260,9 @@ final class ManuscriptTextView: NSTextView {
     }
 
     func updateOutlineForViewport() {
-        guard !loading, let workspace, !workspace.outline.isEmpty,
-              let manager = layoutManager, let container = textContainer
-        else {
+        guard !loading, let workspace, !workspace.outline.isEmpty, let characters = visibleCharacterRange() else {
             return
         }
-        let rect = visibleRect.offsetBy(dx: -textContainerOrigin.x, dy: -textContainerOrigin.y)
-        let glyphs = manager.glyphRange(forBoundingRect: rect, in: container)
-        let characters = manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
         let caret = selectedRange().location
         // Keep the editing section while the caret is visible. Once scrolling
         // carries it off screen, follow the first visible text instead.
@@ -289,6 +273,7 @@ final class ManuscriptTextView: NSTextView {
         guard !loading else {
             return
         }
+        session?.textDidChange(edited: range, delta: delta)
         characterEditCount += 1
         guard characterEditCount == 1, range.length - delta >= 0,
               NSMaxRange(range) <= storage.length
@@ -359,7 +344,7 @@ final class ManuscriptTextView: NSTextView {
         }
         workspaceRevision = workspace?.revision ?? -1
         workspace?.selection = selectedRange()
-        scheduleHighlight()
+        selectionChanged()
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -416,16 +401,6 @@ final class ManuscriptTextView: NSTextView {
         }
     }
 
-    /// Attribute-only reading styles can invalidate glyph geometry between
-    /// events. Resolve the visible layout before AppKit interprets a pointer.
-    func prepareForPointerInteraction() {
-        guard let container = textContainer, let manager = layoutManager else {
-            return
-        }
-        let visible = visibleRect.offsetBy(dx: -textContainerOrigin.x, dy: -textContainerOrigin.y)
-        manager.ensureLayout(forBoundingRect: visible, in: container)
-    }
-
     override func mouseDown(with event: NSEvent) {
         workspace?.dismissAssistance()
         prepareForPointerInteraction()
@@ -440,113 +415,77 @@ final class ManuscriptTextView: NSTextView {
         }
         selectingWithMouse = true
         defer { selectingWithMouse = false
-            scheduleHighlight()
+            selectionChanged()
         }
         super.mouseDown(with: event)
     }
 
-    /// Hit the character itself, not the nearest insertion position in the margin.
-    func sourceOffset(at event: NSEvent) -> Int? {
-        guard let manager = layoutManager, let container = textContainer else {
-            return nil
-        }
-        let point = convert(event.locationInWindow, from: nil)
-        let location = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
-        let index = manager.characterIndex(for: location, in: container, fractionOfDistanceBetweenInsertionPoints: nil)
-        guard index < string.utf16.count else {
-            return nil
-        }
-        let glyphs = manager.glyphRange(
-            forCharacterRange: NSRange(location: index, length: 1),
-            actualCharacterRange: nil,
-        )
-        return manager.boundingRect(forGlyphRange: glyphs, in: container).contains(location) ? index : nil
-    }
-
     func load(_ content: String, selection: NSRange) {
         dismissTypingAssistance()
-        highlightTask?.cancel()
+        chipPopover?.close()
         loading = true
         defer { loading = false
             _ = takeCharacterEdit()
         }
         workspaceRevision = workspace?.revision ?? 0
-        layoutManager?.setTemporaryAttributes(
-            [:],
-            forCharacterRange: NSRange(location: 0, length: textStorage?.length ?? 0),
-        )
-        styler = ManuscriptStyler()
-        styler.prepare(content, revision: workspaceRevision, decorations: SourcePresentation.decorations(in: content))
         string = content
+        let size = workspace?.fontSize ?? 16
+        textStorage?.setAttributes(
+            Self.visualStyle(size).baseAttributes,
+            range: NSRange(location: 0, length: textStorage?.length ?? 0),
+        )
         placeholders = []
         undoManager?.removeAllActions()
         setSelectedRange(NSRange(location: min(selection.location, (content as NSString).length), length: 0))
+        appliedSyntaxRevision = -1
+        // Another file of the project may have changed what equations import.
+        (session?.mathRenderer as? EngineMathRenderer)?.cache.removeAll()
+        session?.documentURL = workspace?.documentURL
+        session?.open(selection: selectedRange())
         highlight()
-        scrollRangeToVisible(selectedRange())
-    }
-
-    func scheduleHighlight() {
-        highlightTask?.cancel()
-        highlightTask = Task { [weak self] in
-            do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
-            guard let self else {
+        // After the first layout pass. Revealing a distant caret before it
+        // makes TextKit 2 lay out every paragraph above it, and each later
+        // keystroke then pays for all of them (40 ms in War and Peace).
+        let revision = workspaceRevision
+        Task { [weak self] in
+            guard let self, workspaceRevision == revision else {
                 return
             }
-            let revision = workspaceRevision
-            if styler.sourceRevision != revision {
-                let source = workspace?.text ?? string
-                // Parsing has no AppKit dependencies. Typing and IME never wait
-                // for this work; a superseded result cannot touch native ranges.
-                guard let decorations = await readingAnalysis.decorations(in: source),
-                      !Task.isCancelled, workspaceRevision == revision
-                else {
-                    return
-                }
-                styler.prepare(source, revision: revision, decorations: decorations)
-            }
-            highlight()
+            reveal(selectedRange())
         }
     }
 
+    /// The selection moved: reveal the constructs it touches. A mouse drag
+    /// updates once it ends, so text never moves under the pointer.
+    func selectionChanged() {
+        if !selectingWithMouse {
+            session?.selectionDidChange(selectedRange())
+        }
+    }
+
+    /// Brings the visual layer up to date with the workspace: font size,
+    /// reading mode and the latest semantic colours for exactly this text.
     func highlight() {
-        guard !highlighting, !selectingWithMouse, !hasMarkedText() else {
+        guard let session else {
             return
         }
-        highlighting = true
-        defer { highlighting = false }
         let size = workspace?.fontSize ?? 16
         if appliedFontSize != size {
             // Explicit font changes are rare and must take effect immediately.
-            if styler.sourceRevision != workspaceRevision {
-                let source = workspace?.text ?? string
-                styler.prepare(
-                    source,
-                    revision: workspaceRevision,
-                    decorations: SourcePresentation.decorations(in: source),
-                )
-            }
-            typingAttributes = ManuscriptStyler.baseAttributes(size: size)
-            textColor = ManuscriptStyler.baseColor
+            let style = Self.visualStyle(size)
+            let base = style.baseAttributes
+            textStorage?.addAttributes(base, range: NSRange(location: 0, length: textStorage?.length ?? 0))
+            typingAttributes = base
+            session.style = style
             appliedFontSize = size
         }
-        if styler.sourceRevision != workspaceRevision {
-            scheduleHighlight()
+        session.isEnabled = workspace?.styledSource ?? true
+        if let workspace, let snapshot = workspace.syntaxSnapshot, workspace.syntaxRevision != appliedSyntaxRevision,
+           workspace.syntaxDocumentRevision == workspaceRevision, snapshot.source.utf16.count == string.utf16.count
+        {
+            session.colors.setColors(snapshot.tokens.map { ($0.range, Theme.color(for: $0)) })
+            appliedSyntaxRevision = workspace.syntaxRevision
         }
-        let geometryChanged = styler.apply(
-            to: self,
-            size: size,
-            styled: workspace?.styledSource == true,
-            snapshot: workspace?.syntaxSnapshot,
-            revision: workspace?.syntaxRevision ?? 0,
-            documentRevision: workspaceRevision,
-            syntaxDocumentRevision: workspace?.syntaxDocumentRevision ?? -1,
-        )
-        if geometryChanged {
-            prepareForPointerInteraction()
-            window?.invalidateCursorRects(for: self)
-        }
-        // Native typing must not inherit a hidden marker or heading font.
-        typingAttributes = ManuscriptStyler.baseAttributes(size: size)
     }
 
     func insertSnippet(_ snippet: Snippet, replacing range: NSRange, focus: Bool = true) {
@@ -568,7 +507,7 @@ final class ManuscriptTextView: NSTextView {
         placeholderIndex = 0
         setSelectedRange(placeholders.first ?? NSRange(location: range.location + snippet.text.utf16.count, length: 0))
         if focus {
-            scrollRangeToVisible(selectedRange())
+            reveal(selectedRange())
         }
         highlight()
         if focus {
@@ -620,7 +559,7 @@ final class ManuscriptTextView: NSTextView {
             placeholderIndex += event.modifierFlags.contains(.shift) ? -1 : 1
             if placeholderIndex >= 0, placeholderIndex < placeholders.count {
                 setSelectedRange(placeholders[placeholderIndex])
-                scrollRangeToVisible(selectedRange())
+                reveal(selectedRange())
             } else {
                 let end = placeholders.last.map(NSMaxRange) ?? selectedRange().location
                 placeholders = []

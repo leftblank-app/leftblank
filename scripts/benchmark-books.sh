@@ -27,16 +27,16 @@ LEFTBLANK_INTEGRATION=1 LEFTBLANK_BOOK_PREVIEW=1 \
 python3 - <<'PY'
 import json
 from pathlib import Path
-rows = ['# Book editing benchmarks', '', '| Book | Source bytes | Open (s) | First compile (s) | Typing median / p95 / max (ms) | Typing CPU max (ms) | Navigate + draw median (ms) | Scroll + draw p95 (ms) |', '|---|---:|---:|---:|---:|---:|---:|---:|']
+rows = ['# Book editing benchmarks', '', '| Book | Source bytes | Open (s) | First compile (s) | Typing median / p95 / max (ms) | Typing CPU max (ms) | Navigate + draw median (ms) | Jumps on target / hit error | Scroll + draw p95 (ms) | Scroll drift (pt) |', '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|']
 for book in ['war-and-peace', 'sicp']:
     report = Path(f'build/benchmarks/{book}.json')
     if not report.exists():
-        rows.append(f'| {book} | Report unavailable: scenario failed before completion | | | | | | |')
+        rows.append(f'| {book} | Report unavailable: scenario failed before completion | | | | | | | | |')
         continue
     r = json.loads(report.read_text())
     first = r.get('first_compile_seconds')
     first = f'{first:.2f}' if isinstance(first, (int, float)) else 'not reached'
-    rows.append(f'| {book} | {r["bytes"]:,} | {r["open_seconds"]:.2f} | {first} | {r["typing_ms"]["median"]:.2f} / {r["typing_ms"]["p95"]:.2f} / {r["typing_ms"]["max"]:.2f} | {r["typing_thread_cpu_ms"]["max"]:.2f} | {r["navigation_ms"]["median"]:.2f} | {r["scroll_draw_ms"]["p95"]:.2f} |')
+    rows.append(f'| {book} | {r["bytes"]:,} | {r["open_seconds"]:.2f} | {first} | {r["typing_ms"]["median"]:.2f} / {r["typing_ms"]["p95"]:.2f} / {r["typing_ms"]["max"]:.2f} | {r["typing_thread_cpu_ms"]["max"]:.2f} | {r["navigation_ms"]["median"]:.2f} | {r["jumps_on_target"]}/6 / {r["max_hit_error"]} | {r["scroll_draw_ms"]["p95"]:.2f} | {r["scroll_drift_pt"]:.1f} |')
 syntax = Path('build/benchmarks/syntax.json')
 if syntax.exists():
     parsed = json.loads(syntax.read_text())

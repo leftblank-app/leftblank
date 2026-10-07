@@ -1169,6 +1169,8 @@ final class Workspace: ObservableObject {
             closePalette()
         case "format": closePalette()
             formatDocument()
+        case "repeatCall": closePalette()
+            Task { await editor?.repeatPreviousCall() }
         case "indent": closePalette()
             editLines(.indent)
         case "outdent": closePalette()
@@ -1416,7 +1418,7 @@ final class Workspace: ObservableObject {
         }
         selection = NSRange(location: min(max(0, offset), text.utf16.count), length: 0)
         editor?.setSelectedRange(selection)
-        editor?.scrollRangeToVisible(selection)
+        editor?.reveal(selection)
         if let editor {
             editor.window?.makeFirstResponder(editor)
         }

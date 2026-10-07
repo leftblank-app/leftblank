@@ -50,7 +50,13 @@ The welcome document now copies its relative SVG asset during both first launch
 and template creation. Opening an older LeftBlank starter repairs a missing mark
 without replacing an existing asset or rewriting the manuscript.
 
-The UIKit editor preserves native selection, IME composition, undo, find,
+The UIKit editor is a TextKit 2 `UITextView` with the Mac's visual layer
+([visual editing](visual-editing.md#e-the-delivered-editor)): concealed markup,
+chips with the shared form, Repeat Previous Call (⌃⌘R), inline images (no SVG on
+iPad) and engine-typeset equations. Taps and jumps use the laid-out viewport,
+because UIKit's own hit testing can be 100,000 characters off after a distant
+jump. On an iPad Air (M1), SICP types in 33–48 ms per key and War and Peace
+in about 100 ms. It preserves native selection, IME composition, undo, find,
 keyboard and trackpad behavior. Wide detail panes offer writing and preview side
 by side; narrow multitasking windows and portrait layouts switch between them.
 The library uses native navigation, menus, document pickers, sheets and sharing.

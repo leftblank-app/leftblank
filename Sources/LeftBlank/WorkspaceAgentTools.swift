@@ -254,16 +254,7 @@ extension Workspace: AgentToolHost {
     }
 
     private func visibleSourceRange() -> NSRange? {
-        guard layout != .preview, let editor, let manager = editor.layoutManager, let container = editor.textContainer
-        else {
-            return nil
-        }
-        let rect = editor.visibleRect.offsetBy(dx: -editor.textContainerOrigin.x, dy: -editor.textContainerOrigin.y)
-        guard !rect.isEmpty else {
-            return nil
-        }
-        let glyphs = manager.glyphRange(forBoundingRect: rect, in: container)
-        return manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        layout == .preview ? nil : editor?.visibleCharacterRange()
     }
 }
 

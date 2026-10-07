@@ -37,7 +37,7 @@ public actor CodeBlockHighlighting {
         let text = source as NSString
         var result: [HighlightToken] = [], nextCache: [Key: [HighlightToken]] = [:]
         var budget = 1_048_576
-        for block in SourcePresentation.codeBlocks(in: source).prefix(2048) {
+        for block in Self.codeBlocks(in: source).prefix(2048) {
             guard !Task.isCancelled else {
                 return []
             }
@@ -74,6 +74,65 @@ public actor CodeBlockHighlighting {
         }
         cache = nextCache
         return result
+    }
+}
+
+extension CodeBlockHighlighting {
+    struct CodeBlock: Equatable {
+        let language: String
+        let contentRange: NSRange
+    }
+
+    /// Fenced raw blocks with a language: the lines after the opening fence, up
+    /// to the closing fence or, while it is still being typed, the text's end.
+    static func codeBlocks(in source: String) -> [CodeBlock] {
+        guard let nodes = SyntaxTree(source)?.nodes() else {
+            return []
+        }
+        let text = source as NSString
+        var children = [[SyntaxNode]](repeating: [], count: nodes.count)
+        for node in nodes {
+            if let parent = node.parent, parent < nodes.count {
+                children[parent].append(node)
+            }
+        }
+        var blocks: [CodeBlock] = []
+        for node in nodes where node.kind == .error && node.range.length > 3 {
+            // A fence still being typed is one error node to the end of the text.
+            let body = text.substring(with: node.range)
+            guard body.hasPrefix("```"), let newline = body.firstIndex(where: \.isNewline) else {
+                continue
+            }
+            let language = body[body.index(body.startIndex, offsetBy: 3) ..< newline]
+                .trimmingCharacters(in: CharacterSet(charactersIn: "`").union(.whitespaces))
+            let start = node.range.location + (String(body[...newline]) as NSString).length
+            if !language.isEmpty {
+                blocks.append(CodeBlock(
+                    language: language.lowercased(),
+                    contentRange: NSRange(location: start, length: NSMaxRange(node.range) - start),
+                ))
+            }
+        }
+        for (index, node) in nodes.enumerated() where node.kind == .raw {
+            let delimiters = children[index].filter { $0.kind == .rawDelim }
+            guard let open = delimiters.first, open.range.length >= 3,
+                  let language = children[index].first(where: { $0.kind == .rawLang })
+            else {
+                continue
+            }
+            let end = delimiters.count > 1 ? delimiters[delimiters.count - 1].range.location : NSMaxRange(node.range)
+            let head = NSRange(location: NSMaxRange(language.range), length: max(0, end - NSMaxRange(language.range)))
+            let newline = text.rangeOfCharacter(from: .newlines, range: head)
+            guard newline.location != NSNotFound else {
+                continue
+            }
+            let start = NSMaxRange(newline)
+            blocks.append(CodeBlock(
+                language: text.substring(with: language.range).lowercased(),
+                contentRange: NSRange(location: start, length: max(0, end - start)),
+            ))
+        }
+        return blocks.sorted { $0.contentRange.location < $1.contentRange.location }
     }
 }
 

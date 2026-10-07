@@ -197,19 +197,45 @@ public struct FunctionDefinitions: Equatable, Sendable {
 
 /// Chip labels, with optional display names for enumerated values
 /// (`status: "done"` -> `[已完成]`).
-public struct ChipFormatter: Equatable, Sendable {
-    /// Parameter name -> literal value -> label.
-    public var valueLabels: [String: [String: String]]
+/// One enumerated value of a parameter and the text a chip shows for it.
+public struct ChipValueLabel: Equatable, Sendable {
+    public let value: String
+    public let label: String
 
-    public init(valueLabels: [String: [String: String]] = [:]) {
+    public init(value: String, label: String) {
+        self.value = value
+        self.label = label
+    }
+}
+
+public struct ChipFormatter: Equatable, Sendable {
+    /// Parameter name -> literal value -> label, for every function.
+    public var valueLabels: [String: [String: String]]
+    /// Function -> parameter -> labelled values in source order, from the
+    /// document's definitions (`Presentation.valueLabels`). These win over
+    /// `valueLabels`.
+    public var functions: [String: [String: [ChipValueLabel]]]
+
+    public init(
+        valueLabels: [String: [String: String]] = [:],
+        functions: [String: [String: [ChipValueLabel]]] = [:],
+    ) {
         self.valueLabels = valueLabels
+        self.functions = functions
+    }
+
+    /// The labelled values of one parameter: an enumeration for forms.
+    public func labels(callee: String, parameter: String) -> [ChipValueLabel]? {
+        functions[callee]?[parameter] ?? valueLabels[parameter].map { labels in
+            labels.sorted { $0.key < $1.key }.map { ChipValueLabel(value: $0.key, label: $0.value) }
+        }
     }
 
     public func label(callee: String, arguments: [ChipArgument]) -> String {
         var words: [String] = []
         for argument in arguments where !argument.literal.isEmpty {
-            if let name = argument.name, let labels = valueLabels[name] {
-                words.append("[\(labels[argument.literal] ?? argument.literal)]")
+            if let name = argument.name, let labels = labels(callee: callee, parameter: name) {
+                words.append("[\(labels.first { $0.value == argument.literal }?.label ?? argument.literal)]")
             } else if argument.isPositional {
                 words.append(argument.literal)
             }
@@ -772,6 +798,127 @@ public enum Presentation {
             ))
         }
         return result
+    }
+
+    /// Enumerated values of each function's parameters, read from its body.
+    ///
+    /// A parameter used as `(key: value, …).at(parameter)` takes the keys
+    /// (identifiers or strings) as
+    /// its values. A value's label is the value itself when it is a string, or
+    /// the first string of an array value; otherwise the key. A parameter
+    /// passed on to another such function (`#let item(id, s) = … status(s)`)
+    /// inherits that function's labels.
+    public static func valueLabels(source: NSString, nodes: [SyntaxNode]) -> [String: [String: [ChipValueLabel]]] {
+        let tree = Tree(nodes)
+        func text(_ node: SyntaxNode) -> String {
+            source.substring(with: node.range)
+        }
+        func descendants(_ index: Int) -> [Int] {
+            var result: [Int] = [], stack = [index]
+            while let next = stack.popLast() {
+                result.append(next)
+                stack += tree.children[next].reversed()
+            }
+            return result
+        }
+        func dictionaryLabels(_ dict: Int) -> [ChipValueLabel]? {
+            var labels: [ChipValueLabel] = []
+            for pair in tree.children[dict] where [.keyed, .named].contains(nodes[pair].kind) {
+                let parts = tree.children[pair].map { nodes[$0] }
+                guard parts.count == 3 else {
+                    return nil
+                }
+                let key = parts[0].kind == .str ? decodeString(text(parts[0])) : text(parts[0])
+                guard let key else {
+                    return nil
+                }
+                let valueIndex = tree.children[pair][2]
+                var label = key
+                if parts[2].kind == .str {
+                    label = decodeString(text(parts[2])) ?? key
+                } else if parts[2].kind == .array,
+                          let first = tree.children[valueIndex].map({ nodes[$0] }).first(where: { $0.kind == .str })
+                {
+                    label = decodeString(text(first)) ?? key
+                }
+                labels.append(ChipValueLabel(value: key, label: label))
+            }
+            return labels.isEmpty ? nil : labels
+        }
+        // `forwards` holds (callee, argument position, own parameter).
+        struct Function {
+            let parameters: [String]
+            var labels: [String: [ChipValueLabel]] = [:]
+            var forwards: [(String, Int, String)] = []
+        }
+        var functions: [String: Function] = [:]
+        for (index, node) in nodes.enumerated() where node.kind == .letBinding && !node.isErroneous {
+            guard let closure = tree.children[index].first(where: { nodes[$0].kind == .closure }),
+                  let name = tree.children[closure].first.map({ nodes[$0] }), name.kind == .ident,
+                  let params = tree.children[closure].first(where: { nodes[$0].kind == .params })
+            else {
+                continue
+            }
+            let parameters = tree.children[params].compactMap { param -> String? in
+                let node = nodes[param]
+                if node.kind == .ident {
+                    return text(node)
+                }
+                return node.kind == .named ? tree.children[param].first.map { text(nodes[$0]) } : nil
+            }
+            var function = Function(parameters: parameters)
+            for call in descendants(closure) where nodes[call].kind == .funcCall {
+                let parts = tree.children[call]
+                guard parts.count == 2, nodes[parts[1]].kind == .args else {
+                    continue
+                }
+                let arguments = tree.children[parts[1]].map { nodes[$0] }.filter {
+                    ![.leftParen, .rightParen, .comma].contains($0.kind)
+                }
+                let callee = nodes[parts[0]]
+                if callee.kind == .fieldAccess {
+                    // `(…).at(parameter)`
+                    let access = tree.children[parts[0]].map { nodes[$0] }
+                    guard let object = tree.children[parts[0]].first, let field = access.last,
+                          field.kind == .ident, text(field) == "at", arguments.count == 1,
+                          arguments[0].kind == .ident, parameters.contains(text(arguments[0]))
+                    else {
+                        continue
+                    }
+                    var dict = object
+                    while nodes[dict].kind == .parenthesized, let inner = tree.children[dict].first(where: {
+                        ![.leftParen, .rightParen].contains(nodes[$0].kind)
+                    }) {
+                        dict = inner
+                    }
+                    if nodes[dict].kind == .dict, let labels = dictionaryLabels(dict) {
+                        function.labels[text(arguments[0])] = labels
+                    }
+                } else if callee.kind == .ident {
+                    for (position, argument) in arguments.enumerated()
+                        where argument.kind == .ident && parameters.contains(text(argument))
+                    {
+                        function.forwards.append((text(callee), position, text(argument)))
+                    }
+                }
+            }
+            functions[text(name)] = function
+        }
+        // Two rounds follow a parameter through two levels of forwarding.
+        for _ in 0 ..< 2 {
+            for (name, function) in functions {
+                var updated = function
+                for (callee, position, parameter) in function.forwards where updated.labels[parameter] == nil {
+                    if let target = functions[callee], position < target.parameters.count,
+                       let labels = target.labels[target.parameters[position]]
+                    {
+                        updated.labels[parameter] = labels
+                    }
+                }
+                functions[name] = updated
+            }
+        }
+        return functions.compactMapValues { $0.labels.isEmpty ? nil : $0.labels }
     }
 
     static func paragraphRange(_ range: NSRange, in source: NSString) -> NSRange {

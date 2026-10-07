@@ -37,9 +37,20 @@ final class TabletWorkspace: ObservableObject {
         exportDirectory.deletingLastPathComponent().appendingPathComponent("PackageCache")
     }
 
+    /// Checked on every keystroke; resolving the path touches the file system.
     var isPackageSource: Bool {
-        sourceURL.map { PackageSource.isReadOnly($0, packageCache: packageCache) } ?? false
+        guard let sourceURL else {
+            return false
+        }
+        if let packageSourceCache, packageSourceCache.url == sourceURL {
+            return packageSourceCache.readOnly
+        }
+        let readOnly = PackageSource.isReadOnly(sourceURL, packageCache: packageCache)
+        packageSourceCache = (sourceURL, readOnly)
+        return readOnly
     }
+
+    private var packageSourceCache: (url: URL, readOnly: Bool)?
 
     var canEditSource: Bool {
         canWrite && !isPackageSource
@@ -72,10 +83,21 @@ final class TabletWorkspace: ObservableObject {
     }
 
     @Published var text = "" {
-        didSet { metrics = DocumentMetrics(text) }
+        didSet { metricsCache = nil }
     }
 
-    private(set) var metrics = DocumentMetrics("")
+    /// Line index and word count. Rebuilding them scans the whole text, so a
+    /// keystroke updates them incrementally (`edited(_:selection:change:)`).
+    var metrics: DocumentMetrics {
+        if let metricsCache {
+            return metricsCache
+        }
+        let metrics = DocumentMetrics(text)
+        metricsCache = metrics
+        return metrics
+    }
+
+    private var metricsCache: DocumentMetrics?
     @Published var selection = NSRange(location: 0, length: 0) {
         didSet {
             if selection != oldValue {
@@ -127,6 +149,11 @@ final class TabletWorkspace: ObservableObject {
     }
 
     @Published var highlightedText = ""
+    /// The `version` that `tokens` describe; -1 when there are none. Lets the
+    /// editor check readiness without comparing a book's text.
+    private(set) var highlightedVersion = -1
+    /// Increases whenever `tokens` are replaced.
+    private(set) var highlightRevision = 0
     @Published var tokens: [HighlightToken] = []
     @Published var shareURL: URL?
     @Published private(set) var canWrite = false
@@ -143,6 +170,9 @@ final class TabletWorkspace: ObservableObject {
     var version = 1
     var generation = UUID()
     private var debounce: Task<Void, Never>?
+    private var syncTask: Task<Void, Never>?
+    /// The `version` Tinymist last received.
+    var sentVersion = -1
     private var saveTask: Task<Bool, Never>?
     private var backgroundTask = UIBackgroundTaskIdentifier.invalid
     private var started = false
@@ -316,6 +346,8 @@ final class TabletWorkspace: ObservableObject {
             version = 1
             tokens = []
             highlightedText = ""
+            highlightedVersion = -1
+            highlightRevision += 1
             revisions = []
             outline = []
             diagnostics = []
@@ -385,6 +417,7 @@ final class TabletWorkspace: ObservableObject {
                 return
             }
             try client.open(sourceURL, text: text, version: version)
+            sentVersion = version
             if sourceURL != document.sourceURL {
                 let entryText = try DocumentStorage.read(document.sourceURL).0
                 try client.open(document.sourceURL, text: entryText, version: 1)
@@ -406,22 +439,43 @@ final class TabletWorkspace: ObservableObject {
         }
     }
 
-    func edited(_ source: String, selection: NSRange) {
+    /// `change` is the single native replacement that produced `source`, when
+    /// the editor knows it; it keeps the metrics incremental.
+    func edited(_ source: String, selection: NSRange, change: TextReplacement? = nil) {
         guard canEditSource else {
             return
         }
         self.selection = selection
-        guard source != text else {
+        // Typing changes the length; only a same-length edit needs a comparison.
+        guard (source as NSString).length != (text as NSString).length || !TextIdentity.equal(source, text) else {
             return
         }
         let previous = text
+        var updated: DocumentMetrics?
+        if let change, var current = metricsCache, current.apply(change, to: previous) {
+            updated = current
+        }
         text = source
+        metricsCache = updated
         version += 1
         schedulePreviewFollow()
         assistance.invalidate()
         saveStatus = "Saving"
-        persistRecovery()
-        if let sourceURL, let historyKey {
+        // Encoding the whole text for recovery and for Tinymist costs time in
+        // proportion to the document. Coalesce both, as the Mac does, so a
+        // keystroke in a book stays cheap.
+        if serviceReady {
+            syncTask?.cancel()
+            let session = generation
+            syncTask = Task { [weak self] in
+                do { try await Task.sleep(for: .milliseconds(160)) } catch { return }
+                guard let self, generation == session else {
+                    return
+                }
+                do { try flushChanges() } catch { message = error.localizedDescription }
+            }
+        }
+        if sourceURL != nil, let historyKey {
             let interval = historyInterval
             Task {
                 do { try await history.recordEdit(
@@ -432,12 +486,6 @@ final class TabletWorkspace: ObservableObject {
                     interval: interval,
                 ) } catch { message = error.localizedDescription }
             }
-            if serviceReady {
-                do {
-                    serviceStatus = "Typesetting"
-                    try client.change(sourceURL, text: source, version: version)
-                } catch { message = error.localizedDescription }
-            }
         }
         debounce?.cancel()
         let session = generation
@@ -446,6 +494,7 @@ final class TabletWorkspace: ObservableObject {
             guard let self, generation == session else {
                 return
             }
+            persistRecovery()
             await save()
             await refresh()
         }
@@ -519,10 +568,22 @@ final class TabletWorkspace: ObservableObject {
         return await task.value
     }
 
+    /// Sends the current text if Tinymist has not seen it; every request that
+    /// reads the document calls this first.
+    func flushChanges() throws {
+        guard serviceReady, let sourceURL, version != sentVersion else {
+            return
+        }
+        serviceStatus = "Typesetting"
+        try client.change(sourceURL, text: text, version: version)
+        sentVersion = version
+    }
+
     func refresh() async {
         guard let sourceURL, serviceReady else {
             return
         }
+        try? flushChanges()
         let session = generation, revision = version, source = text
         do {
             async let symbols = client.request(
@@ -545,6 +606,8 @@ final class TabletWorkspace: ObservableObject {
             }
             tokens = result
             highlightedText = source
+            highlightedVersion = revision
+            highlightRevision += 1
             outline = headings.array
         } catch { /* Retain the last valid outline and coloring while editing. */ }
     }
@@ -599,6 +662,7 @@ final class TabletWorkspace: ObservableObject {
         }
         let session = generation, revision = version
         try client.change(sourceURL, text: text, version: version)
+        sentVersion = version
         let response = try await client.command("tinymist.exportPdf", arguments: [document.sourceURL.path])
         guard session == generation, revision == version else {
             throw CancellationError()
@@ -726,9 +790,11 @@ final class TabletWorkspace: ObservableObject {
         }
         panel = nil
         editor?.isEditable = canEditSource && !busy
-        editor?.selectedRange = selection
-        editor?.scrollRangeToVisible(selection)
+        // Focus first: becoming first responder scrolls UIKit's way, to the
+        // selection's estimated position, which our reveal then corrects.
         editor?.becomeFirstResponder()
+        editor?.selectedRange = selection
+        (editor as? TabletTextView)?.reveal(selection)
     }
 
     func replace(_ source: String) {
@@ -796,6 +862,7 @@ extension TabletWorkspace {
         }
         let revision = version, session = generation, original = text
         do {
+            try flushChanges()
             let response = try await client.request("textDocument/formatting", [
                 "textDocument": ["uri": sourceURL.absoluteString],
                 "options": ["tabSize": 2, "insertSpaces": true],
@@ -1083,6 +1150,8 @@ extension TabletWorkspace {
             selection = NSRange(location: 0, length: 0)
             tokens = []
             highlightedText = ""
+            highlightedVersion = -1
+            highlightRevision += 1
             outline = []
             diagnostics = []
             revisions = []

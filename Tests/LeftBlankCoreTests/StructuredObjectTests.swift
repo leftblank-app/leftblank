@@ -160,4 +160,31 @@ struct StructuredObjectTests {
         #expect(inner.range == NSRange(location: 15, length: 23))
         #expect(inner.rows == [["a"]])
     }
+
+    @Test func commentAndRawTextInsideLiteralsNoLongerHideObjects() throws {
+        // `//` in a string and backticks in a cell are literal text, not a comment or raw block outside.
+        let path = #"#image("images//a.png")"#
+        #expect(StructuredObject.at(NSRange(location: 3, length: 0), in: path)?.path == "images//a.png")
+        let caption = #"#figure(image("a.png"), caption: "See https://typst.app")"#
+        #expect(StructuredObject.at(NSRange(location: 3, length: 0), in: caption)?.caption == "See https://typst.app")
+        let table = "#table(columns: 2, [`]`], [a /* kept */], [B], [C])"
+        var object = try #require(StructuredObject.at(NSRange(location: 3, length: 0), in: table))
+        #expect(object.rows == [["`]`", "a /* kept */"], ["B", "C"]])
+        object.rows[1][1] = "D"
+        let edited = try TextEditing.applying([object.replacement(in: table)], to: table)
+        #expect(StructuredObject.at(NSRange(location: 3, length: 0), in: edited)?.rows
+            == [["`]`", "a /* kept */"], ["B", "D"]])
+        // A cell that would run past its bracket into a comment cannot be written.
+        object.rows[1][1] = "D // ]"
+        #expect(throws: ObjectEditError.self) { try object.replacement(in: table) }
+    }
+
+    @Test func literalObjectInsideAnUnsupportedObjectIsEditable() throws {
+        let source = #"#table(columns: (1fr, 2fr), [#image("a.png", width: 50%)], [B])"#
+        let location = (source as NSString).range(of: "#image").location
+        let image = try #require(StructuredObject.at(NSRange(location: location + 3, length: 0), in: source))
+        #expect(image.range == NSRange(location: location, length: #"#image("a.png", width: 50%)"#.utf16.count))
+        #expect(image.path == "a.png" && image.width == "50%")
+        #expect(StructuredObject.at(NSRange(location: 3, length: 0), in: source) == nil)
+    }
 }

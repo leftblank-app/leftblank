@@ -130,6 +130,29 @@ struct PreviewCallSiteTests {
         #expect(remap(a, in: destructured, "x") == a)
     }
 
+    @Test func multilineBodiesMathAndKeysFollowTheParseTree() {
+        // An undelimited body that continues on later lines still holds its parameters.
+        let source = """
+        #let tag(x, note) = text(
+          fill: red,
+          x + " " + note,
+        )
+        #tag("hello", $"decoy"$)
+        #tag("world", "plain")
+        """
+        let x = parameter("x +", in: source, after: "fill")
+        #expect(remap(x, in: source, "hello") == offset(of: "hello", in: source))
+        // Math is not a string literal, so its quotes offer nothing to match.
+        let note = parameter("note,", in: source, after: "fill")
+        #expect(remap(note, in: source, "decoy") == note)
+        #expect(remap(note, in: source, "plain") == offset(of: "plain", in: source))
+        // A dictionary key that shares a parameter's name is not a use of it.
+        let tracker = Self.tracker
+        let key = offset(of: "id: id", in: tracker)
+        #expect(remap(key, in: tracker, "LB-001") == key)
+        #expect(remap(key + "id: ".utf16.count, in: tracker, "LB-001") == offset(of: "LB-001\"", in: tracker))
+    }
+
     @Test func previewJumpColumnsCountUnicodeScalars() throws {
         let text = "😀 Plain *text* here.\n中文😀x\r\nend"
         func location(_ line: Int, _ character: Int, scalar: Bool = true) throws -> LeftBlankCore.SourceLocation {

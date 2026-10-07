@@ -28,11 +28,11 @@ extension WritingFlowTests {
         print("LEFTBLANK LARGE open: \(openTime)s, \(data.count) bytes")
         let editor = try #require(app.workspace.editor)
         let scroll = try #require(editor.enclosingScrollView)
-        let manager = try #require(editor.layoutManager)
-        let container = try #require(editor.textContainer)
         let bitmap = try #require(editor.bitmapImageRepForCachingDisplay(in: editor.visibleRect))
+        let textSystem = editor.textLayoutManager == nil ? "textkit1" : "textkit2"
         var report: [String: Any] = ["bytes": data.count, "utf16": source.utf16.count, "open_seconds": openTime,
-                                     "memory_before_mib": initialMemory, "memory_open_mib": physicalFootprint()]
+                                     "text_system": textSystem, "memory_before_mib": initialMemory,
+                                     "memory_open_mib": physicalFootprint()]
         let serviceStarted = ContinuousClock.now
         app.workspace.startService()
         let deadline = ContinuousClock.now + .seconds(120)
@@ -61,6 +61,7 @@ extension WritingFlowTests {
         var navigation: [Double] = [], hitTesting: [Double] = [], search: [Double] = []
         var jumpTimes: [Double] = [], highlightTimes: [Double] = [], layoutTimes: [Double] = []
         var navigationSamples: [[String: Double]] = []
+        var jumpsOnTarget = 0, maximumHitError = 0
         let ns = source as NSString
         let offsets = [0.1, 0.9, 0.5, 0.99, 0.01, 0.75].map { fraction in
             let start = Int(Double(ns.length) * fraction)
@@ -86,18 +87,17 @@ extension WritingFlowTests {
             #expect(editor.selectedRange().location == offset)
             await app.layout()
             let hitStart = ContinuousClock.now
-            // Independently map a rendered glyph back to an insertion point.
-            let glyphs = manager.glyphRange(
-                forCharacterRange: NSRange(location: offset, length: 1),
-                actualCharacterRange: nil,
-            )
-            let glyph = manager.boundingRect(forGlyphRange: glyphs, in: container)
-            let point = NSPoint(
-                x: glyph.minX + editor.textContainerOrigin.x + 1,
-                y: glyph.midY + editor.textContainerOrigin.y,
-            )
+            // Independently map a rendered glyph back to an insertion point,
+            // and check the jump really brought it into the viewport.
+            let glyph = try #require(editor.characterRect(at: offset))
+            let point = NSPoint(x: glyph.minX + 1, y: glyph.midY)
             let hit = editor.characterIndexForInsertion(at: point)
-            #expect(abs(hit - offset) <= 1, "Hit \(hit), wanted \(offset), point \(point)")
+            let visible = editor.visibleRect.contains(point)
+            jumpsOnTarget += visible ? 1 : 0
+            maximumHitError = max(maximumHitError, abs(hit - offset))
+            #expect(visible, "Jump to \(offset) left \(glyph) outside \(editor.visibleRect)")
+            #expect(hit == offset, "Hit \(hit), wanted \(offset), point \(point)")
+            navigationSamples[navigationSamples.count - 1]["hit_error"] = Double(hit - offset)
             hitTesting.append(seconds(hitStart.duration(to: .now)))
             let searchStart = ContinuousClock.now
             let found = ns.range(
@@ -108,6 +108,8 @@ extension WritingFlowTests {
             _ = found.location
             search.append(seconds(searchStart.duration(to: .now)))
         }
+        report["jumps_on_target"] = jumpsOnTarget
+        report["max_hit_error"] = maximumHitError
         report["navigation_ms"] = milliseconds(navigation)
         report["navigation_samples"] = navigationSamples
         report["jump_ms"] = milliseconds(jumpTimes)
@@ -116,22 +118,31 @@ extension WritingFlowTests {
         report["hit_testing_ms"] = milliseconds(hitTesting)
         report["search_ms"] = milliseconds(search)
         var scrolling: [Double] = [], drawing: [Double] = []
+        // Scrolling three screens down and back must show every line where it
+        // was. TextKit 2 replaces estimated heights above the viewport while
+        // scrolling and moves the clip origin with them, so compare positions
+        // within the viewport; the document-coordinate shift is reported.
+        let scrollStart = scroll.contentView.bounds.origin
+        let anchor = try #require(editor.visibleCharacterRange()).location
+        let anchorRect = try #require(editor.characterRect(at: anchor))
+        let anchorInViewport = anchorRect.minY - editor.visibleRect.minY
         for index in 0 ..< 60 {
             let start = ContinuousClock.now
             let y = max(0, scroll.contentView.bounds.origin.y + (index < 30 ? 80 : -80))
             scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
             scroll.reflectScrolledClipView(scroll.contentView)
             editor.prepareForPointerInteraction()
-            let glyphs = manager.glyphRange(
-                forBoundingRect: editor.visibleRect
-                    .offsetBy(dx: -editor.textContainerOrigin.x, dy: -editor.textContainerOrigin.y),
-                in: container,
-            )
-            #expect(glyphs.length > 0)
+            #expect((editor.visibleCharacterRange()?.length ?? 0) > 0)
             scrolling.append(seconds(start.duration(to: .now)))
             editor.cacheDisplay(in: editor.visibleRect, to: bitmap)
             drawing.append(seconds(start.duration(to: .now)))
         }
+        let finalRect = try #require(editor.characterRect(at: anchor))
+        let drift = finalRect.minY - editor.visibleRect.minY - anchorInViewport
+        report["scroll_drift_pt"] = drift
+        report["scroll_reestimated_pt"] = finalRect.minY - anchorRect.minY
+        report["scroll_origin_shift_pt"] = scroll.contentView.bounds.origin.y - scrollStart.y
+        #expect(abs(drift) < 0.5, "A line moved by \(drift) pt in the viewport after scrolling away and back")
         report["scroll_layout_ms"] = milliseconds(scrolling)
         report["scroll_draw_ms"] = milliseconds(drawing)
         app.workspace.jump(to: offsets[2])

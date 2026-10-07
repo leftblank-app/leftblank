@@ -19,11 +19,13 @@ import uuid
 
 
 # Pull requests run every native unit test plus these UI scenarios: writing,
-# split view, autosave, preview, rotation, rendering and PDF sharing. Main and
+# split view, autosave, preview, rotation, rendering, PDF sharing and the visual
+# layer with a hardware keyboard. Main and
 # full dispatches run the complete UI suite.
 SMOKE_TESTS = ('LeftBlankUITests/WritingTests/testEditingPersistsAcrossPreviewAndRotation',
                'LeftBlankUITests/WritingTests/testWelcomePreviewAndPDFExport',
-               'LeftBlankUITests/WritingTests/testRenderedFunctionHelpKeepsTheManuscript')
+               'LeftBlankUITests/WritingTests/testRenderedFunctionHelpKeepsTheManuscript',
+               'LeftBlankUITests/WritingTests/testRepeatPreviousCallFillsPlaceholdersFromTheKeyboard')
 
 
 def wait_for_tests(process, startup_timeout, execution_timeout):

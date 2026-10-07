@@ -110,8 +110,9 @@ extension TabletWorkspace {
                 selection = merged.selection
                 version += 1
                 if serviceReady {
-                    do { try client.change(url, text: text, version: version) }
-                    catch { message = error.localizedDescription }
+                    do { try client.change(url, text: text, version: version)
+                        sentVersion = version
+                    } catch { message = error.localizedDescription }
                 }
                 await refresh()
             }

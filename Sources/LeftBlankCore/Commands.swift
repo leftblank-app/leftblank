@@ -197,6 +197,7 @@ public struct WritingCommand: Identifiable, Sendable {
         "contextActions": [.init(".", modifiers: [.command])],
         "definition": [.init("j", modifiers: [.control, .command])],
         "navigateBack": [.init("[", modifiers: [.control, .command])],
+        "repeatCall": [.init("r", modifiers: [.control, .command])],
         "undo": [.init("z")], "redo": [.init("z", modifiers: [.shift, .command])],
         "cut": [.init("x")], "copy": [.init("c")], "paste": [.init("v")], "selectAll": [.init("a")],
         "find": [.init("f")],
@@ -1039,6 +1040,15 @@ public struct WritingCommand: Identifiable, Sendable {
             "Format Source",
             "Format the current document with Tinymist.",
             "format pretty 格式化 整理",
+            isInsertion: false,
+        ),
+        .init(
+            "repeatCall",
+            "code",
+            "w",
+            "Repeat Previous Call",
+            "Insert a copy of the previous function call; Tab moves through its values.",
+            "repeat previous call chip function 重复 上一个 调用",
             isInsertion: false,
         ),
         .init(

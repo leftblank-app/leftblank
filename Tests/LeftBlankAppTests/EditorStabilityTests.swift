@@ -14,7 +14,7 @@ extension WritingFlowTests {
         let editor = try #require(app.workspace.editor)
         editor.setSelectedRange(NSRange(location: source.utf16.count - 1, length: 0))
         editor.highlight()
-        editor.scrollRangeToVisible(editor.selectedRange())
+        editor.reveal(editor.selectedRange())
         let edits = try StorageEditRecorder(#require(editor.textStorage))
         var durations: [Duration] = []
         editor.breakUndoCoalescing()
@@ -96,12 +96,7 @@ extension WritingFlowTests {
 
 @MainActor
 func editorColor(_ editor: ManuscriptTextView, at offset: Int) -> NSColor? {
-    editor.layoutManager?.temporaryAttribute(
-        .foregroundColor,
-        atCharacterIndex: offset,
-        effectiveRange: nil,
-    ) as? NSColor
-        ?? editor.textStorage?.attribute(.foregroundColor, at: offset, effectiveRange: nil) as? NSColor
+    editor.drawnColor(at: offset)
 }
 
 @MainActor

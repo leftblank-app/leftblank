@@ -24,6 +24,24 @@ enum TabletTheme {
     static let sourceFunction = adaptive(light: 0x326A83, dark: 0x9DBBCD)
     static let sourceCode = adaptive(light: 0x455A64, dark: 0xBAC4CF)
 
+    static let codeBackground = adaptive(light: 0xECEFF1, dark: 0x272D32)
+    static let selection = adaptive(light: 0xE5DCF3, dark: 0x3B4651)
+
+    static func visualStyle(_ size: CGFloat) -> VisualStyle {
+        VisualStyle(
+            fontSize: size,
+            text: sourceText,
+            strong: sourceStrong,
+            code: sourceString,
+            codeBackground: codeBackground,
+            link: sourceFunction,
+            marker: sourceComment,
+            math: sourceNumber,
+            chip: nativeAccent,
+            chipFill: selection,
+        )
+    }
+
     static func color(for token: HighlightToken) -> UIColor {
         let kind = token.kind.replacingOccurrences(of: "hljs-", with: "").components(separatedBy: " ").first ?? token
             .kind

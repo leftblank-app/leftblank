@@ -65,7 +65,7 @@ import Testing
     #expect(metrics.offset(at: .init(line: 0, character: 0)) == 0)
 }
 
-@Test func sourceDecorationRespectsCodeMathAndIncompleteInput() {
+@Test func readingStylesRespectCodeMathCommentsAndIncompleteInput() throws {
     let source = """
     = 中文😀标题
     *bold* and _italic_ and `literal *stars*`.
@@ -81,26 +81,34 @@ import Testing
     ]
     plain_word and \\*escaped*.
     """
-    let decorated = SourcePresentation.decorations(in: source)
-    #expect(decorated.map(\.kind) == [.heading(1), .strong, .emphasis, .code])
-    #expect(decorated.map { (source as NSString).substring(with: $0.range) } == [
-        "= 中文😀标题",
-        "*bold*",
-        "_italic_",
-        "`literal *stars*`",
-    ])
-    for unfinished in ["```\n*unfinished*", "$ unfinished *bold*", "/* *comment*", "#let x = [\n*unfinished*"] {
-        #expect(SourcePresentation.decorations(in: unfinished).isEmpty)
+    let text = source as NSString
+    let tree = try #require(SyntaxTree(source))
+    let plan = Presentation.plan(
+        source: text,
+        nodes: tree.nodes() ?? [],
+        selection: NSRange(location: text.length, length: 0),
+        definitions: FunctionDefinitions(),
+    )
+    let styled = plan.styles.filter { [.strong, .emphasis, .code].contains($0.style) || $0.style == .heading(level: 1) }
+        .map { text.substring(with: $0.range) }
+    #expect(styled == ["= 中文😀标题", "*bold*", "_italic_", "`literal *stars*`",
+                       "```typ\n= not a heading\n*not bold*\n```", "*code content*"])
+    for unfinished in ["```\n*unfinished*", "$ unfinished *bold*", "/* *comment*", "* unfinished ",
+                       "Text ``literal ` code`` after"]
+    {
+        let nodes = try #require(SyntaxTree(unfinished)?.nodes())
+        let plan = Presentation.plan(
+            source: unfinished as NSString,
+            nodes: nodes,
+            selection: NSRange(location: 0, length: 0),
+            definitions: FunctionDefinitions(),
+        )
+        #expect(!plan.styles.contains { $0.style == .strong }, "\(unfinished)")
     }
-    #expect(SourcePresentation.decorations(in: "Text \\$ *real* after").contains { $0.kind == .strong })
-    #expect(SourcePresentation.decorations(in: "Text ``literal ` code`` after").isEmpty)
-    #expect(SourcePresentation.decorations(in: "* unfinished ").isEmpty)
-    let active = SourcePresentation.activeParagraph(in: source, selection: NSRange(location: 4, length: 0))
-    #expect((source as NSString).substring(with: active) == "= 中文😀标题\n")
-    #expect(SourcePresentation.activeParagraph(in: "", selection: NSRange(location: 80, length: 1)) == NSRange(
-        location: 0,
-        length: 0,
-    ))
+    let blocks = CodeBlockHighlighting.codeBlocks(in: source + "```python\nprint(42)")
+    #expect(blocks.map(\.language) == ["typ", "python"])
+    #expect(text.substring(with: blocks[0].contentRange) == "= not a heading\n*not bold*\n")
+    #expect(blocks[1].contentRange.length == "print(42)".utf16.count)
 }
 
 @Test func lineEditingPreservesSelectionBoundariesAndUnicode() throws {
@@ -181,4 +189,11 @@ import Testing
             )))
         }
     }
+}
+
+@Test func textIdentityComparesUTF16Literally() {
+    #expect(TextIdentity.equal("中文😀\r\n", "中文😀\r\n"))
+    #expect(!TextIdentity.equal("e\u{301}", "\u{E9}"), "Canonically equivalent text is still a different source")
+    #expect(!TextIdentity.equal("abc", "abd"))
+    #expect(!TextIdentity.equal("abc", "abcd"))
 }
