@@ -11,8 +11,6 @@ mkdir -p "$coverage_dir"
 rm -f "$coverage_dir"/*.profraw "$coverage_dir"/*.profdata
 rm -rf build/coverage
 test_status=0
-# A crash in a native UI test prints its stack instead of only a signal number.
-export SWIFT_BACKTRACE="${SWIFT_BACKTRACE:-enable=yes,interactive=no}"
 LEFTBLANK_INTEGRATION=1 swift test --skip-build --enable-code-coverage "$@" || test_status=$?
 coverage_status=0
 python3 scripts/coverage.py --minimum 80 || coverage_status=$?

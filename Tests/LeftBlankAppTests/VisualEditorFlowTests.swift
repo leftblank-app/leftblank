@@ -118,7 +118,7 @@ extension WritingFlowTests {
         #expect(!editor.switchedToTextKit1)
     }
 
-    @Test func aLayoutManagerAccessIsDetected() throws {
+    @Test func aLayoutManagerAccessIsDetected() async throws {
         let app = try WritingFixture(text: "= Title\n\n*Strong* words.\n", startService: false)
         defer { app.close() }
         let editor = try #require(app.workspace.editor)
@@ -133,6 +133,9 @@ extension WritingFlowTests {
         )
         #expect(log.contains("editor.textKit1Fallback"))
         app.allowsTextKit1 = true
+        // The switch queues a drag-type update on the run loop; let it run
+        // while the text view is alive, or it messages a freed view later.
+        await app.layout()
     }
 
     @Test func preciseJumpsLandOnDistantTargetsAndHitTestsRoundTrip() async throws {
