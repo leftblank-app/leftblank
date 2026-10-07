@@ -23,7 +23,10 @@ Both books land all six jumps in the viewport with zero hit-test error, and a
 line returns to the same place in the viewport after scrolling three screens
 away and back. TextKit builds about 1,300 of War and Peace's 67,963
 paragraphs and 1,000 of SICP's 20,512 over the whole run; the benchmark fails
-above 5,000, because every edit walks the elements built after it. The previous TextKit 1 editor (2026-10-01) opened War and Peace
+above 5,000, because every edit walks the elements built after it. On CI's
+macOS 15 runners the same run types at 11.8 / 38.4 / 103.5 ms in War and Peace
+and 10.6 / 26.2 / 67.1 ms in SICP (median / p95 / max); see
+[visual editing](visual-editing.md#large-documents-measured). The previous TextKit 1 editor (2026-10-01) opened War and Peace
 in 4.09 s and SICP in 3.32 s, typed at 9.29 / 52.23 and 6.70 / 10.88 ms
 (median / max), navigated in 4.20 and 6.07 ms median, and scrolled at 5.04 and
 3.89 ms p95. SICP ended at 219.4 MiB (287.8 before).

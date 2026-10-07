@@ -639,6 +639,15 @@ Mac: `scripts/benchmark-books.sh` (debug build, M4 Pro). Before is today's
 | Navigate + draw median / max (ms) | 4.20 / – | 7.1 / 10.1 | 6.07 / – | 14.8 / 25.0 |
 | Scroll + draw p95 (ms) | 5.04 | 2.6 | 3.89 | 3.0 |
 | Paragraphs TextKit built in the run | – | 1,299 of 67,963 | – | 995 of 20,512 |
+
+CI runs the same benchmark on GitHub's macOS 15 runners (Xcode 26.3), which
+are slower and stricter about TextKit 2 (below). There, against the TextKit 1
+editor's last run on the same runners: War and Peace types at 11.8 / 38.4 /
+103.5 ms median / p95 / max (TextKit 1: 6.0 / 39.3 max), at most 17 ms of
+main-thread CPU per key, with the slowest jump at 54 ms (11); SICP types at
+10.6 / 26.2 / 67.1 ms (3.2 / 12.4 max) with the slowest jump at 181 ms (41).
+Both books stay within the gates (typing p95 100 ms, any key 250 ms, any
+jump 200 ms) and build about 1,300 and 1,000 paragraphs.
 | Jumps on target, max hit error | 6/6, ≤ 1 | 6/6, 0 | 6/6, ≤ 1 | 6/6, 0 |
 | Line drift after scrolling away and back (pt) | 0 | 0 | 0 | 0 |
 
@@ -691,6 +700,10 @@ traps found and fixed on the way:
   17,000 paragraphs and 1.3 s for one SICP jump on macOS 15. Jumps lay out
   a screen of text around the target first. The view also never scrolls past
   the end of its text.
+- On iPadOS, re-wrapping (rotation, Split View) does not lay the book out, but
+  UIKit's first sizing of the re-wrapped text clamped the scroll and threw
+  the reader back to the start of the book. The iPad view puts its top line
+  back through the viewport, as jumps do.
 
 ## Follow-ups
 

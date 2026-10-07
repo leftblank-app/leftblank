@@ -230,8 +230,44 @@ struct TabletEditor: UIViewRepresentable {
     var typingList = CompletionList(items: [], prefix: "")
     var typingSignature: LanguageSignature?
 
+    /// The top line to put back after UIKit re-wraps for a new width
+    /// (rotation, Split View): its first sizing of the re-wrapped text clamps
+    /// the scroll, which threw the reader back to the start of a book.
+    private var resizeAnchor: Int?
+
+    override var frame: CGRect {
+        get { super.frame }
+        set {
+            noteWidth(newValue.width)
+            super.frame = newValue
+        }
+    }
+
+    override var bounds: CGRect {
+        get { super.bounds }
+        set {
+            noteWidth(newValue.width)
+            super.bounds = newValue
+        }
+    }
+
+    private func noteWidth(_ width: CGFloat) {
+        guard resizeAnchor == nil, width != bounds.width, bounds.width > 0, contentOffset.y > 0,
+              let manager = textLayoutManager
+        else {
+            return
+        }
+        resizeAnchor = TextKit2Geometry.viewportInsertionOffset(at: containerVisibleRect().origin, in: manager)
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
+        if let anchor = resizeAnchor, let manager = textLayoutManager {
+            resizeAnchor = nil
+            TextKit2Geometry.revealByRelocating(
+                anchor, in: manager, visible: containerVisibleRect, scroll: scrollContainer, margins: [0],
+            )
+        }
         positionTypingAssistance()
     }
 

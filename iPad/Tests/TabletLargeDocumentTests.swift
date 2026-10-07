@@ -21,7 +21,7 @@ struct TabletLargeDocumentTests {
         let name = book.deletingPathExtension().lastPathComponent
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("book-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let subscription = TabletSubscription(service: BookPurchaseService())
+        let subscription = TabletSubscription(service: SubscribedPurchaseService())
         await subscription.refresh()
         let workspace = TabletWorkspace(subscription: subscription, stateDirectory: root)
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -131,7 +131,7 @@ struct TabletLargeDocumentTests {
 }
 
 /// A subscribed writer, so the editor accepts input.
-private final class BookPurchaseService: TabletPurchaseService {
+final class SubscribedPurchaseService: TabletPurchaseService {
     func offering() -> SubscriptionOffering {
         .init(displayPrice: "$1", trialWeeks: nil)
     }

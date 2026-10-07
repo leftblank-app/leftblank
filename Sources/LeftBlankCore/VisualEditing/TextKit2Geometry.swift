@@ -125,6 +125,7 @@ public enum TextKit2Geometry {
         in manager: NSTextLayoutManager,
         visible: () -> CGRect,
         scroll: (CGFloat) -> Void,
+        margins: [CGFloat]? = nil,
     ) {
         let controller = manager.textViewportLayoutController
         controller.layoutViewport()
@@ -134,9 +135,10 @@ public enum TextKit2Geometry {
         guard let location = location(offset, in: manager) else {
             return
         }
-        // A third of a screen of context above the target; laying that text
-        // out can push the target off the top, and then it goes to the top.
-        for margin in [visible().height / 3, 0] {
+        // By default a third of a screen of context above the target; laying
+        // that text out can push the target off the top, and then it goes to
+        // the top.
+        for margin in margins ?? [visible().height / 3, 0] {
             let top = controller.relocateViewport(to: location)
             scroll(max(0, top - margin))
             controller.layoutViewport()
