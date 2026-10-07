@@ -212,6 +212,12 @@ final class TabletWorkspace: ObservableObject {
             }
             cloudEnabled = await library.isICloud
             try await reloadLibrary()
+            // The library is interactive while iCloud and the listing load. A
+            // document the person already chose wins over reopening the last
+            // session, which would otherwise replace it or move its caret.
+            guard document == nil, !changing else {
+                return
+            }
             // UI tests pass `-iPadOpenTemplate <name>` to start from a fresh
             // built-in document instead of navigating the template gallery.
             let seeded = UserDefaults.standard.string(forKey: "iPadOpenTemplate")
@@ -248,9 +254,15 @@ final class TabletWorkspace: ObservableObject {
                     _ = try DocumentStorage.write(snapshot.text, to: recoveredSource, baseline: disk)
                     try await reloadLibrary()
                     await open(recovered)
+                    guard document?.id == recovered.id else {
+                        return
+                    }
                     await openSource(recoveredSource)
                 } else {
                     await open(item)
+                    guard document?.id == item.id else {
+                        return
+                    }
                     await openSource(file)
                 }
                 jump(metrics.position(at: min(snapshot.selection, text.utf16.count)))
