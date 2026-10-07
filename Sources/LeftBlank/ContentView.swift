@@ -4,7 +4,17 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var workspace: Workspace
     @ObservedObject private var localization = AppLocalization.shared
-    @State private var splitFraction: CGFloat = 0.5
+    /// The editor's share in side-by-side layout; per device, not synced.
+    @State private var splitFraction: CGFloat
+    @State private var dragStartWidth: CGFloat?
+    @State private var dividerHovering = false
+    private let defaults: UserDefaults
+
+    init(workspace: Workspace, defaults: UserDefaults = .standard) {
+        self.workspace = workspace
+        self.defaults = defaults
+        _splitFraction = State(initialValue: SplitLayout.storedFraction(in: defaults))
+    }
 
     var body: some View {
         Group {
@@ -44,11 +54,14 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 GeometryReader { geometry in
                     let width = geometry.size.width
-                    let editorWidth = workspace.layout == .writing ? width : (workspace.layout == .preview ? 0 : max(
-                        280,
-                        min(width - 280, width * splitFraction),
-                    ))
-                    let previewWidth = max(0, width - editorWidth - (workspace.layout == .split ? 1 : 0))
+                    let split = workspace.layout == .split
+                    let editorWidth: CGFloat = switch workspace.layout {
+                    case .writing: width
+                    case .preview: 0
+                    case .split: SplitLayout.editorWidth(in: width, fraction: splitFraction, divider: 1)
+                    }
+                    let previewWidth = max(0, width - editorWidth - (split ? 1 : 0))
+                    let dividerActive = dividerHovering || dragStartWidth != nil
                     HStack(spacing: 0) {
                         manuscript.frame(width: editorWidth).clipped()
                             .overlay(alignment: .topLeading) {
@@ -62,21 +75,25 @@ struct ContentView: View {
                             }
                             .opacity(workspace.layout == .preview ? 0 : 1)
                             .accessibilityHidden(workspace.layout == .preview)
-                        Rectangle().fill(Theme.border).frame(width: workspace.layout == .split ? 1 : 0)
-                            .overlay(Color.clear.frame(width: 9).contentShape(Rectangle())
-                                .gesture(DragGesture(coordinateSpace: .named("writingArea")).onChanged { value in
-                                    splitFraction = min(
-                                        0.75,
-                                        max(0.25, value.location.x / width),
-                                    )
-                                }))
+                        Rectangle().fill(dividerActive ? Theme.accent.opacity(0.6) : Theme.border)
+                            .frame(width: split ? 1 : 0)
                         preview(paneWidth: previewWidth).frame(width: previewWidth)
                             .clipped()
                             .opacity(workspace.layout == .writing ? 0 : 1)
                             .accessibilityHidden(workspace.layout == .writing)
-                    }.coordinateSpace(name: "writingArea")
+                    }.overlay(alignment: .leading) {
+                        // Above both panes, centered on the line. Other layouts
+                        // have no divider, so they must not keep its target.
+                        if split {
+                            divider(editorWidth: editorWidth, width: width)
+                                .frame(width: SplitDividerView.hitWidth)
+                                .offset(x: editorWidth + 0.5 - SplitDividerView.hitWidth / 2)
+                        }
+                    }
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                // A removed divider receives no exit event; do not keep its highlight.
+                .onChange(of: workspace.layout) { _, _ in dividerHovering = false }
             if let message = workspace.message {
                 messageBar(message)
             }
@@ -101,6 +118,35 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private func divider(editorWidth: CGFloat, width: CGFloat) -> some View {
+        SplitDividerHandle(
+            fraction: SplitLayout.fraction(editorWidth: editorWidth, in: width, divider: 1),
+            hovering: { dividerHovering = $0 },
+            begin: { dragStartWidth = editorWidth },
+            drag: { distance in
+                // Follow the pointer from the press, so the minimum pane width
+                // never makes the divider jump when the drag turns around.
+                splitFraction = SplitLayout.fraction(
+                    editorWidth: (dragStartWidth ?? editorWidth) + distance,
+                    in: width,
+                    divider: 1,
+                )
+            },
+            end: {
+                dragStartWidth = nil
+                SplitLayout.store(splitFraction, in: defaults)
+            },
+            reset: {
+                splitFraction = SplitLayout.defaultFraction
+                SplitLayout.store(splitFraction, in: defaults)
+            },
+            adjust: { steps in
+                splitFraction = SplitLayout.adjusted(by: steps, editorWidth: editorWidth, in: width, divider: 1)
+                SplitLayout.store(splitFraction, in: defaults)
+            },
+        )
     }
 
     private var manuscript: some View {

@@ -587,6 +587,46 @@ final class WritingTests: XCTestCase {
         expectShareSheet(in: app)
     }
 
+    func testSideBySideDividerResizesPersistsAndResets() {
+        var app = startWriting()
+        func panes() -> (editor: XCUIElement, preview: XCUIElement, divider: XCUIElement) {
+            let divider = app.descendants(matching: .any)["split-divider"].firstMatch
+            return (app.textViews["manuscript"].firstMatch, app.webViews["document-preview"].firstMatch, divider)
+        }
+        func showSplit() {
+            app.buttons["layout-split"].firstMatch.tap()
+            expect(appears(panes().divider, timeout: 10)) == true
+            waitForStableControl(panes().divider, in: app, name: "Split divider position")
+        }
+        expect(panes().divider.exists) == false
+        showSplit()
+        var (editor, preview, divider) = panes()
+        let total = editor.frame.width + preview.frame.width
+        expect(abs(editor.frame.width - preview.frame.width)) <= 2
+        expect(divider.value as? String) == "50%"
+        let start = divider.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.2, thenDragTo: start.withOffset(CGVector(dx: -160, dy: 0)))
+        let narrowed = NSPredicate { _, _ in editor.frame.width < preview.frame.width - 200 }
+        waitForState(narrowed, in: app, name: "Divider drag")
+        let dragged = editor.frame.width
+        expect(abs(editor.frame.width + preview.frame.width - total)) <= 2
+        expect(divider.value as? String) != "50%"
+        capture("Resized side-by-side panes")
+
+        // The ratio is a per-device preference that survives a relaunch.
+        app.terminate()
+        app = startWriting()
+        showSplit()
+        (editor, preview, divider) = panes()
+        expect(abs(editor.frame.width - dragged)) <= 2
+        divider.doubleTap()
+        let even = NSPredicate { _, _ in abs(editor.frame.width - preview.frame.width) <= 2 }
+        waitForState(even, in: app, name: "Divider reset")
+        expect(divider.value as? String) == "50%"
+        app.buttons["layout-writing"].firstMatch.tap()
+        expect(poll(timeout: 10) { !panes().divider.exists }) == true
+    }
+
     func testRenderedFunctionHelpKeepsTheManuscript() {
         let app = startWriting()
         let editor = app.textViews["manuscript"].firstMatch

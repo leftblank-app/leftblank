@@ -458,8 +458,23 @@ final class WritingFixture {
     let workspace: Workspace
     let window: WritingWindow
     let toolbar: WindowToolbar
+    /// Window preferences such as the split ratio. Each fixture gets its own
+    /// domain unless a test shares one to observe persistence.
+    let defaults: UserDefaults
+    private let ownedDefaults: String?
 
-    init(text: String, startService: Bool = true, linkedState: Bool = false) throws {
+    init(text: String, startService: Bool = true, linkedState: Bool = false, defaults: UserDefaults? = nil) throws {
+        if let defaults {
+            self.defaults = defaults
+            ownedDefaults = nil
+        } else {
+            let suite = "LeftBlank.writing.test." + UUID().uuidString
+            guard let owned = UserDefaults(suiteName: suite) else {
+                preconditionFailure("Could not create test defaults")
+            }
+            self.defaults = owned
+            ownedDefaults = suite
+        }
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         root = TestPaths.temporaryDirectory.appendingPathComponent("LeftBlank-writing-\(UUID().uuidString)")
@@ -488,7 +503,7 @@ final class WritingFixture {
         workspace.window = window
         toolbar = WindowToolbar(workspace: workspace)
         window.toolbar = toolbar.makeToolbar()
-        window.contentView = NSHostingView(rootView: ContentView(workspace: workspace))
+        window.contentView = NSHostingView(rootView: ContentView(workspace: workspace, defaults: self.defaults))
         window.contentView?.layoutSubtreeIfNeeded()
         if startService {
             workspace.startService()
@@ -546,5 +561,8 @@ final class WritingFixture {
         workspace.shutdown()
         window.close()
         try? FileManager.default.removeItem(at: root)
+        if let ownedDefaults {
+            defaults.removePersistentDomain(forName: ownedDefaults)
+        }
     }
 }
