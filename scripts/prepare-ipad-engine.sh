@@ -9,7 +9,8 @@ if [ ! -d "$source_dir" ]; then
   git clone --depth 1 --branch v0.15.8 https://github.com/Myriad-Dreamin/tinymist.git "$source_dir"
 fi
 test "$(git -C "$source_dir" rev-parse HEAD)" = "$revision"
-for patch in "$PWD/scripts/tinymist-ipad.patch" "$PWD/scripts/tinymist-ipad-export.patch"; do
+for patch in "$PWD/scripts/tinymist-ipad.patch" "$PWD/scripts/tinymist-ipad-export.patch" \
+  "$PWD/scripts/tinymist-ipad-vfs.patch"; do
   if git -C "$source_dir" apply --check "$patch" 2>/dev/null; then
     git -C "$source_dir" apply "$patch"
   else

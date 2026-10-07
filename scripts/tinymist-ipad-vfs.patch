@@ -1,0 +1,40 @@
+diff --git a/crates/tinymist-vfs/src/lib.rs b/crates/tinymist-vfs/src/lib.rs
+index 9879199..1c886b9 100644
+--- a/crates/tinymist-vfs/src/lib.rs
++++ b/crates/tinymist-vfs/src/lib.rs
+@@ -335,7 +335,8 @@ impl<M: PathAccessModel + Sized> Vfs<M> {
+     /// Obtains an object to revise. The object will update the original vfs
+     /// when it is dropped.
+     pub fn revise(&mut self) -> RevisingVfs<'_, M> {
+-        let managed = self.managed.lock().clone();
++        let mut managed = self.managed.lock().clone();
++        managed.detach_unread();
+         let paths = self.paths.lock().clone();
+         let goal_revision = self.revision.checked_add(1).expect("revision overflowed");
+ 
+@@ -617,6 +618,25 @@ impl EntryMap {
+         }
+     }
+ 
++    /// Gives unread entries cells of their own. Otherwise a reader that still
++    /// holds the previous revision can fill a cell shared with the next
++    /// revision after its path index was copied, so the next revision keeps
++    /// stale content that no later path invalidation can find.
++    fn detach_unread(&mut self) {
++        let unread: Vec<EntryId> = self
++            .entries
++            .iter()
++            .filter(|(_, entry)| entry.bytes.get().is_none())
++            .map(|(id, _)| *id)
++            .collect();
++        for id in unread {
++            if let Some(entry) = self.entries.get_mut(&id) {
++                entry.bytes = Arc::default();
++                entry.source = Arc::default();
++            }
++        }
++    }
++
+     fn get_mut(&mut self, id: FileId) -> Option<&mut VfsEntry> {
+         self.entries.get_mut(&Self::key(id))
+     }
