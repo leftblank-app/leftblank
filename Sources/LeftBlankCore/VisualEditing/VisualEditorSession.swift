@@ -302,8 +302,10 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
         // edits into one range, and macOS 15 rebuilds every paragraph in it
         // (all of War and Peace for equations at both ends).
         for range in paragraphs where NSMaxRange(range) <= text.length && range.length > 0 {
-            storage.performEditingTransaction {
-                text.edited(.editedAttributes, range: range, changeInLength: 0)
+            Self.traceBuilds("invalidate \(range) of \(text.length), visible \(viewport?.visible() ?? .zero)") {
+                storage.performEditingTransaction {
+                    text.edited(.editedAttributes, range: range, changeInLength: 0)
+                }
             }
         }
         guard let anchor, let viewport, let manager = textLayoutManager else {
@@ -326,6 +328,16 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
 
     /// Temporary diagnostic: TextKit creates one element per request.
     public static var paragraphRequests = 0
+
+    /// Temporary diagnostic: prints calls that build many paragraphs.
+    public static func traceBuilds<T>(_ label: @autoclosure () -> String, _ body: () -> T) -> T {
+        let before = paragraphRequests
+        let result = body()
+        if paragraphRequests - before > 200 {
+            print("LEFTBLANK BUILDS \(paragraphRequests - before) in \(label())")
+        }
+        return result
+    }
 
     public func textContentStorage(
         _ textContentStorage: NSTextContentStorage,

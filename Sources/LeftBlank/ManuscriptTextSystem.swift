@@ -96,7 +96,9 @@ extension ManuscriptTextView {
         guard let manager = textLayoutManager else {
             return
         }
-        TextKit2Geometry.reveal(range.location, in: manager, visible: containerVisibleRect, scroll: scrollContainer)
+        VisualEditorSession.traceBuilds("reveal \(range.location), visible \(visibleRect)") {
+            TextKit2Geometry.reveal(range.location, in: manager, visible: containerVisibleRect, scroll: scrollContainer)
+        }
     }
 
     func containerVisibleRect() -> CGRect {
