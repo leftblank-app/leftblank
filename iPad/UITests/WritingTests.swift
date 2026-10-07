@@ -378,9 +378,11 @@ final class WritingTests: XCTestCase {
         )
         app.buttons["Done"].tap()
         app.terminate()
+        // Open a known document after relaunch. Reopening the previous one depends
+        // on the system restoring this scene's state, which a test runner that
+        // kills the foreground app does not guarantee; access is what is tested.
+        app.launchArguments += ["-iPadOpenTemplate", "blank"]
         launchInLandscape(app)
-        // The launch can settle on the library before the previous session's
-        // document reopens. Its layout controls exist only once it has.
         let editor = app.textViews["manuscript"].firstMatch
         expect(appears(editor, timeout: 60)) == true
         // Typing is ignored until the reopened document finishes loading.
