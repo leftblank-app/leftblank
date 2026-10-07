@@ -327,12 +327,13 @@ final class TabletWorkspace: ObservableObject {
         let session = generation
         serviceStatus = "Connecting"
         client.onShowDocument = { [weak self] params in
-            guard let self, generation == session, let target = SourceLocation(params) else {
+            guard let self, generation == session, let target = SourceLocation(params, scalarColumns: true) else {
                 return
             }
+            let click = previewReading.takeClick()
             previewReturnLayout = layout
             previewReading.rememberReturnPosition()
-            Task { await self.jump(to: target) }
+            Task { await self.jump(toPreviewSource: target, click: click) }
         }
         client.onDisconnect = { [weak self] error in
             guard let self, generation == session else {
@@ -1097,5 +1098,13 @@ extension TabletWorkspace {
             return
         }
         jump(location.position)
+    }
+
+    /// A preview click lands on the call argument that supplied the clicked text.
+    func jump(toPreviewSource location: SourceLocation, click: PreviewClick?) async {
+        guard await openSource(location.url) else {
+            return
+        }
+        jump(metrics.position(at: PreviewCallSite.offset(location.offset(in: text), in: text, click: click)))
     }
 }

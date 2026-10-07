@@ -48,11 +48,40 @@ public final class PreviewReadingSession: ObservableObject {
     @Published public private(set) var returnAnchor: PreviewReadingAnchor?
     @Published public private(set) var restore: Restore?
     public private(set) var anchor: PreviewReadingAnchor?
+    /// Tinymist answers a preview click with at most one source jump, shortly after it.
+    public static let clickPairing: Duration = .seconds(2)
+    private var click: (text: PreviewClick?, time: ContinuousClock.Instant)?
 
     public init() {}
 
     public func observe(_ anchor: PreviewReadingAnchor) {
         self.anchor = anchor
+    }
+
+    /// Remember the text under the latest preview click, or that it had none.
+    public func observe(_ click: PreviewClick?, at time: ContinuousClock.Instant = .now) {
+        self.click = (click, time)
+    }
+
+    /// The text of a click that may have caused the source jump arriving now. Each click pairs once.
+    public func takeClick(at time: ContinuousClock.Instant = .now) -> PreviewClick? {
+        defer { click = nil }
+        guard let click, time - click.time <= Self.clickPairing else {
+            return nil
+        }
+        return click.text
+    }
+
+    /// Record a message from the shared reading script.
+    public func receive(_ message: [String: Any]) {
+        switch message["kind"] as? String {
+        case "manualScroll": pauseFollowing()
+        case "click": observe(PreviewClick(message: message))
+        default: break
+        }
+        if let value = message["anchor"], let anchor = PreviewReadingAnchor(message: value) {
+            observe(anchor)
+        }
     }
 
     public func rememberReturnPosition() {
@@ -97,6 +126,7 @@ public final class PreviewReadingSession: ObservableObject {
         anchor = nil
         returnAnchor = nil
         restore = nil
+        click = nil
         followsWriting = false
     }
 }

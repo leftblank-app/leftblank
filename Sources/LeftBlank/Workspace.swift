@@ -1763,16 +1763,17 @@ final class Workspace: ObservableObject {
     }
 
     private func showDocument(_ params: JSONValue) {
-        guard let target = SourceLocation(params) else {
+        guard let target = SourceLocation(params, scalarColumns: true) else {
             return
         }
+        let click = previewReading.takeClick()
         previewReturnLayout = layout
         previewReading.rememberReturnPosition()
         let url = target.url
         if url.standardizedFileURL != documentURL.standardizedFileURL, !open(url, preservingMain: true) {
             return
         }
-        jump(to: target.position.offset(in: text), synchronizePreview: false)
+        jump(to: PreviewCallSite.offset(target.offset(in: text), in: text, click: click), synchronizePreview: false)
     }
 
     func showDiagnostic(_ item: DiagnosticItem) {

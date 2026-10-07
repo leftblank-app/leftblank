@@ -115,14 +115,7 @@ struct PreviewView: NSViewRepresentable {
         }
 
         func receiveReading(_ body: [String: Any]) {
-            if body["kind"] as? String == "manualScroll" {
-                readingSession.pauseFollowing()
-            }
-            if let value = body["anchor"],
-               let anchor = PreviewReadingAnchor(message: value)
-            {
-                readingSession.observe(anchor)
-            }
+            readingSession.receive(body)
         }
 
         func restoreReading(in view: WKWebView) {

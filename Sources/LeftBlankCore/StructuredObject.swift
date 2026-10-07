@@ -226,7 +226,8 @@ public enum ObjectEditError: LocalizedError {
     }
 }
 
-private struct ObjectScanner {
+/// Mode-aware Typst source scanning shared by object editing and preview navigation.
+struct ObjectScanner {
     struct Call { let name: String
         let args: [String]
         let end: Int
@@ -322,8 +323,16 @@ private struct ObjectScanner {
     /// index after the outermost one closes, or nil for unbalanced or unsupported input. Without
     /// frames it leniently scans a whole document and offers each embedded `#` to `visit`, which
     /// may return the index to continue from.
-    func scan(from start: Int, frames initial: [Frame], visit: (Int) -> Int? = { _ in nil }) -> Int? {
-        let strict = !initial.isEmpty
+    /// A `lenient` scan with open frames also returns where the outermost one closes, but accepts
+    /// statements and stray closers as a whole-document scan does. `code` sees each code-mode index.
+    func scan(
+        from start: Int,
+        frames initial: [Frame],
+        lenient: Bool = false,
+        visit: (Int) -> Int? = { _ in nil },
+        code: (Int) -> Void = { _ in },
+    ) -> Int? {
+        let strict = !initial.isEmpty && !lenient
         var frames = initial, index = start
         while index < units.count {
             let mode = frames.last?.mode ?? .markup, unit = units[index]
@@ -334,10 +343,13 @@ private struct ObjectScanner {
             if unit == frames.last?.closer || unit == 59 && frames.last?.closer == 10 {
                 frames.removeLast()
                 index += 1
-                if strict, frames.isEmpty {
+                if !initial.isEmpty, frames.isEmpty {
                     return index
                 }
                 continue
+            }
+            if mode == .code {
+                code(index)
             }
             if mode != .code, unit == 35 {
                 if let end = visit(index) {
@@ -359,11 +371,14 @@ private struct ObjectScanner {
                 // Recover from prose such as "1)" by closing back to the matching delimiter.
                 if let match = frames.lastIndex(where: { $0.closer == unit }) {
                     frames.removeSubrange(match...)
+                    if !initial.isEmpty, frames.isEmpty {
+                        return index + 1
+                    }
                 }
             }
             index += 1
         }
-        return strict ? nil : units.count
+        return initial.isEmpty ? units.count : nil
     }
 
     /// Consumes the start of the code after a markup `#`: a string, an identifier chain, and an
@@ -415,12 +430,21 @@ private struct ObjectScanner {
         {
             index += 1
         }
-        guard index > start, index < units.count, units[index] == 40, let end = balanced(at: index) else {
+        guard index > start, index < units.count, units[index] == 40,
+              let (ranges, end) = arguments(at: index), ranges.allSatisfy({ $0.length > 0 })
+        else {
             return nil
         }
-        let name = text(NSRange(location: start, length: index - start))
-        var args: [String] = [], from = index + 1
-        index += 1
+        return Call(name: text(NSRange(location: start, length: index - start)), args: ranges.map(text), end: end)
+    }
+
+    /// Trimmed ranges of the comma-separated arguments in the parentheses at `open`, and the
+    /// index after them. A trailing comma adds no argument; an empty middle one has length 0.
+    func arguments(at open: Int) -> ([NSRange], Int)? {
+        guard units[open] == 40, let end = balanced(at: open) else {
+            return nil
+        }
+        var ranges: [NSRange] = [], from = open + 1, index = open + 1
         while index < end - 1 {
             if let ignored = ignored(at: index, mode: .code) {
                 index = ignored
@@ -431,21 +455,31 @@ private struct ObjectScanner {
                 continue
             }
             if units[index] == 44 {
-                args
-                    .append(text(NSRange(location: from, length: index - from))
-                        .trimmingCharacters(in: .whitespacesAndNewlines))
+                ranges.append(trimmed(from, index))
                 from = index + 1
             }
             index += 1
         }
-        let tail = text(NSRange(location: from, length: end - 1 - from)).trimmingCharacters(in: .whitespacesAndNewlines)
-        if !tail.isEmpty {
-            args.append(tail)
+        let tail = trimmed(from, end - 1)
+        if tail.length > 0 {
+            ranges.append(tail)
         }
-        guard args.allSatisfy({ !$0.isEmpty }) else {
-            return nil
+        return (ranges, end)
+    }
+
+    func trimmed(_ start: Int, _ end: Int) -> NSRange {
+        var start = start, end = end
+        while start < end, Self.space(units[start]) {
+            start += 1
         }
-        return Call(name: name, args: args, end: end)
+        while end > start, Self.space(units[end - 1]) {
+            end -= 1
+        }
+        return NSRange(location: start, length: end - start)
+    }
+
+    static func space(_ unit: UInt16) -> Bool {
+        [9, 10, 13, 32].contains(unit)
     }
 
     static func exactCall(_ text: String) -> Call? {
