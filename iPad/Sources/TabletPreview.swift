@@ -114,14 +114,7 @@ struct TabletPreview: UIViewRepresentable {
         }
 
         func receiveReading(_ body: [String: Any]) {
-            if body["kind"] as? String == "manualScroll" {
-                workspace.previewReading.pauseFollowing()
-            }
-            if let value = body["anchor"],
-               let anchor = PreviewReadingAnchor(message: value)
-            {
-                workspace.previewReading.observe(anchor)
-            }
+            workspace.previewReading.receive(body)
         }
 
         func applyPresentation(to view: WKWebView, zoom: CGFloat, dark: Bool) {

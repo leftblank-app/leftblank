@@ -114,6 +114,28 @@ public extension PreviewScripts {
                 if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) userScroll(event);
             }, true);
             document.addEventListener('pointerdown', report, true);
+            // Tinymist jumps from text that came from a string value to the expression
+            // that displayed it, such as a function parameter. Report the clicked text run,
+            // and the runs on its line, so the editor can find the call argument instead.
+            // WebKit lets a run's selection layer overflow onto its neighbors, so the
+            // event target can be another run. Find the run by its glyph bounds instead.
+            const runText = run => run?.querySelector('.tsel')?.textContent || '';
+            const within = (box, x, y) => box && box.left <= x && x <= box.left + box.width &&
+                box.top <= y && y <= box.top + box.height;
+            document.addEventListener('pointerdown', event => {
+                const x = event.clientX, y = event.clientY;
+                const page = [...document.querySelectorAll('.typst-doc > g.typst-page')]
+                    .find(page => within(pageBounds(page), x, y));
+                const runs = [...(page?.querySelectorAll('.typst-text') || [])].map(run => [run, run.getBoundingClientRect()]);
+                let run = null, area = Infinity;
+                for (const [candidate, box] of runs) {
+                    if (within(box, x, y) && box.width * box.height < area) [run, area] = [candidate, box.width * box.height];
+                }
+                const line = run ? runs.filter(([, box]) => box.top <= y && y <= box.top + box.height)
+                    .map(([other]) => runText(other)).join('') : '';
+                window.webkit?.messageHandlers?.leftblankPreviewReading?.postMessage(
+                    {kind: 'click', text: runText(run).slice(0, 400), line: line.slice(0, 2000)});
+            }, true);
             document.addEventListener('scroll', () => {
                 const host = scroll();
                 if (restoring && appliedScroll && host &&

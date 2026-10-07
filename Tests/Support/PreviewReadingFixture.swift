@@ -129,3 +129,54 @@ private final class PreviewFixtureNavigation: NSObject, WKNavigationDelegate {
         ])
     }
 }
+
+public extension PreviewReadingFixture {
+    /// Draws a heading as Tinymist's SVG renderer does, one text group with a
+    /// selection layer per run, presses a pointer on its first run and returns
+    /// the click the reading script reports. The second run's selection layer
+    /// overflows onto the first, as WebKit lets oversized layers do, so the hit
+    /// element is not the run under the pointer.
+    func pressHeadingRun() async throws -> [String: Any] {
+        let recorder = PreviewMessageRecorder()
+        web.configuration.userContentController.add(recorder, name: "leftblankPreviewReading")
+        defer { web.configuration.userContentController.removeScriptMessageHandler(forName: "leftblankPreviewReading") }
+        let layer = #"<foreignObject width="200" height="20" style="overflow: visible">"#
+        _ = try await web.evaluateJavaScript("""
+        (() => {
+            const page = document.querySelector('.typst-doc > g.typst-page');
+            page.innerHTML = `
+            <g class="typst-text" transform="translate(50,100)"><rect width="80" height="20"/>
+            <foreignObject width="80" height="20"><div xmlns="http://www.w3.org/1999/xhtml" class="tsel">LB-001 </div></foreignObject></g>
+            <g class="typst-text" transform="translate(140,100)"><rect width="200" height="20"/>
+            \(layer)<div xmlns="http://www.w3.org/1999/xhtml" class="tsel" style="margin-left: -150px; width: 400px; height: 60px">大文档检查</div></foreignObject></g>
+            <g class="typst-text" transform="translate(50,300)"><rect width="80" height="20"/>
+            <foreignObject width="80" height="20"><div xmlns="http://www.w3.org/1999/xhtml" class="tsel">Elsewhere</div></foreignObject></g>`;
+            const box = page.querySelector('.typst-text rect').getBoundingClientRect();
+            const x = box.left + 5, y = box.top + box.height / 2;
+            document.elementFromPoint(x, y).dispatchEvent(new PointerEvent('pointerdown', {bubbles: true, clientX: x, clientY: y}));
+            return true;
+        })()
+        """)
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline {
+            if let click = recorder.messages.first(where: { $0["kind"] as? String == "click" }) {
+                return click
+            }
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        throw NSError(domain: "PreviewReadingFixture", code: 5, userInfo: [
+            NSLocalizedDescriptionKey: "The reading script did not report the pressed run.",
+        ])
+    }
+}
+
+@MainActor
+private final class PreviewMessageRecorder: NSObject, WKScriptMessageHandler {
+    var messages: [[String: Any]] = []
+
+    func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let body = message.body as? [String: Any] {
+            messages.append(body)
+        }
+    }
+}

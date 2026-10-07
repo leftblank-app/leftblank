@@ -319,6 +319,76 @@ extension WritingFlowTests {
             .page)
     }
 
+    @Test func previewClicksOnFunctionTextJumpToTheCallArgument() async throws {
+        let source = """
+        #let status(s) = [#s]
+        #let item(id, title, s) = [
+          == #id #title #h(1fr) #status(s)
+        ]
+        #item("LB-001", "大文档检查时预览没有提示", "done")
+        #item("LB-002", "部分示例无法渲染", "done")
+
+        😀 Plain *text* here.
+        """
+        let app = try WritingFixture(text: source)
+        defer { app.close() }
+        try await app.ready()
+        app.workspace.layout = .split
+        await app.layout()
+        let web = try #require(findWebView(app.window.contentView))
+        web.configuration.preferences.inactiveSchedulingPolicy = .none
+        web.configuration.userContentController.addUserScript(WKUserScript(
+            source: "window.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 16); window.cancelAnimationFrame = clearTimeout; window.leftblankTestFrames = true;",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true,
+        ))
+        web.reload()
+        try await waitForJavaScript(
+            web,
+            condition: "window.leftblankTestFrames === true && [...document.querySelectorAll('.typst-page .tsel')].some(run => run.textContent.includes('LB-002'))",
+        )
+        try await app.wait { app.workspace.hasSuccessfulPreview && !web.isLoading }
+        // Dispatch the pointer sequence at a rendered run, where a reader would
+        // click. Tinymist's own handler resolves the page point and jumps. In
+        // WebKit the hit element can be a neighbor's overflowing selection layer.
+        func click(_ text: String, line: String = "") async throws -> Int {
+            let editor = try #require(app.workspace.editor)
+            editor.setSelectedRange(NSRange(location: 0, length: 0))
+            app.workspace.selection = NSRange(location: 0, length: 0)
+            let clicked = try await web.evaluateJavaScript("""
+            (() => {
+                const runs = [...document.querySelectorAll('.typst-page .typst-text')];
+                const run = runs.filter(run => run.querySelector('.tsel')?.textContent.includes('\(text)'))
+                    .find(run => !'\(line)' || runs.some(other => other !== run &&
+                        Math.abs(other.getBoundingClientRect().top - run.getBoundingClientRect().top) < 4 &&
+                        other.querySelector('.tsel')?.textContent.includes('\(line)')));
+                const box = run.getBoundingClientRect();
+                const x = box.left + 2, y = box.top + box.height / 2;
+                const target = document.elementFromPoint(x, y);
+                for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+                    const Event = type.startsWith('pointer') ? PointerEvent : MouseEvent;
+                    target.dispatchEvent(new Event(type, {bubbles: true, cancelable: true, clientX: x, clientY: y}));
+                }
+                return target?.closest?.('.typst-page') !== null;
+            })()
+            """) as? Bool
+            #expect(clicked == true)
+            try await app.wait { app.workspace.selection.location != 0 }
+            return app.workspace.selection.location
+        }
+        let text = source as NSString
+        #expect(try await click("LB-002") == text.range(of: "LB-002\"").location)
+        #expect(try await click("LB-001") == text.range(of: "LB-001\"").location)
+        #expect(try await click("大文档") == text.range(of: "大文档").location)
+        // Both calls pass "done"; the rest of the clicked heading identifies the call.
+        #expect(try await click("done", line: "LB-002") ==
+            text.range(of: "\"done\"", options: .backwards).location + 1)
+        #expect(try await click("done", line: "LB-001") == text.range(of: "\"done\"").location + 1)
+        // Tinymist counts columns in Unicode scalars; the emoji is two UTF-16 units.
+        #expect(try await click("text") == text.range(of: "text*").location)
+        #expect(app.workspace.editor?.string == source)
+    }
+
     @Test func realPreviewRetainsPagesOnErrorThenRecoversAndTogglesDark() async throws {
         _ = NSApplication.shared
         let originalAppearance = NSApp.appearance

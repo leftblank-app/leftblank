@@ -107,6 +107,16 @@ import WebKit
         #expect(abs(anchor.y - 0.4) < 0.02)
     }
 
+    @Test func pressedPreviewTextIsReportedByItsGlyphBoundsForTheNextSourceJump() async throws {
+        let fixture = try PreviewReadingFixture(script: PreviewScripts.reading, lazySVG: true)
+        defer { fixture.close() }
+        try await fixture.ready()
+        let session = PreviewReadingSession()
+        let coordinator = PreviewView.Coordinator(readingSession: session, onError: { _ in })
+        try await coordinator.receiveReading(fixture.pressHeadingRun())
+        #expect(session.takeClick() == PreviewClick(text: "LB-001", line: "LB-001 大文档检查"))
+    }
+
     @Test func nativeReadingBridgePausesFollowAndRetainsBookmark() {
         let session = PreviewReadingSession()
         let coordinator = PreviewView.Coordinator(readingSession: session, onError: { _ in })

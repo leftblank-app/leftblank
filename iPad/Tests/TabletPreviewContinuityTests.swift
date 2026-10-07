@@ -91,6 +91,17 @@ import WebKit
         #expect(abs(anchor.y - 0.4) < 0.02)
     }
 
+    @Test func pressedPreviewTextIsReportedByItsGlyphBoundsForTheNextSourceJump() async throws {
+        let fixture = try PreviewReadingFixture(script: PreviewScripts.reading, lazySVG: true)
+        defer { fixture.close() }
+        try await fixture.ready()
+        let root = TestPaths.temporaryDirectory.appendingPathComponent("preview-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = TabletWorkspace(stateDirectory: root)
+        try await TabletPreview.Coordinator(workspace).receiveReading(fixture.pressHeadingRun())
+        #expect(workspace.previewReading.takeClick() == PreviewClick(text: "LB-001", line: "LB-001 大文档检查"))
+    }
+
     @Test func nativeReadingBridgePausesFollowAndRetainsBookmark() {
         let root = TestPaths.temporaryDirectory.appendingPathComponent("preview-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
