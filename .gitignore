@@ -9,3 +9,6 @@ __pycache__/
 Engine/TinymistBridge/target/
 **/xcuserdata/
 Tools/MCPServer/target/
+Engine/SyntaxBridge/target/
+Benchmarks/VisualEditing/Artifacts/
+Benchmarks/VisualEditing/.build/
