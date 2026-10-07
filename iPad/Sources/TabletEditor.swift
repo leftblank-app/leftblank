@@ -232,7 +232,6 @@ struct TabletEditor: UIViewRepresentable {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        session?.viewportDidLayout()
         positionTypingAssistance()
     }
 

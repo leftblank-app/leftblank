@@ -96,25 +96,31 @@ extension ManuscriptTextView {
         guard let manager = textLayoutManager else {
             return
         }
-        VisualEditorSession.traceBuilds("reveal \(range.location), visible \(visibleRect)") {
-            TextKit2Geometry.reveal(range.location, in: manager, visible: containerVisibleRect, scroll: scrollContainer)
-        }
+        TextKit2Geometry.reveal(range.location, in: manager, visible: containerVisibleRect, scroll: scrollContainer)
     }
 
     func containerVisibleRect() -> CGRect {
         visibleRect.offsetBy(dx: -textContainerOrigin.x, dy: -textContainerOrigin.y)
     }
 
-    /// Scrolls so that container-y `y` is at the top of the viewport.
+    /// Scrolls so that container-y `y` is at the top of the viewport, or as
+    /// near as the text allows. TextKit 2 resizes the view lazily, so a target
+    /// laid out just now can lie past the frame: grow it to the text's extent,
+    /// never beyond. A viewport past the end of the text makes macOS 15 lay out
+    /// the whole document trying to fill it (all 41,302 paragraphs of War and
+    /// Peace after revealing a caret restored at its end).
     func scrollContainer(to y: CGFloat) {
         guard let scroll = enclosingScrollView else {
             return
         }
         let clip = scroll.contentView
-        let top = y + textContainerOrigin.y
-        if frame.height < top + visibleRect.height {
-            setFrameSize(NSSize(width: frame.width, height: top + visibleRect.height))
+        if let manager = textLayoutManager {
+            let text = manager.usageBoundsForTextContainer.maxY + 2 * textContainerInset.height
+            if frame.height < text {
+                setFrameSize(NSSize(width: frame.width, height: text))
+            }
         }
+        let top = max(0, min(y + textContainerOrigin.y, frame.height - visibleRect.height))
         clip.scroll(to: NSPoint(x: clip.bounds.minX, y: top))
         scroll.reflectScrolledClipView(clip)
     }

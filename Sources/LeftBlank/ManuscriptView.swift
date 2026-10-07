@@ -294,13 +294,6 @@ final class ManuscriptTextView: NSTextView {
         return characterEditCount == 1 ? characterEdit : nil
     }
 
-    override func layout() {
-        VisualEditorSession.traceBuilds("text view layout, visible \(visibleRect), frame \(frame.size)") {
-            super.layout()
-        }
-        session?.viewportDidLayout()
-    }
-
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         sourceHover.observeWindow()
@@ -481,20 +474,16 @@ final class ManuscriptTextView: NSTextView {
             // Explicit font changes are rare and must take effect immediately.
             let style = Self.visualStyle(size)
             let base = style.baseAttributes
-            VisualEditorSession.traceBuilds("font size base attributes") {
-                textStorage?.addAttributes(base, range: NSRange(location: 0, length: textStorage?.length ?? 0))
-            }
+            textStorage?.addAttributes(base, range: NSRange(location: 0, length: textStorage?.length ?? 0))
             typingAttributes = base
-            VisualEditorSession.traceBuilds("font size style") { session.style = style }
+            session.style = style
             appliedFontSize = size
         }
-        VisualEditorSession.traceBuilds("isEnabled") { session.isEnabled = workspace?.styledSource ?? true }
+        session.isEnabled = workspace?.styledSource ?? true
         if let workspace, let snapshot = workspace.syntaxSnapshot, workspace.syntaxRevision != appliedSyntaxRevision,
            workspace.syntaxDocumentRevision == workspaceRevision, snapshot.source.utf16.count == string.utf16.count
         {
-            VisualEditorSession.traceBuilds("semantic colors, visible \(visibleRect)") {
-                session.colors.setColors(snapshot.tokens.map { ($0.range, Theme.color(for: $0)) })
-            }
+            session.colors.setColors(snapshot.tokens.map { ($0.range, Theme.color(for: $0)) })
             appliedSyntaxRevision = workspace.syntaxRevision
         }
     }

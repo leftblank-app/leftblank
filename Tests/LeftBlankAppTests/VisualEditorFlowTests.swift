@@ -137,6 +137,25 @@ extension WritingFlowTests {
         switchedEditors.append(editor)
     }
 
+    @Test func revealingTheEndNeverScrollsPastTheText() async throws {
+        let paragraph = "A paragraph of plain words that wraps across the writing column.\n\n"
+        let source = String(repeating: paragraph, count: 3000)
+        let app = try WritingFixture(text: source, startService: false)
+        defer { app.close() }
+        app.window.orderFront(nil)
+        await app.layout()
+        let editor = try #require(app.workspace.editor)
+        let manager = try #require(editor.textLayoutManager)
+        let end = (source as NSString).length
+        editor.reveal(NSRange(location: end, length: 0))
+        // A viewport past the end of the text makes macOS 15 lay out the whole
+        // document trying to fill it.
+        let text = manager.usageBoundsForTextContainer.maxY + 2 * editor.textContainerInset.height
+        #expect(editor.visibleRect.maxY <= text + 0.5, "Visible \(editor.visibleRect), text ends at \(text)")
+        let caret = try #require(TextKit2Geometry.caretRect(at: end, in: manager))
+        #expect(editor.containerVisibleRect().contains(CGPoint(x: caret.minX, y: caret.midY)))
+    }
+
     @Test func preciseJumpsLandOnDistantTargetsAndHitTestsRoundTrip() async throws {
         let paragraph = "A paragraph with *strong* words, 中文 and 😀 that wraps across the writing column. "
         let source = (0 ..< 1500).map { "== Section \($0)\n\n" + String(repeating: paragraph, count: 3) + "\n\n" }
