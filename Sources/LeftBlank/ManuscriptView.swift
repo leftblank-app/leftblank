@@ -294,6 +294,22 @@ final class ManuscriptTextView: NSTextView {
         return characterEditCount == 1 ? characterEdit : nil
     }
 
+    private func layoutState() -> String {
+        "visible \(visibleRect.minY.rounded())+\(visibleRect.height) frame \(frame.height.rounded()) usage \(textLayoutManager?.usageBoundsForTextContainer.maxY.rounded() ?? -1)"
+    }
+
+    override func layout() {
+        VisualEditorSession.trace("layout", layoutState) {
+            super.layout()
+        }
+    }
+
+    override func prepareContent(in rect: NSRect) {
+        VisualEditorSession.trace("prepareContent \(rect.minY.rounded())+\(rect.height.rounded())", layoutState) {
+            super.prepareContent(in: rect)
+        }
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         sourceHover.observeWindow()
@@ -348,6 +364,9 @@ final class ManuscriptTextView: NSTextView {
     }
 
     override func setFrameSize(_ newSize: NSSize) {
+        if VisualEditorSession.tracing, abs(newSize.height - frame.height) > 1000 {
+            print("LEFTBLANK TRACE frame \(frame.height.rounded()) -> \(newSize.height.rounded()) | \(layoutState())")
+        }
         super.setFrameSize(newSize)
         let inset = NSSize(width: ManuscriptLayout.horizontalInset(for: newSize.width), height: 42)
         if textContainerInset != inset {
@@ -479,11 +498,13 @@ final class ManuscriptTextView: NSTextView {
             session.style = style
             appliedFontSize = size
         }
-        session.isEnabled = workspace?.styledSource ?? true
+        VisualEditorSession.trace("isEnabled", layoutState) { session.isEnabled = workspace?.styledSource ?? true }
         if let workspace, let snapshot = workspace.syntaxSnapshot, workspace.syntaxRevision != appliedSyntaxRevision,
            workspace.syntaxDocumentRevision == workspaceRevision, snapshot.source.utf16.count == string.utf16.count
         {
-            session.colors.setColors(snapshot.tokens.map { ($0.range, Theme.color(for: $0)) })
+            VisualEditorSession.trace("semantic colors \(snapshot.tokens.count)", layoutState) {
+                session.colors.setColors(snapshot.tokens.map { ($0.range, Theme.color(for: $0)) })
+            }
             appliedSyntaxRevision = workspace.syntaxRevision
         }
     }

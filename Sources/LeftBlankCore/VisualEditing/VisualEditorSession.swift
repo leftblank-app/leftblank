@@ -298,9 +298,16 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
                 anchor = (offset, caret.minY - visible.minY)
             }
         }
-        storage.performEditingTransaction {
-            for range in paragraphs where NSMaxRange(range) <= text.length && range.length > 0 {
-                text.edited(.editedAttributes, range: range, changeInLength: 0)
+        Self.trace(
+            "invalidate \(paragraphs.count) ranges \(paragraphs.first.map { "\($0)" } ?? "")…\(paragraphs.last.map { "\($0)" } ?? "") of \(text.length)",
+            {
+                "viewport \(self.textLayoutManager?.textViewportLayoutController.viewportRange.map { "\($0)" } ?? "nil")"
+            },
+        ) {
+            storage.performEditingTransaction {
+                for range in paragraphs where NSMaxRange(range) <= text.length && range.length > 0 {
+                    text.edited(.editedAttributes, range: range, changeInLength: 0)
+                }
             }
         }
         guard let anchor, let viewport, let manager = textLayoutManager else {
@@ -325,6 +332,18 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
     /// text element, and on macOS 15 every edit walks the cached elements
     /// after it, so the book benchmark checks this count stays small.
     public private(set) static var paragraphsBuilt = 0
+
+    /// Temporary diagnostic: an ordered log of layout events in benchmarks.
+    public static var tracing = false
+    public static func trace<T>(_ label: String, _ state: () -> String = { "" }, _ body: () -> T) -> T {
+        guard tracing else {
+            return body()
+        }
+        let before = paragraphsBuilt, pre = state()
+        let result = body()
+        print("LEFTBLANK TRACE \(label) built \(paragraphsBuilt - before) | before \(pre) | after \(state())")
+        return result
+    }
 
     public func textContentStorage(
         _ textContentStorage: NSTextContentStorage,

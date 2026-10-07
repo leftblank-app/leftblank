@@ -18,6 +18,7 @@ extension WritingFlowTests {
         // On macOS 15 every edit walks each text element TextKit has built
         // after it; a step that builds the whole book makes typing slow.
         let builtBefore = VisualEditorSession.paragraphsBuilt
+        VisualEditorSession.tracing = true
         var built: [String: Int] = [:]
         func record(_ phase: String) {
             built[phase] = VisualEditorSession.paragraphsBuilt - builtBefore
@@ -61,6 +62,7 @@ extension WritingFlowTests {
         // Finish and report that initial presentation before timing navigation,
         // just as we settle the window between every subsequent jump below.
         record("highlighted")
+        VisualEditorSession.tracing = false
         let presentationStart = ContinuousClock.now
         await app.layout()
         editor.prepareForPointerInteraction()
