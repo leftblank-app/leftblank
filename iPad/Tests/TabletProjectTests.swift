@@ -52,4 +52,42 @@ struct TabletProjectTests {
         #expect(await workspace.openSource(outside) == false)
         #expect(workspace.sourceURL == source)
     }
+
+    @Test func startupKeepsADocumentChosenWhileTheLibraryLoads() async throws {
+        let root = TestPaths.temporaryDirectory.appendingPathComponent("tablet-startup-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        // Keep startup local; this test must not wait for an iCloud container.
+        let defaults = UserDefaults.standard
+        let cloud = defaults.object(forKey: "iPadCloudEnabled")
+        defaults.set(false, forKey: "iPadCloudEnabled")
+        defer { defaults.set(cloud, forKey: "iPadCloudEnabled") }
+        let session = UUID()
+        let state = root.appendingPathComponent("State")
+        let earlier = TabletWorkspace(sessionID: session, stateDirectory: state)
+        let previous = try await earlier.library.create(title: "Previous", text: "= Previous\n\nLast session\n")
+        let chosen = try await earlier.library.create(title: "Chosen", text: "= Chosen\n\nPicked at launch\n")
+        await earlier.open(previous)
+        earlier.selection = NSRange(location: 4, length: 0)
+        earlier.persistRecovery()
+        earlier.client.stop()
+
+        // Nothing chosen yet: startup reopens the last session at its caret.
+        let restored = TabletWorkspace(sessionID: session, stateDirectory: state)
+        await restored.start()
+        #expect(restored.document?.id == previous.id)
+        #expect(restored.selection.location == 4)
+        restored.client.stop()
+
+        // A person opens another document before startup finishes. Restoring
+        // must neither replace it nor reload it and move its caret.
+        let next = TabletWorkspace(sessionID: session, stateDirectory: state)
+        defer { next.client.stop() }
+        try await next.reloadLibrary()
+        await next.open(chosen)
+        next.selection = NSRange(location: 6, length: 0)
+        await next.start()
+        #expect(next.document?.id == chosen.id)
+        #expect(next.selection.location == 6)
+        #expect(next.text == "= Chosen\n\nPicked at launch\n")
+    }
 }

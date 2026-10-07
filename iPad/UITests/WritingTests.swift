@@ -379,9 +379,16 @@ final class WritingTests: XCTestCase {
         app.buttons["Done"].tap()
         app.terminate()
         launchInLandscape(app)
-        app.buttons["layout-writing"].firstMatch.tap()
+        // The launch can settle on the library before the previous session's
+        // document reopens. Its layout controls exist only once it has.
         let editor = app.textViews["manuscript"].firstMatch
-        expect(appears(editor, timeout: 10)) == true
+        expect(appears(editor, timeout: 60)) == true
+        // Typing is ignored until the reopened document finishes loading.
+        let loading = app.progressIndicators["document-loading"].firstMatch
+        waitForState(NSPredicate { _, _ in !loading.exists }, in: app, name: "Restored document", timeout: 60)
+        let writing = app.buttons["layout-writing"].firstMatch
+        waitForStableControl(writing, in: app, name: "Restored document layout control")
+        writing.tap()
         let original = editor.value as? String ?? ""
         let addition = "\nPurchased access survives relaunch.\n"
         editor.tap()
