@@ -66,24 +66,34 @@ public enum AgentTools {
         func string(_ description: String) -> JSONValue {
             .object(["type": .string("string"), "description": .string(description), "maxLength": .number(2_097_152)])
         }
-        func integer(_ minimum: Int, _ maximum: Int) -> JSONValue {
+        func integer(_ minimum: Int, _ maximum: Int, _ description: String) -> JSONValue {
             .object([
                 "type": .string("integer"),
+                "description": .string(description),
                 "minimum": .number(Double(minimum)),
                 "maximum": .number(Double(maximum)),
             ])
         }
-        func choice(_ values: [String]) -> JSONValue {
-            .object(["type": .string("string"), "enum": .array(values.map(JSONValue.string))])
+        func choice(_ values: [String], _ description: String) -> JSONValue {
+            .object([
+                "type": .string("string"),
+                "description": .string(description),
+                "enum": .array(values.map(JSONValue.string)),
+            ])
+        }
+        func boolean(_ description: String) -> JSONValue {
+            .object(["type": .string("boolean"), "description": .string(description)])
+        }
+        func nullableRevision(_ description: String) -> JSONValue {
+            .object(["type": .array([.string("string"), .string("null")]), "description": .string(description)])
         }
         let path = string("Project-relative path. No absolute paths, parent traversal, hidden files or symlinks.")
         let document = string("Stable document UUID from list_documents.")
         let revision = string("Opaque revision from a current read; never a history version_id.")
-        let nullableRevision = JSONValue.object(["type": .array([.string("string"), .string("null")])])
-        let boolean = JSONValue.object(["type": .string("boolean")])
         let strings = JSONValue.object([
             "type": .string("array"),
-            "items": string("Project-relative glob"),
+            "description": .string("Only search files whose project-relative path matches one of these globs."),
+            "items": string("Glob with *, ** and ?."),
             "maxItems": .number(50),
         ])
         let common: [String: JSONValue] = [
@@ -91,9 +101,11 @@ public enum AgentTools {
             "path": path,
             "request_id": string("Unique write request ID. Reuse only for the identical request."),
             "cursor": string("Opaque continuation token from the same tool and query."),
-            "limit": integer(1, 500),
+            "limit": integer(1, 500, "Maximum items per page. Default 100."),
             "expected_revision": revision,
             "expected_metadata_revision": revision,
+            "title": string("Document title shown in the library, 1 to 200 characters."),
+            "version_id": string("Snapshot ID from list_file_versions."),
         ]
         func tool(
             _ name: String,
@@ -104,10 +116,12 @@ public enum AgentTools {
             write: Bool = false,
             destructive: Bool = false,
         ) -> AgentToolDefinition {
-            let properties = Dictionary(uniqueKeysWithValues: (required + optional).map { (
-                $0,
-                fields[$0] ?? common[$0] ?? string($0),
-            ) })
+            let properties = Dictionary(uniqueKeysWithValues: (required + optional).map { field in
+                guard let schema = fields[field] ?? common[field] else {
+                    preconditionFailure("Describe the \(field) parameter of \(name).")
+                }
+                return (field, schema)
+            })
             return AgentToolDefinition(name: name, description: description, inputSchema: .object([
                 "type": .string("object"), "properties": .object(properties),
                 "required": .array(required.map(JSONValue.string)),
@@ -121,13 +135,20 @@ public enum AgentTools {
                 "Find documents by title or entry-file text.",
                 [],
                 ["query", "include_trashed", "cursor", "limit"],
-                fields: ["include_trashed": boolean],
+                fields: [
+                    "query": string(
+                        "Words that must all appear in the title or entry file, ignoring case and accents. " +
+                            "Empty lists every document.",
+                    ),
+                    "include_trashed": boolean("Also return documents in the trash. Default false."),
+                ],
             ),
             tool("get_document", "Read document metadata, entry path and current project revision.", ["document_id"]),
             tool(
                 "create_document",
                 "Create a managed document with main.typ.",
                 ["title", "source", "request_id"],
+                fields: ["source": string("Typst source for main.typ, up to 2 MiB.")],
                 write: true,
             ),
             tool(
@@ -154,14 +175,22 @@ public enum AgentTools {
                 "List project files, optionally filtering relative paths with * / ** / ? globs.",
                 ["document_id"],
                 ["path", "glob", "recursive", "limit", "cursor"],
-                fields: ["recursive": boolean],
+                fields: [
+                    "path": string("Project-relative folder to list. Empty lists from the project root."),
+                    "glob": string("Glob over project-relative paths with *, ** and ?. Default **/*."),
+                    "recursive": boolean("Include files in subfolders. Default true."),
+                ],
             ),
             tool(
                 "read_file",
                 "Read UTF-8 text, preferring the live buffer. History reads do not yield a writable revision.",
                 ["document_id", "path"],
                 ["start_line", "max_lines", "version_id", "cursor"],
-                fields: ["start_line": integer(1, 2_097_152), "max_lines": integer(1, 1000)],
+                fields: [
+                    "start_line": integer(1, 2_097_152, "First line to return, 1-based. Default 1."),
+                    "max_lines": integer(1, 1000, "Maximum lines to return. Default 200."),
+                    "version_id": string("Read this snapshot from list_file_versions instead of the current file."),
+                ],
             ),
             tool(
                 "read_image",
@@ -175,27 +204,38 @@ public enum AgentTools {
                 ["document_id", "query"],
                 ["mode", "paths", "case_sensitive", "context_lines", "limit", "cursor"],
                 fields: [
-                    "mode": choice(["literal", "regex"]),
+                    "query": string("Text to find, or a regular expression when mode is regex."),
+                    "mode": choice(["literal", "regex"], "How to interpret query. Default literal."),
                     "paths": strings,
-                    "case_sensitive": boolean,
-                    "context_lines": integer(0, 10),
+                    "case_sensitive": boolean("Match letter case exactly. Default true."),
+                    "context_lines": integer(0, 10, "Lines of context around each match. Default 2."),
                 ],
             ),
             tool(
                 "str_replace",
                 "Replace exactly one occurrence, including whitespace. Multiple or absent matches are errors.",
                 ["document_id", "path", "old_str", "new_str", "expected_revision", "request_id"],
+                fields: [
+                    "old_str": string("Exact text to replace, including whitespace. It must occur exactly once."),
+                    "new_str": string("Replacement text."),
+                ],
                 write: true,
             ),
             tool(
                 "apply_patch",
                 "Apply exact Codex-style *** Begin Patch / Add File / Update File / Delete File / *** End Patch. No Move or binary edits. expected_revisions must cover exactly the affected paths; null means absent.",
                 ["document_id", "input", "expected_revisions", "request_id"],
-                fields: ["expected_revisions": .object([
-                    "type": .string("object"),
-                    "additionalProperties": nullableRevision,
-                    "maxProperties": .number(50),
-                ])],
+                fields: [
+                    "input": string("The whole patch, from *** Begin Patch to *** End Patch."),
+                    "expected_revisions": .object([
+                        "type": .string("object"),
+                        "description": .string("Current revision of every path the patch touches, keyed by path."),
+                        "additionalProperties": nullableRevision(
+                            "Current revision, or null for a file the patch adds.",
+                        ),
+                        "maxProperties": .number(50),
+                    ]),
+                ],
                 write: true,
                 destructive: true,
             ),
@@ -204,12 +244,18 @@ public enum AgentTools {
                 "Read cached engine diagnostics. Unknown freshness is not evidence of compilation success.",
                 ["document_id"],
                 ["path", "severity", "limit", "cursor"],
-                fields: ["severity": choice(["error", "warning", "info", "hint"])],
+                fields: [
+                    "path": string("Only diagnostics for this project-relative file."),
+                    "severity": choice(["error", "warning", "info", "hint"], "Only diagnostics of this severity."),
+                ],
             ),
             tool(
                 "compile_document",
                 "Compile a captured project revision in an isolated engine. Returns the actual input revision and verification status.",
                 ["document_id", "expected_project_revision"],
+                fields: ["expected_project_revision": string(
+                    "project_revision from get_document. Compiling fails if the project changed since.",
+                )],
             ),
             tool(
                 "list_file_versions",
@@ -220,7 +266,9 @@ public enum AgentTools {
                 "restore_file_version",
                 "Restore one retained file snapshot after preserving current content. null requires an absent file.",
                 ["document_id", "path", "version_id", "expected_revision", "request_id"],
-                fields: ["expected_revision": nullableRevision],
+                fields: [
+                    "expected_revision": nullableRevision("Current revision of the file, or null if it is absent."),
+                ],
                 write: true,
             ),
         ]
