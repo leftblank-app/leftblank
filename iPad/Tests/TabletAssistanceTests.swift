@@ -543,7 +543,7 @@ extension TabletAssistanceTests {
             try? FileManager.default.removeItem(at: workspace.stateDirectory)
         }
         workspace.activeSourceURL = nil
-        let source = "#align(center)[Hi]\n" + String(repeating: "Writing.\n", count: 100)
+        let source = "#align(center)[Hi]\n#rect(width: 2pt) words\n" + String(repeating: "Writing.\n", count: 100)
         let document = try await workspace.library.create(title: "Pointer", text: source)
         await workspace.open(document)
         workspace.layout = .writing
@@ -597,6 +597,36 @@ extension TabletAssistanceTests {
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
         try Attachment.record(#require(capture.pngData()), named: "iPad-pointer-hover.png")
+
+        func point(over needle: String) throws -> CGPoint {
+            let start = try #require(editor.position(
+                from: editor.beginningOfDocument,
+                offset: (source as NSString).range(of: needle).location + 1,
+            ))
+            let end = try #require(editor.position(from: start, offset: 1))
+            let rect = try editor.firstRect(for: #require(editor.textRange(from: start, to: end)))
+            return CGPoint(x: rect.midX, y: rect.midY)
+        }
+        // Reaching the card crosses the next line; its words must not dismiss it.
+        try editor.sourceHover.move(to: point(over: "words"))
+        #expect(editor.sourceHover.host === host)
+        try editor.sourceHover.move(to: point(over: "rect"))
+        #expect(editor.sourceHover.host === host)
+        editor.sourceHover.enteredCard()
+        try await Task.sleep(for: .milliseconds(650))
+        #expect(editor.sourceHover.host === host, "Words crossed on the way into the card keep it readable")
+        editor.sourceHover.scheduleDismissal()
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(editor.sourceHover.host === host, "A late editor hover end cannot hide the card under the pointer")
+        editor.sourceHover.exitedCard()
+        try await waitFor { editor.sourceHover.host == nil }
+        try editor.sourceHover.move(to: point(over: "align"))
+        try await waitFor { editor.sourceHover.host?.rootView.name == "align" }
+        let first = try #require(editor.sourceHover.host)
+        try editor.sourceHover.move(to: point(over: "rect"))
+        #expect(editor.sourceHover.host === first, "Another word does not dismiss the card immediately")
+        try await waitFor { editor.sourceHover.host?.rootView.name == "rect" }
+        #expect(first.view.superview == nil, "Dwelling on the next line's function replaces the card")
         editor.setContentOffset(CGPoint(x: 0, y: editor.contentOffset.y + 40), animated: false)
         #expect(editor.sourceHover.host == nil)
     }

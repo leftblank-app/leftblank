@@ -8,7 +8,9 @@ final class SourceHoverController: NSObject {
     private weak var editor: ManuscriptTextView?
     private var request: Task<Void, Never>?
     private var dismissal: Task<Void, Never>?
+    /// The word under the pointer, pending or shown, and the word whose card is shown.
     private var range: NSRange?
+    private var shown: NSRange?
     private let renderer = HoverExampleRenderer()
     private var previewTask: Task<Void, Never>?
     private(set) var examplePreview: HoverExamplePreview?
@@ -16,6 +18,7 @@ final class SourceHoverController: NSObject {
     private(set) var help: LanguageHover?
     /// Tests copy into a private pasteboard instead of the user's clipboard.
     var pasteboard = NSPasteboard.general
+    private var pointerInCard = false
 
     init(editor: ManuscriptTextView) {
         self.editor = editor
@@ -45,24 +48,57 @@ final class SourceHoverController: NSObject {
             scheduleDismissal()
             return
         }
-        keepVisible()
+        if target == shown {
+            abandonPending()
+            keepVisible()
+            return
+        }
         guard range != target else {
             return
         }
-        dismiss()
+        if panel == nil {
+            dismiss()
+        } else {
+            // Reaching a card below crosses the next line's words. Keep it for the
+            // grace period; replace it only if the pointer dwells on another word.
+            request?.cancel()
+            scheduleCardDismissal()
+        }
         range = target
         workspace.recordOperation("hover.started", ["range": NSStringFromRange(target)])
         request = Task { [weak self, weak workspace] in
             do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
             guard let self, let workspace,
                   let help = await workspace.hoverHelp(at: offset), !Task.isCancelled,
-                  range == target
+                  range == target, !pointerInCard
             else {
                 return
             }
             workspace.recordOperation("hover.received")
+            removeCard()
             present(help, at: target)
         }
+    }
+
+    func enteredCard() {
+        pointerInCard = true
+        abandonPending()
+        keepVisible()
+    }
+
+    func exitedCard() {
+        pointerInCard = false
+        scheduleDismissal()
+    }
+
+    /// The pointer left a word whose help has not arrived; only a shown card remains.
+    private func abandonPending() {
+        guard range != shown else {
+            return
+        }
+        request?.cancel()
+        request = nil
+        range = shown
     }
 
     func keepVisible() {
@@ -70,7 +106,13 @@ final class SourceHoverController: NSObject {
         dismissal = nil
     }
 
+    /// The pointer left source help: abandon pending help, then hide the card after a grace period.
     func scheduleDismissal() {
+        abandonPending()
+        scheduleCardDismissal()
+    }
+
+    private func scheduleCardDismissal() {
         guard panel != nil else {
             dismiss()
             return
@@ -80,7 +122,19 @@ final class SourceHoverController: NSObject {
         }
         dismissal = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
-            self?.dismiss()
+            guard let self else {
+                return
+            }
+            dismissal = nil
+            guard !pointerInCard else {
+                return
+            }
+            // A word the pointer still dwells on keeps its pending replacement.
+            if range == shown {
+                dismiss()
+            } else {
+                removeCard()
+            }
         }
     }
 
@@ -92,14 +146,20 @@ final class SourceHoverController: NSObject {
         if range != nil || panel != nil {
             editor?.workspace?.recordOperation("hover.dismissed", ["reason": reason])
         }
-        previewTask?.cancel()
-        previewTask = nil
-        examplePreview = nil
         request?.cancel()
         request = nil
         keepVisible()
         range = nil
+        removeCard()
+    }
+
+    private func removeCard() {
+        previewTask?.cancel()
+        previewTask = nil
+        examplePreview = nil
         help = nil
+        shown = nil
+        pointerInCard = false
         if let panel {
             panel.parent?.removeChildWindow(panel)
             panel.orderOut(nil)
@@ -129,8 +189,8 @@ final class SourceHoverController: NSObject {
             preview: preview,
             copyExample: { [weak self] in self?.copyExample() },
         ))
-        host.entered = { [weak self] in self?.keepVisible() }
-        host.exited = { [weak self] in self?.scheduleDismissal() }
+        host.entered = { [weak self] in self?.enteredCard() }
+        host.exited = { [weak self] in self?.exitedCard() }
         let size = host.fittingSize
         let bounds = screen.visibleFrame.insetBy(dx: 8, dy: 8)
         let x = min(max(anchor.minX, bounds.minX), bounds.maxX - size.width)
@@ -152,6 +212,7 @@ final class SourceHoverController: NSObject {
         editor.workspace?.recordOperation("hover.presented")
         self.panel = panel
         self.help = help
+        shown = range
         window.addChildWindow(panel, ordered: .above)
         panel.orderFront(nil)
         if let example = help.example, let workspace = editor.workspace {
