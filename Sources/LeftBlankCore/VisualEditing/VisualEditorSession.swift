@@ -520,8 +520,11 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
 
     // MARK: - Chips
 
-    func activateChip(at offset: Int, view: PlatformView) {
-        if let chip = chip(at: offset) {
+    func activateChip(at location: any NSTextLocation, view: PlatformView) {
+        guard let manager = textLayoutManager else {
+            return
+        }
+        if let chip = chip(at: TextKit2Geometry.offset(of: location, in: manager)) {
             onActivateChip?(chip, view)
         }
     }

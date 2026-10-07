@@ -91,14 +91,12 @@ final class VisualAttachmentViewProvider: NSTextAttachmentViewProvider {
         }
         // TextKit loads attachment views on the main thread.
         nonisolated(unsafe) let box = attachment, location = location
-        nonisolated(unsafe) weak let manager = textLayoutManager
         view = MainActor.assumeIsolated {
             let view = VisualBoxView(attachment: box)
             view.activate = { [weak view] in
-                guard let view, let manager else {
-                    return
+                if let view {
+                    box.session?.activateChip(at: location, view: view)
                 }
-                box.session?.activateChip(at: TextKit2Geometry.offset(of: location, in: manager), view: view)
             }
             return view
         }
