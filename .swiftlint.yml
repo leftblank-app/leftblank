@@ -16,6 +16,9 @@ included:
   - Benchmarks
   - scripts
   - design
+excluded:
+  # LB-019 spike package build products (SwiftPM generates test entry points).
+  - Benchmarks/VisualEditing/.build
 only_rules:
   - custom_rules
   - accessibility_label_for_image
