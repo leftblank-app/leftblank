@@ -144,7 +144,13 @@ final class WritingTests: XCTestCase {
         waitForState(rotated, in: app, name: "Window orientation")
     }
 
-    private func waitForStableControl(_ control: XCUIElement, in app: XCUIApplication) {
+    private func waitForStableControl(
+        _ control: XCUIElement,
+        in app: XCUIApplication,
+        name: String = "Template control position",
+        timeout: TimeInterval = 30,
+        hittable: Bool = true,
+    ) {
         var previous = CGRect.zero
         var changed = Date()
         let settled = NSPredicate { _, _ in
@@ -161,9 +167,24 @@ final class WritingTests: XCTestCase {
                 previous = frame
                 changed = Date()
             }
-            return Date().timeIntervalSince(changed) >= 1 && control.isHittable
+            return Date().timeIntervalSince(changed) >= 1 && (!hittable || control.isHittable)
         }
-        waitForState(settled, in: app, name: "Template control position")
+        waitForState(settled, in: app, name: name, timeout: timeout)
+    }
+
+    /// Taps a control only after it is enabled, hittable and has kept its frame
+    /// for a second. A tap during a menu, sheet or post-rotation layout animation
+    /// can be dropped, or leave the menu over the panel its action presents.
+    /// A control below a form's visible area is not hittable until `tap()`
+    /// scrolls it into view, so such callers wait only for a stable frame.
+    private func tapSettled(
+        _ control: XCUIElement,
+        in app: XCUIApplication,
+        name: String,
+        scrolledIntoView: Bool = false,
+    ) {
+        waitForStableControl(control, in: app, name: name, timeout: 60, hittable: !scrolledIntoView)
+        control.tap()
     }
 
     private func selectTemplate(_ starter: XCUIElement, in app: XCUIApplication) {
@@ -177,20 +198,45 @@ final class WritingTests: XCTestCase {
         starter.tap()
     }
 
+    /// Places the caret at the end of a short document and returns only once
+    /// the editor has keyboard focus and reports the caret there.
     private func focusEndOfShortDocument(_ editor: XCUIElement, in app: XCUIApplication) {
-        editor.tap()
-        waitForStableControl(editor, in: app)
-        // These short fixtures fit above this point, even with the keyboard open.
-        // Use touch positioning: XCTest hardware-key synthesis can get stuck
-        // waiting for UIKit animations after both Cmd+A and Cmd+Down.
-        // Read both frames from elements: snapshot frames do not follow the
-        // rotated interface, so a landscape keyboard snapshot can report a top
-        // edge above the editor and send this tap outside the text.
-        let frame = editor.frame
-        let keyboard = app.keyboards.firstMatch
-        let bottom = keyboard.exists ? min(frame.maxY, keyboard.frame.minY) : frame.maxY
-        editor.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: frame.width / 2, dy: bottom - frame.minY - 20)).tap()
+        // The status bar reports the editor's caret as zero-based line:character.
+        let lines = (editor.value as? String ?? "").components(separatedBy: "\n")
+        let end = "\(lines.count - 1):\(lines.last?.utf16.count ?? 0)"
+        let position = app.staticTexts["source-position"].firstMatch
+        let focused = { (editor.value(forKey: "hasKeyboardFocus") as? Bool) == true }
+        // A tap moves the caret. Layout changes keep both focus and caret, so
+        // only tap when the editor lacks focus or the caret is elsewhere.
+        if !focused() {
+            editor.tap()
+            waitForStableControl(editor, in: app)
+        }
+        if position.value as? String != end {
+            // Use touch positioning: XCTest hardware-key synthesis can get stuck
+            // waiting for UIKit animations after both Cmd+A and Cmd+Down.
+            // Read both frames from elements: snapshot frames do not follow the
+            // rotated interface. The software keyboard's predictive bar sits above
+            // the keyboard element's frame, so a tap 20 points above that frame
+            // landed on the bar and left the caret inside the first line, where
+            // `editor.tap()` had put it (CI run 37481993656). Stay clear of the bar;
+            // these short fixtures end above this point.
+            let frame = editor.frame
+            let keyboard = app.keyboards.firstMatch
+            let bottom = keyboard.exists ? min(frame.maxY, keyboard.frame.minY - 60) : frame.maxY
+            editor.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: frame.width / 2, dy: bottom - frame.minY - 20)).tap()
+        }
+        // Type only once the caret has reached the end and stayed there.
+        var reached: Date?
+        waitForState(NSPredicate { _, _ in
+            guard focused(), position.value as? String == end else {
+                reached = nil
+                return false
+            }
+            reached = reached ?? Date()
+            return Date().timeIntervalSince(reached ?? Date()) >= 1
+        }, in: app, name: "Caret at end of document")
     }
 
     private func waitForState(
@@ -618,35 +664,41 @@ final class WritingTests: XCTestCase {
         let app = startWriting(template: "welcome")
         let editor = app.textViews["manuscript"].firstMatch
         let original = editor.value as? String
-        app.buttons["commands"].firstMatch.tap()
+        // Welcome keeps a slow hosted runner's main thread busy after launch;
+        // accessibility queries then take seconds. Wait for the panel itself.
+        tapSettled(app.buttons["commands"].firstMatch, in: app, name: "Commands button")
         let search = app.searchFields["Search Commands"]
-        expect(appears(search, timeout: 10)) == true
+        waitForState(NSPredicate { _, _ in search.exists }, in: app, name: "Command search", timeout: 60)
         search.tap()
         search.typeText("image\n")
         let image = app.buttons["command-image"].firstMatch
-        expect(appears(image, timeout: 10)) == true
+        expect(appears(image, timeout: 30)) == true
         image.tap()
         let resources = app.buttons["resource-existing"].firstMatch
-        expect(appears(resources, timeout: 15)) == true
+        expect(appears(resources, timeout: 30)) == true
         resources.tap()
-        app.buttons["leftblank-mark.svg"].tap()
-        expect(app.buttons["Insert"].isEnabled) == true
-        app.buttons["Insert"].tap()
+        tapSettled(app.buttons["leftblank-mark.svg"].firstMatch, in: app, name: "Project image")
+        // Selecting the image enables Insert in a later SwiftUI update.
+        let insert = app.buttons["Insert"].firstMatch
+        waitForState(NSPredicate { _, _ in
+            (try? insert.snapshot())?.isEnabled == true
+        }, in: app, name: "Image insertion enabled")
+        insert.tap()
         waitForState(NSPredicate { _, _ in
             editor.exists && editor.value as? String != original
         }, in: app, name: "Project image inserted")
         expect((editor.value as? String)?.components(separatedBy: "leftblank-mark.svg").count) == 3
         capture("Reused project image")
-        app.buttons["commands"].firstMatch.tap()
-        app.buttons["Undo"].tap()
+        tapSettled(app.buttons["commands"].firstMatch, in: app, name: "Commands button")
+        tapSettled(app.buttons["Undo"].firstMatch, in: app, name: "Undo command")
         expect(editor.value as? String) == original
     }
 
     func testEditExistingTableAndUndo() {
         let app = startWriting()
-        app.buttons["commands"].firstMatch.tap()
+        tapSettled(app.buttons["commands"].firstMatch, in: app, name: "Commands button")
         let search = app.searchFields["Search Commands"]
-        expect(appears(search, timeout: 10)) == true
+        waitForState(NSPredicate { _, _ in search.exists }, in: app, name: "Command search", timeout: 60)
         search.tap()
         search.typeText("table\n")
         let table = app.buttons["command-table"].firstMatch
@@ -658,23 +710,24 @@ final class WritingTests: XCTestCase {
             (editor.value as? String)?.contains("#table(") == true
         }, in: app, name: "Table inserted")
         let original = editor.value as? String
-        app.buttons["document-actions"].firstMatch.tap()
-        app.buttons["edit-object"].firstMatch.tap()
-        let addRow = app.buttons["object-add-row"].firstMatch
-        expect(appears(addRow, timeout: 10)) == true
-        addRow.tap()
-        app.buttons["object-add-column"].firstMatch.tap()
+        // The command sheet is still dismissing, then the menu and the object
+        // sheet animate in. Tap each control only once it has settled.
+        tapSettled(app.buttons["document-actions"].firstMatch, in: app, name: "Document actions")
+        tapSettled(app.buttons["edit-object"].firstMatch, in: app, name: "Edit object menu item")
+        tapSettled(app.buttons["object-add-row"].firstMatch, in: app, name: "Object editor")
+        // The added row can push Add Column below the sheet's visible area.
+        tapSettled(app.buttons["object-add-column"].firstMatch, in: app, name: "Add column", scrolledIntoView: true)
         capture("Edit existing table")
-        app.buttons["object-apply"].firstMatch.tap()
+        tapSettled(app.buttons["object-apply"].firstMatch, in: app, name: "Apply object edit")
         waitForState(NSPredicate { _, _ in
             !app.buttons["object-apply"].firstMatch.exists && editor.value as? String != original
         }, in: app, name: "Table edit applied")
         let updated = editor.value as? String
-        app.buttons["commands"].firstMatch.tap()
-        app.buttons["Undo"].tap()
+        tapSettled(app.buttons["commands"].firstMatch, in: app, name: "Commands button")
+        tapSettled(app.buttons["Undo"].firstMatch, in: app, name: "Undo command")
         expect(editor.value as? String) == original
-        app.buttons["commands"].firstMatch.tap()
-        app.buttons["Redo"].tap()
+        tapSettled(app.buttons["commands"].firstMatch, in: app, name: "Commands button")
+        tapSettled(app.buttons["Redo"].firstMatch, in: app, name: "Redo command")
         expect(editor.value as? String) == updated
         waitForState(NSPredicate { _, _ in
             app.staticTexts["engine-status"].firstMatch.label == "Preview Updated"
