@@ -57,6 +57,15 @@ jobs:
           sw_vers
           xcodebuild -version
           swift --version
+      - name: Cache parser dependencies and library
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .tools/cargo-syntax
+            Engine/SyntaxBridge/target
+          key: syntax-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/SyntaxBridge/Cargo.lock', 'Engine/SyntaxBridge/Cargo.toml', 'Engine/SyntaxBridge/src/**') }}
+          restore-keys: |
+            syntax-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-xcode-26.3-
       - name: Cache MCP dependencies and helper
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -96,6 +105,14 @@ jobs:
             .tools/tinymist
             .tools/tinymist.stamp
           key: ${{ steps.tinymist-cache.outputs.cache-primary-key }}
+      - name: Build and validate the parser bridge
+        run: |
+          source scripts/environment.sh
+          scripts/build-syntax.sh
+          export CARGO_HOME="$PWD/.tools/cargo-syntax"
+          cargo +1.92.0 fmt --manifest-path Engine/SyntaxBridge/Cargo.toml --check
+          cargo +1.92.0 clippy --locked --manifest-path Engine/SyntaxBridge/Cargo.toml --all-targets --no-deps -- -D warnings -D unsafe_op_in_unsafe_fn
+          cargo +1.92.0 test --locked --manifest-path Engine/SyntaxBridge/Cargo.toml
       - name: Functional integration tests and 80% coverage gate
         run: scripts/test.sh
       # Codecov uploads are temporarily disabled while CLI downloads fail TLS handshakes.
@@ -153,9 +170,19 @@ jobs:
           key: appstore-swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-26.3-${{ hashFiles('Package.resolved') }}
           restore-keys: |
             swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-26.3-
+      - name: Cache parser dependencies and library
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .tools/cargo-syntax
+            Engine/SyntaxBridge/target
+          key: syntax-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/SyntaxBridge/Cargo.lock', 'Engine/SyntaxBridge/Cargo.toml', 'Engine/SyntaxBridge/src/**') }}
+          restore-keys: |
+            syntax-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-xcode-26.3-
       - name: Verify App Store build excludes the updater
         run: |
           source scripts/environment.sh
+          scripts/build-syntax.sh
           LEFTBLANK_INTEGRATION=1 swift test -Xswiftc -warnings-as-errors --filter distributionUsesMatchingAppIdentity
           binary="$(swift build --show-bin-path)/LeftBlank"
           if otool -L "$binary" | grep -q Sparkle; then
@@ -184,6 +211,15 @@ jobs:
             .build/checkouts
             .build/artifacts
           key: memory-${{ matrix.check }}-${{ runner.os }}-${{ runner.arch }}-xcode-26.3-${{ hashFiles('Package.resolved') }}
+      - name: Cache parser dependencies and library
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .tools/cargo-syntax
+            Engine/SyntaxBridge/target
+          key: syntax-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/SyntaxBridge/Cargo.lock', 'Engine/SyntaxBridge/Cargo.toml', 'Engine/SyntaxBridge/src/**') }}
+          restore-keys: |
+            syntax-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-xcode-26.3-
       - name: Check memory
         run: scripts/check-memory.sh "${{ matrix.check }}"
       - name: Upload memory diagnostics
@@ -244,6 +280,15 @@ jobs:
             .tools/tinymist
             .tools/tinymist.stamp
           key: ${{ steps.tinymist-cache.outputs.cache-primary-key }}
+      - name: Cache parser dependencies and library
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .tools/cargo-syntax
+            Engine/SyntaxBridge/target
+          key: syntax-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/SyntaxBridge/Cargo.lock', 'Engine/SyntaxBridge/Cargo.toml', 'Engine/SyntaxBridge/src/**') }}
+          restore-keys: |
+            syntax-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-xcode-26.3-
       - name: Sign, notarize and prepare the update
         env:
           SIGNING_CERTIFICATE_P12: ${{ secrets.SIGNING_CERTIFICATE_P12 }}
@@ -322,7 +367,7 @@ jobs:
             .tools/cargo-ipad
             .tools/tinymist-ipad-source
             Engine/TinymistBridge/target
-          key: ipad-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/tinymist-vfs.patch', 'scripts/prepare-ipad-engine.sh') }}
+          key: ipad-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'Engine/SyntaxBridge/Cargo.toml', 'Engine/SyntaxBridge/src/**', 'scripts/tinymist-ipad*.patch', 'scripts/tinymist-vfs.patch', 'scripts/prepare-ipad-engine.sh') }}
           restore-keys: |
             ipad-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-rust-1.92.0-xcode-26.3-
       - name: Cache Swift package sources
@@ -395,7 +440,7 @@ jobs:
             .tools/cargo-ipad
             .tools/tinymist-ipad-source
             Engine/TinymistBridge/target
-          key: ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/tinymist-vfs.patch', 'scripts/prepare-ipad-engine.sh') }}
+          key: ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'Engine/SyntaxBridge/Cargo.toml', 'Engine/SyntaxBridge/src/**', 'scripts/tinymist-ipad*.patch', 'scripts/tinymist-vfs.patch', 'scripts/prepare-ipad-engine.sh') }}
           restore-keys: |
             ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-
       - name: Cache Swift package sources
@@ -522,7 +567,7 @@ jobs:
             .tools/cargo-ipad
             .tools/tinymist-ipad-source
             Engine/TinymistBridge/target
-          key: ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/tinymist-vfs.patch', 'scripts/prepare-ipad-engine.sh') }}
+          key: ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'Engine/SyntaxBridge/Cargo.toml', 'Engine/SyntaxBridge/src/**', 'scripts/tinymist-ipad*.patch', 'scripts/tinymist-vfs.patch', 'scripts/prepare-ipad-engine.sh') }}
           restore-keys: |
             ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-
       - name: Reuse resolved Swift packages

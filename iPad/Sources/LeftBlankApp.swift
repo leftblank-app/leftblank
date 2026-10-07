@@ -4,6 +4,11 @@ import SwiftUI
 
 @main
 struct LeftBlankApp: App {
+    init() {
+        // The engine library carries the shared typst-syntax parser.
+        SyntaxTree.install(leftblank_tinymist_syntax_api())
+    }
+
     var body: some Scene {
         WindowGroup(id: "writing") {
             TabletScene()

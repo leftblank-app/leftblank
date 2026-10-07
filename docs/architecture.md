@@ -8,6 +8,7 @@ The architecture prioritizes native input, maintainability, offline writing and 
 - Swift Package Manager separates core logic, the importable app library and a thin launcher so tests exercise production app code.
 - AppKit owns windows, menus, dialogs and text editing; SwiftUI composes layouts, lists and command interfaces.
 - Tinymist **0.15.8** is built from its pinned upstream commit with LeftBlank's checked-in patches (macOS native TLS and a VFS revision fix) and bundled with every Mac edition. It contains Typst 0.15.1.
+- typst-syntax 0.15.1 (the same Typst fork) is linked into the app as a static library behind a small C ABI ([parser bridge](visual-editing.md#b2-parser-typst-syntax-through-a-c-abi-step-1-implemented)). On iPad it is part of the embedded engine library.
 - The running app needs no Rust toolchain, Homebrew or separate Typst installation. Uncached external packages may require a network download; cached packages work offline.
 - A small local set of Phosphor icons is bundled with its license.
 
@@ -45,7 +46,7 @@ Positions use Foundation `NSString` / `NSRange` UTF-16 units, consistent with th
 
 Full-buffer replacement is reserved for opening, external reload and deliberate formatting. Highlighting changes attributes without creating undo operations. Marked text delays styling and completion application. Insertion uses `NSTextView.insertText(_:replacementRange:)` and a single undo group. Because AppKit may create its undo manager only after the first edit, observation attaches at edit time and synchronizes workspace state after undo/redo completes.
 
-`SourcePresentation` returns original UTF-16 ranges and conservatively excludes code, comments and math. It styles headings, emphasis and inline code; the active paragraph reveals its full source while other markers shrink and fade. It never substitutes text or changes saved/copied content. This optional visual layer is not a semantic parser or compilation result.
+`SourcePresentation` returns original UTF-16 ranges and conservatively excludes code, comments and math. It styles headings, emphasis and inline code; the active paragraph reveals its full source while other markers shrink and fade. It never substitutes text or changes saved/copied content. This optional visual layer is not a semantic parser or compilation result. `SyntaxTree` mirrors the buffer in typst-syntax and reparses incrementally; it is the input for the planned visual layer and does not yet affect presentation.
 
 Indentation and comments use text-range transformations. Formatting uses the real LSP response with revision, session and range validation.
 

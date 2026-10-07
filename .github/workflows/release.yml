@@ -102,6 +102,15 @@ jobs:
             .tools/tinymist
             .tools/tinymist.stamp
           key: ${{ steps.tinymist-cache.outputs.cache-primary-key }}
+      - name: Cache parser dependencies and library
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .tools/cargo-syntax
+            Engine/SyntaxBridge/target
+          key: syntax-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/SyntaxBridge/Cargo.lock', 'Engine/SyntaxBridge/Cargo.toml', 'Engine/SyntaxBridge/src/**') }}
+          restore-keys: |
+            syntax-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-xcode-26.3-
       - name: Functional integration tests and coverage gate
         run: scripts/test.sh
       - name: Sign, notarize and package app
@@ -187,6 +196,15 @@ jobs:
             .build/repositories
             .build/checkouts
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-26.3-${{ hashFiles('Package.resolved') }}
+      - name: Cache parser dependencies and library
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .tools/cargo-syntax
+            Engine/SyntaxBridge/target
+          key: syntax-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/SyntaxBridge/Cargo.lock', 'Engine/SyntaxBridge/Cargo.toml', 'Engine/SyntaxBridge/src/**') }}
+          restore-keys: |
+            syntax-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-xcode-26.3-
       - name: Test App Store distribution
         run: scripts/test.sh
       - name: Sign, upload, wait for processing and submit

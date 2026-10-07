@@ -21,9 +21,13 @@ let package = Package(
     dependencies: [.package(url: "https://github.com/weichsel/ZIPFoundation.git", exact: "0.9.20")] +
         updaterPackages,
     targets: [
+        // typst-syntax behind a C ABI (Engine/SyntaxBridge). scripts/build-syntax.sh,
+        // which scripts/bootstrap.sh runs, builds it before the first `swift build`.
+        .binaryTarget(name: "LeftBlankSyntaxLibrary", path: "Engine/SyntaxBridge/target/LeftBlankSyntax.xcframework"),
+        .target(name: "LeftBlankSyntaxFFI", dependencies: ["LeftBlankSyntaxLibrary"]),
         .target(
             name: "LeftBlankCore",
-            dependencies: ["ZIPFoundation"],
+            dependencies: ["ZIPFoundation", "LeftBlankSyntaxFFI"],
             resources: [.process("Resources")],
             swiftSettings: distributionSettings,
         ),

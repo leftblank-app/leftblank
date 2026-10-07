@@ -2,7 +2,7 @@
 
 LeftBlank uses SwiftUI and AppKit for the app and editing experience, with Tinymist as a managed child process for Typst language services and preview. Documents use ordinary `.typ` source and relative assets. The visual approach was inspired by Nano Emacs.
 
-Use Xcode 26 or later with a Swift 6.2 or later toolchain and the macOS SDK. The Tinymist and macOS MCP helpers are built with Rust 1.92.0 (`rustup toolchain install 1.92.0 --profile minimal`). Local development scripts expect the external development volume at `/Volumes/SSD/Developer`; run from an SSD checkout:
+Use Xcode 26 or later with a Swift 6.2 or later toolchain and the macOS SDK. The Tinymist and macOS MCP helpers, and the typst-syntax parser linked into LeftBlankCore, are built with Rust 1.92.0 (`rustup toolchain install 1.92.0 --profile minimal`). `scripts/build.sh` and `scripts/test.sh` build the parser through `scripts/bootstrap.sh`; run `scripts/build-syntax.sh` once before a plain `swift build` or `swift test`. Local development scripts expect the external development volume at `/Volumes/SSD/Developer`; run from an SSD checkout:
 
 ```sh
 scripts/build.sh release
@@ -21,7 +21,7 @@ See [iPad development and validation](ipad.md) for the native iPad target and em
 
 ## Scope and verification
 
-LeftBlank remains a development preview. It has one active editing buffer, with the main compilation entry preserved when navigating into included files. It does not provide collaborative accounts, Vim emulation, arbitrary visual editing of typeset pages.
+LeftBlank remains a development preview. It has one active editing buffer, with the main compilation entry preserved when navigating into included files. It does not provide collaborative accounts, Vim emulation, arbitrary visual editing of typeset pages. Source-level visual editing is planned in [visual editing](visual-editing.md).
 
 Unicode editing, marked-text protection, undo and saving have automated coverage. Complete third-party input-method and VoiceOver flows, and a physical Mac running macOS 14, still need manual verification. Real 1.4 MB SICP and 3.3 MB War and Peace fixtures exercise highlighting, typing, pointer placement and scrolling in [book benchmarks](large-document-performance.md). [Template and package discovery](discovery.md) includes a downloadable, editable SICP example; [the complete books and conversion scripts](../Examples/Books/README.md) are checked in with their own attribution and licenses. Verification evidence and remaining limitations live in [the progress record](progress.md).
 
@@ -32,6 +32,7 @@ Unicode editing, marked-text protection, undo and saving have automated coverage
 - [Architecture](architecture.md)
 - [Implementation and verification](progress.md)
 - [Writing features](editor-evolution.md)
+- [Visual editing plan and parser bridge (LB-019)](visual-editing.md)
 - [Interaction and performance](interaction.md)
 - [Brand assets and favicons](../Brand/README.md)
 - [Localization](localization.md)

@@ -6,6 +6,10 @@ The Mac helper is built from that tag with LeftBlank's patches (native TLS, VFS 
 Binary contains Typst 0.15.1 (Apache-2.0), from Tinymist's pinned upstream fork.
 https://github.com/Myriad-Dreamin/typst/tree/tinymist/v0.15.1
 See Tinymist-LICENSE and Typst-LICENSE.
+The editor parses source with typst-syntax 0.15.1 (Apache-2.0) from the same fork,
+through LeftBlank's parser bridge. The macOS app links it into the app itself;
+its complete pinned dependency notices are in the macOS-only TypstSyntax-LICENSES.txt.
+On iPad the parser is part of the embedded engine and adds no other components.
 The iPad engine embeds Typst assets 0.15.1 fallback fonts; their notices and
 licenses are in Licenses/typst-assets-NOTICE.txt.
 

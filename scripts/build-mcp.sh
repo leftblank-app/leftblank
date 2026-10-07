@@ -10,4 +10,4 @@ fi
 cargo +1.92.0 build --locked --release --manifest-path Tools/MCPServer/Cargo.toml
 mkdir -p .tools
 cp Tools/MCPServer/target/release/leftblank-mcp .tools/leftblank-mcp
-python3 scripts/mcp-licenses.py
+python3 scripts/rust-licenses.py mcp

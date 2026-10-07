@@ -86,3 +86,13 @@ fn run(input: File, output: File, fonts: Option<PathBuf>) -> Result<(), ()> {
     result.map_err(|_| ())?;
     writes.map_err(|_| ())
 }
+
+/// LeftBlank's typst-syntax bridge (`Engine/SyntaxBridge`), linked into this
+/// library so the iPad app carries one Rust runtime: two Rust static libraries
+/// in one binary duplicate the standard library's symbols. LeftBlankCore
+/// declares the table (`LeftBlankSyntax.h`); the app passes it to
+/// `SyntaxTree.install`.
+#[no_mangle]
+pub extern "C" fn leftblank_tinymist_syntax_api() -> *const std::ffi::c_void {
+    leftblank_syntax::lb_syntax_api().cast()
+}

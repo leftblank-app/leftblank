@@ -1,0 +1,36 @@
+[package]
+name = "leftblank-syntax"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "typst-syntax behind a small C ABI for LeftBlank's shared visual editor."
+
+[lib]
+# staticlib: linked into the macOS app through LeftBlankCore.
+# rlib: Engine/TinymistBridge re-exports it, so the iPad app links one Rust
+# library (and one Rust runtime) rather than two.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+typst-syntax = "=0.15.1"
+
+[profile.release]
+opt-level = 3
+debug = false
+strip = "debuginfo"
+lto = "thin"
+codegen-units = 1
+# panic = "unwind" (the default) lets every C entry point catch a parser panic
+# instead of aborting the app.
+
+# Stripping host proc-macro dylibs can leave them unloadable with newer Xcode
+# linkers ("mis-aligned LINKEDIT string pool"); they never ship.
+[profile.release.build-override]
+strip = "none"
+
+# The same parser source as the iPad engine (Engine/TinymistBridge/Cargo.toml).
+# scripts/test-package-graphs.py checks that both lockfiles pin one revision.
+[patch.crates-io]
+typst-syntax = { git = "https://github.com/Myriad-Dreamin/typst.git", tag = "tinymist/v0.15.1" }
+typst-timing = { git = "https://github.com/Myriad-Dreamin/typst.git", tag = "tinymist/v0.15.1" }
+typst-utils = { git = "https://github.com/Myriad-Dreamin/typst.git", tag = "tinymist/v0.15.1" }
