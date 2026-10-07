@@ -79,6 +79,29 @@ jobs:
             python3 scripts/release_metadata.py check "$RELEASE_TAG"
           fi
           git merge-base --is-ancestor HEAD origin/main || { echo 'Release only commits already on main.' >&2; exit 1; }
+      # Only the patched helper is cached; a miss (patch or script change) runs a
+      # cold Rust build, saved before tests so a failing test does not repeat it.
+      - name: Restore patched Tinymist
+        id: tinymist-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .tools/tinymist
+            .tools/tinymist.stamp
+          key: mac-tinymist-0.15.8-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-${{ hashFiles('scripts/build-tinymist.sh', 'scripts/tinymist-native-tls.patch', 'scripts/tinymist-vfs.patch') }}
+      - name: Build patched Tinymist
+        timeout-minutes: 40
+        run: scripts/build-tinymist.sh
+      - name: Save patched Tinymist
+        if: steps.tinymist-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          path: |
+            .tools/tinymist
+            .tools/tinymist.stamp
+          key: ${{ steps.tinymist-cache.outputs.cache-primary-key }}
       - name: Functional integration tests and coverage gate
         run: scripts/test.sh
       - name: Sign, notarize and package app
@@ -132,15 +155,31 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: python3 scripts/release_metadata.py check "$RELEASE_TAG"
-      - name: Install pinned Rust toolchain for OS-native TLS
+      - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.92.0 --profile minimal
-      - name: Cache native TLS engine
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Only the patched helper is cached; a miss (patch or script change) runs a
+      # cold Rust build, saved before tests so a failing test does not repeat it.
+      - name: Restore patched Tinymist
+        id: tinymist-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            .tools/tinymist-appstore
-            .tools/tinymist-appstore.stamp
-          key: appstore-engine-0.15.8-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/tinymist-appstore.patch', 'scripts/build-tinymist-appstore.sh') }}
+            .tools/tinymist
+            .tools/tinymist.stamp
+          key: mac-tinymist-0.15.8-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-${{ hashFiles('scripts/build-tinymist.sh', 'scripts/tinymist-native-tls.patch', 'scripts/tinymist-vfs.patch') }}
+      - name: Build patched Tinymist
+        timeout-minutes: 40
+        run: scripts/build-tinymist.sh
+      - name: Save patched Tinymist
+        if: steps.tinymist-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          path: |
+            .tools/tinymist
+            .tools/tinymist.stamp
+          key: ${{ steps.tinymist-cache.outputs.cache-primary-key }}
       - name: Cache Swift package sources
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

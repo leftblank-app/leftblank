@@ -7,7 +7,7 @@ The architecture prioritizes native input, maintainability, offline writing and 
 - Swift 6.2 or later (Xcode 26 or later) and macOS 14 or later, with arm64 builds.
 - Swift Package Manager separates core logic, the importable app library and a thin launcher so tests exercise production app code.
 - AppKit owns windows, menus, dialogs and text editing; SwiftUI composes layouts, lists and command interfaces.
-- Tinymist **0.15.8** is downloaded from its upstream release, checked against a pinned SHA-256 and bundled with the app. It contains Typst 0.15.1.
+- Tinymist **0.15.8** is built from its pinned upstream commit with LeftBlank's checked-in patches (macOS native TLS and a VFS revision fix) and bundled with every Mac edition. It contains Typst 0.15.1.
 - The running app needs no Rust toolchain, Homebrew or separate Typst installation. Uncached external packages may require a network download; cached packages work offline.
 - A small local set of Phosphor icons is bundled with its license.
 

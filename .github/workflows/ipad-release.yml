@@ -51,7 +51,7 @@ jobs:
             .tools/cargo-ipad
             .tools/tinymist-ipad-source
             Engine/TinymistBridge/target
-          key: ipad-${{ runner.os }}-${{ runner.arch }}-device-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/prepare-ipad-engine.sh') }}
+          key: ipad-${{ runner.os }}-${{ runner.arch }}-device-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/tinymist-vfs.patch', 'scripts/prepare-ipad-engine.sh') }}
           restore-keys: |
             ipad-${{ runner.os }}-${{ runner.arch }}-device-rust-1.92.0-xcode-26.3-
       - name: Cache iPad Swift package sources

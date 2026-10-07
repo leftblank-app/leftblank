@@ -33,7 +33,8 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       LEFTBLANK_DISTRIBUTION: preview
-    timeout-minutes: 25
+    # Leaves room for one cold patched Tinymist build after its inputs change.
+    timeout-minutes: 60
     permissions:
       contents: read
       id-token: write
@@ -72,6 +73,29 @@ jobs:
           cargo +1.92.0 fmt --manifest-path Tools/MCPServer/Cargo.toml --check
           cargo +1.92.0 clippy --locked --manifest-path Tools/MCPServer/Cargo.toml --all-targets --no-deps -- -D warnings
           cargo +1.92.0 test --locked --manifest-path Tools/MCPServer/Cargo.toml
+      # Only the patched helper is cached; a miss (patch or script change) runs a
+      # cold Rust build, saved before tests so a failing test does not repeat it.
+      - name: Restore patched Tinymist
+        id: tinymist-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .tools/tinymist
+            .tools/tinymist.stamp
+          key: mac-tinymist-0.15.8-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-${{ hashFiles('scripts/build-tinymist.sh', 'scripts/tinymist-native-tls.patch', 'scripts/tinymist-vfs.patch') }}
+      - name: Build patched Tinymist
+        timeout-minutes: 40
+        run: scripts/build-tinymist.sh
+      - name: Save patched Tinymist
+        if: steps.tinymist-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          path: |
+            .tools/tinymist
+            .tools/tinymist.stamp
+          key: ${{ steps.tinymist-cache.outputs.cache-primary-key }}
       - name: Functional integration tests and 80% coverage gate
         run: scripts/test.sh
       # Codecov uploads are temporarily disabled while CLI downloads fail TLS handshakes.
@@ -91,6 +115,7 @@ jobs:
           python3 scripts/test-preview-release.py
           python3 scripts/test-appstore-release.py
           python3 scripts/test-running-app.py
+          python3 scripts/test-tinymist-build.py
       - name: Coverage summary
         if: always()
         run: |
@@ -196,6 +221,29 @@ jobs:
             .build/checkouts
             .build/artifacts
           key: preview-swiftpm-${{ runner.os }}-${{ runner.arch }}-xcode-26.3-${{ hashFiles('Package.resolved') }}
+      # Only the patched helper is cached; a miss (patch or script change) runs a
+      # cold Rust build, saved before tests so a failing test does not repeat it.
+      - name: Restore patched Tinymist
+        id: tinymist-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .tools/tinymist
+            .tools/tinymist.stamp
+          key: mac-tinymist-0.15.8-${{ runner.os }}-${{ runner.arch }}-rust-1.92.0-${{ hashFiles('scripts/build-tinymist.sh', 'scripts/tinymist-native-tls.patch', 'scripts/tinymist-vfs.patch') }}
+      - name: Build patched Tinymist
+        timeout-minutes: 40
+        run: scripts/build-tinymist.sh
+      - name: Save patched Tinymist
+        if: steps.tinymist-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          path: |
+            .tools/tinymist
+            .tools/tinymist.stamp
+          key: ${{ steps.tinymist-cache.outputs.cache-primary-key }}
       - name: Sign, notarize and prepare the update
         env:
           SIGNING_CERTIFICATE_P12: ${{ secrets.SIGNING_CERTIFICATE_P12 }}
@@ -274,7 +322,7 @@ jobs:
             .tools/cargo-ipad
             .tools/tinymist-ipad-source
             Engine/TinymistBridge/target
-          key: ipad-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/prepare-ipad-engine.sh') }}
+          key: ipad-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/tinymist-vfs.patch', 'scripts/prepare-ipad-engine.sh') }}
           restore-keys: |
             ipad-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-rust-1.92.0-xcode-26.3-
       - name: Cache Swift package sources
@@ -347,7 +395,7 @@ jobs:
             .tools/cargo-ipad
             .tools/tinymist-ipad-source
             Engine/TinymistBridge/target
-          key: ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/prepare-ipad-engine.sh') }}
+          key: ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/tinymist-vfs.patch', 'scripts/prepare-ipad-engine.sh') }}
           restore-keys: |
             ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-
       - name: Cache Swift package sources
@@ -474,7 +522,7 @@ jobs:
             .tools/cargo-ipad
             .tools/tinymist-ipad-source
             Engine/TinymistBridge/target
-          key: ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/prepare-ipad-engine.sh') }}
+          key: ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-${{ hashFiles('Engine/TinymistBridge/Cargo.lock', 'Engine/TinymistBridge/Cargo.toml', 'Engine/TinymistBridge/src/**', 'Engine/TinymistBridge/examples/**', 'scripts/tinymist-ipad*.patch', 'scripts/tinymist-vfs.patch', 'scripts/prepare-ipad-engine.sh') }}
           restore-keys: |
             ipad-${{ runner.os }}-${{ runner.arch }}-simulator-rust-1.92.0-xcode-26.3-
       - name: Reuse resolved Swift packages

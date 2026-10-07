@@ -2,6 +2,7 @@ LeftBlank uses the following bundled components:
 
 Tinymist v0.15.8 (MIT)
 https://github.com/Myriad-Dreamin/tinymist/tree/v0.15.8
+The Mac helper is built from that tag with LeftBlank's patches (native TLS, VFS fix).
 Binary contains Typst 0.15.1 (Apache-2.0), from Tinymist's pinned upstream fork.
 https://github.com/Myriad-Dreamin/typst/tree/tinymist/v0.15.1
 See Tinymist-LICENSE and Typst-LICENSE.
