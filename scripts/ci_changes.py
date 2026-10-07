@@ -54,7 +54,7 @@ IPAD = (
     # Only the iPad scripts build the embedded Tinymist engine; Mac runs the
     # Tinymist helper. Engine/SyntaxBridge is linked by both, so it is shared.
     'Engine/TinymistBridge/',
-    'scripts/build-ipad.sh', 'scripts/check-ipad-mcp-boundary.py', 'scripts/fixtures/', 'scripts/ipad_coverage.py',
+    'scripts/build-ipad.sh', 'scripts/check-ipad-mcp-boundary.py', 'scripts/ipad_frameworks.py', 'scripts/fixtures/', 'scripts/ipad_coverage.py',
     'scripts/ipad_release.py', 'scripts/ipad_simulator.py', 'scripts/ipad_storefront.py',
     'scripts/prepare-ipad-engine.sh', 'scripts/release-ipad.sh', 'scripts/test-ipad-coverage.py',
     'scripts/test-ipad-engine.py', 'scripts/test-ipad-engine.sh', 'scripts/test-ipad-release.py',
