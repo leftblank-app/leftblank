@@ -15,8 +15,10 @@ Tinymist 0.15.8 / Typst 0.15.1 is pinned to the same engine generation as Mac.
 On iPad, Tinymist runs as a Rust static library on a background worker, with the
 same framed LSP and local WebKit preview. It does not launch an executable. Pipes
 connect the Swift client to the engine without replacing application stdin/stdout
-or changing its working directory. Each document connection owns its worker and
-runtime. Closing the client delivers EOF and shuts down that worker. The embedded
+or changing its working directory. The same library carries LeftBlank's
+typst-syntax parser bridge, which the app hands to `SyntaxTree.install` at launch
+([visual editing](visual-editing.md)), so the app links one Rust runtime. Each
+document connection owns its worker and runtime. Closing the client delivers EOF and shuts down that worker. The embedded
 build applies `scripts/tinymist-ipad.patch` to the verified upstream revision:
 compile-status notifications tolerate a closed editor channel when a Rayon
 compilation finishes after shutdown. This prevents a process-wide panic during

@@ -11,4 +11,9 @@
 int32_t leftblank_tinymist_run(int32_t input_fd, int32_t output_fd,
                              const char *font_directory);
 
+// LeftBlank's typst-syntax table (LBSyntaxAPI in LeftBlankCore's
+// LeftBlankSyntax.h), bundled in the same library. Pass it to
+// SyntaxTree.install before parsing.
+const void *leftblank_tinymist_syntax_api(void);
+
 #endif

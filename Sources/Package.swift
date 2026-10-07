@@ -12,9 +12,12 @@ let package = Package(
     products: [.library(name: "LeftBlankCore", type: .dynamic, targets: ["LeftBlankCore"])],
     dependencies: [.package(url: "https://github.com/weichsel/ZIPFoundation.git", exact: "0.9.20")],
     targets: [
+        // Declarations only: the parser is part of the app's engine library, and the
+        // app hands its function table to LeftBlankCore (SyntaxTree.install).
+        .target(name: "LeftBlankSyntaxFFI", path: "LeftBlankSyntaxFFI"),
         .target(
             name: "LeftBlankCore",
-            dependencies: ["ZIPFoundation"],
+            dependencies: ["ZIPFoundation", "LeftBlankSyntaxFFI"],
             path: "LeftBlankCore",
             resources: [.process("Resources")],
         ),

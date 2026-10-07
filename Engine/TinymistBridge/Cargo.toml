@@ -13,6 +13,8 @@ sync-ls = { path = "../../.tools/tinymist-ipad-source/crates/sync-lsp", features
 # Always retain usable fallback fonts, even without desktop system fonts.
 typst-assets = { version = "=0.15.1", features = ["fonts"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time"] }
+# LeftBlank's parser bridge, re-exported so the app links one Rust library.
+leftblank-syntax = { path = "../SyntaxBridge" }
 
 [profile.release]
 opt-level = "s"

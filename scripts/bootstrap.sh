@@ -3,6 +3,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/environment.sh
 mkdir -p .tools
+# LeftBlankCore links the parser on macOS, for every distribution.
+scripts/build-syntax.sh
 case "$(uname -m)" in
   arm64) ;;
   *) echo 'LeftBlank supports Apple Silicon (arm64) only' >&2; exit 1 ;;

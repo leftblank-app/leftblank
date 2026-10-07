@@ -5,13 +5,14 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tomllib
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / 'iPad/LeftBlank.xcodeproj/project.pbxproj'
 MAC_TARGETS = {
-    'LeftBlankCore',
+    'LeftBlankCore', 'LeftBlankSyntaxFFI', 'LeftBlankSyntaxLibrary',
     'LeftBlankApp', 'LeftBlankLauncher', 'LeftBlankTestSupport', 'LeftBlankCoreTests',
     'LeftBlankAppTests',
 }
@@ -52,7 +53,10 @@ class PackageGraphs(unittest.TestCase):
     def test_ipad_graph_has_only_core_and_zip(self):
         for mode, graph in self.ipad.items():
             with self.subTest(distribution=mode):
-                self.assertEqual(set(targets(graph)), {'LeftBlankCore'})
+                self.assertEqual(set(targets(graph)), {'LeftBlankCore', 'LeftBlankSyntaxFFI'})
+                # Declarations only: the app's engine library provides the parser.
+                parser = targets(graph)['LeftBlankSyntaxFFI']
+                self.assertEqual((parser['dependencies'], parser['settings']), ([], []))
                 self.assertEqual(dependencies(graph), {'zipfoundation'})
                 self.assertEqual([(p['name'], p['targets']) for p in graph['products']],
                                  [('LeftBlankCore', ['LeftBlankCore'])])
@@ -71,6 +75,32 @@ class PackageGraphs(unittest.TestCase):
         self.assertNotIn('rmcp', (ROOT / 'Engine/TinymistBridge/Cargo.toml').read_text())
         self.assertNotIn('MCPServer', PROJECT.read_text())
         self.assertNotIn('MCPConnection.swift', PROJECT.read_text())
+
+    def test_mac_links_the_parser_library_the_ipad_engine_reexports(self):
+        for mode, graph in self.mac.items():
+            with self.subTest(distribution=mode):
+                library = targets(graph)['LeftBlankSyntaxLibrary']
+                self.assertEqual(library['type'], 'binary')
+                self.assertEqual(library['path'], 'Engine/SyntaxBridge/target/LeftBlankSyntax.xcframework')
+                self.assertEqual(targets(graph)['LeftBlankSyntaxFFI']['dependencies'],
+                                 [{'byName': ['LeftBlankSyntaxLibrary', None]}])
+        mac_ffi = ROOT / (targets(self.mac['appstore'])['LeftBlankSyntaxFFI'].get('path')
+                          or 'Sources/LeftBlankSyntaxFFI')
+        ipad_ffi = ROOT / 'Sources' / targets(self.ipad['appstore'])['LeftBlankSyntaxFFI']['path']
+        self.assertEqual(mac_ffi.resolve(), ipad_ffi.resolve())
+        engine = (ROOT / 'Engine/TinymistBridge/Cargo.toml').read_text()
+        self.assertIn('leftblank-syntax = { path = "../SyntaxBridge" }', engine)
+        self.assertIn('leftblank_tinymist_syntax_api', (ROOT / 'Engine/TinymistBridge/src/lib.rs').read_text())
+
+        def pins(lock):
+            packages = tomllib.loads((ROOT / lock).read_text())['package']
+            return {p['name']: (p['version'], p.get('source')) for p in packages
+                    if p['name'] in {'typst-syntax', 'typst-utils', 'typst-timing'}
+                    and p['version'].startswith('0.15.')}
+        # The Mac and the iPad must parse with the same typst-syntax revision.
+        parser = pins('Engine/SyntaxBridge/Cargo.lock')
+        self.assertEqual(len(parser), 3)
+        self.assertEqual(parser, pins('Engine/TinymistBridge/Cargo.lock'))
 
     def test_ipad_ignores_mac_preview_environment(self):
         self.assertEqual(self.ipad['appstore'], self.ipad['preview'])

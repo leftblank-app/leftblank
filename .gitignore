@@ -7,5 +7,6 @@ build/
 *.profraw
 __pycache__/
 Engine/TinymistBridge/target/
+Engine/SyntaxBridge/target/
 **/xcuserdata/
 Tools/MCPServer/target/
