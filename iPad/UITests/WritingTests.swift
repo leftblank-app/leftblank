@@ -598,17 +598,20 @@ final class WritingTests: XCTestCase {
             expect(appears(panes().divider, timeout: 10)) == true
             waitForStableControl(panes().divider, in: app, name: "Split divider position")
         }
-        expect(panes().divider.exists) == false
+        // Wide windows open side by side. Start from equal panes, whatever an
+        // earlier run on this simulator stored.
         showSplit()
         var (editor, preview, divider) = panes()
+        divider.doubleTap()
+        let even = NSPredicate { _, _ in abs(editor.frame.width - preview.frame.width) <= 2 }
+        waitForState(even, in: app, name: "Equal panes")
         let total = editor.frame.width + preview.frame.width
-        expect(abs(editor.frame.width - preview.frame.width)) <= 2
         expect(divider.value as? String) == "50%"
         let start = divider.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         start.press(forDuration: 0.2, thenDragTo: start.withOffset(CGVector(dx: -160, dy: 0)))
         let narrowed = NSPredicate { _, _ in editor.frame.width < preview.frame.width - 200 }
         waitForState(narrowed, in: app, name: "Divider drag")
-        let dragged = editor.frame.width
+        let dragged = editor.frame.width / total
         expect(abs(editor.frame.width + preview.frame.width - total)) <= 2
         expect(divider.value as? String) != "50%"
         capture("Resized side-by-side panes")
@@ -618,9 +621,12 @@ final class WritingTests: XCTestCase {
         app = startWriting()
         showSplit()
         (editor, preview, divider) = panes()
-        expect(abs(editor.frame.width - dragged)) <= 2
+        // The window may differ after relaunch; the ratio, not the width, is kept.
+        let restored = NSPredicate { _, _ in
+            abs(editor.frame.width / (editor.frame.width + preview.frame.width) - dragged) <= 0.01
+        }
+        waitForState(restored, in: app, name: "Restored divider")
         divider.doubleTap()
-        let even = NSPredicate { _, _ in abs(editor.frame.width - preview.frame.width) <= 2 }
         waitForState(even, in: app, name: "Divider reset")
         expect(divider.value as? String) == "50%"
         app.buttons["layout-writing"].firstMatch.tap()
