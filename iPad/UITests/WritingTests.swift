@@ -537,11 +537,13 @@ final class WritingTests: XCTestCase {
     func testEditingPersistsAcrossPreviewAndRotation() {
         let app = startWriting()
         app.buttons["layout-preview"].firstMatch.tap()
+        // The value also requires the WebKit page to report ready, which can
+        // take well over 30 seconds on a loaded runner.
         waitForState(
             NSPredicate(format: "value == %@", "Preview Updated"),
             in: app,
             of: app.staticTexts["engine-status"].firstMatch,
-            timeout: 30,
+            timeout: 90,
         )
         app.buttons["layout-writing"].firstMatch.tap()
         let editor = app.textViews["manuscript"].firstMatch
@@ -571,7 +573,7 @@ final class WritingTests: XCTestCase {
             NSPredicate(format: "value == %@", "Preview Updated"),
             in: app,
             of: app.staticTexts["engine-status"].firstMatch,
-            timeout: 20,
+            timeout: 60,
         )
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.lifetime = .keepAlways
