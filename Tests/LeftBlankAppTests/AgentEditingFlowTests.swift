@@ -130,6 +130,73 @@ extension WritingFlowTests {
         #expect(content?["data"].string.flatMap { Data(base64Encoded: $0) } == png)
     }
 
+    @Test func mcpHelperRestartExpiresSessionsSoClientsRediscoverTools() async throws {
+        let app = try WritingFixture(text: "= Restart\n", startService: false)
+        defer { app.close() }
+        let checkout = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let connection = MCPConnection(
+            workspace: app.workspace,
+            helperURL: checkout.appendingPathComponent(".tools/leftblank-mcp"),
+        )
+        defer { connection.disable() }
+        try await connection.enable(documentIDs: [], canWrite: false)
+        let descriptor = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: connection.descriptorURL))
+        let endpoint = try #require(descriptor["url"].string.flatMap(URL.init(string:)))
+        let token = try #require(descriptor["authentication"]["token"].string)
+        func post(_ method: String, session: String? = nil) async throws -> (JSONValue, Int, String?) {
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
+            request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+            var params: JSONValue = .object([:])
+            if method == "initialize" {
+                params = .object([
+                    "protocolVersion": .string("2025-11-25"), "capabilities": .object([:]),
+                    "clientInfo": .object(["name": .string("restart-test"), "version": .string("1")]),
+                ])
+            } else {
+                request.setValue("2025-11-25", forHTTPHeaderField: "MCP-Protocol-Version")
+            }
+            if let session {
+                request.setValue(session, forHTTPHeaderField: "Mcp-Session-Id")
+            }
+            request.httpBody = try JSONEncoder().encode(JSONValue.object([
+                "jsonrpc": .string("2.0"), "id": .number(1), "method": .string(method), "params": params,
+            ]))
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let http = try #require(response as? HTTPURLResponse)
+            return (
+                (try? JSONDecoder().decode(JSONValue.self, from: data)) ?? .null,
+                http.statusCode,
+                http.value(forHTTPHeaderField: "Mcp-Session-Id"),
+            )
+        }
+        let initialized = try await post("initialize")
+        #expect(initialized.1 == 200)
+        #expect(initialized.0["result"]["capabilities"]["tools"]["listChanged"].foundationValue as? Bool == true)
+        let session = try #require(initialized.2)
+        #expect(try await post("tools/list", session: session).1 == 200)
+        // An app restart or upgrade replaces the helper but keeps the port and the credential.
+        connection.stop()
+        try await Task.sleep(for: .milliseconds(100))
+        await connection.resume()
+        #expect(connection.isRunning)
+        let restarted = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: connection.descriptorURL))
+        #expect(restarted["url"].string == endpoint.absoluteString)
+        #expect(restarted["authentication"]["token"].string == token)
+        #expect(restarted["instance_id"].string != descriptor["instance_id"].string)
+        let stale = try await post("tools/list", session: session)
+        #expect(stale.1 == 404)
+        #expect(stale.0["error"]["code"].int == -32001)
+        let again = try await post("initialize")
+        let renewed = try #require(again.2)
+        #expect(again.1 == 200 && renewed != session)
+        let tools = try await post("tools/list", session: renewed)
+        #expect(tools.1 == 200 && tools.0["result"]["tools"].array.contains { $0["name"].string == "read_image" })
+    }
+
     @Test func mcpPortConflictIsExplainedAndANewPortCanBeChosen() async throws {
         let app = try WritingFixture(text: "= Port\n", startService: false)
         defer { app.close() }

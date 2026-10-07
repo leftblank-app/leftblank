@@ -205,6 +205,8 @@ read_file 的历史读取只返回 version_id 和不可变快照信息，不伪�
 - 搜索范围与诊断都返回统一的 0-based UTF-16 range 和显式编码；面向人的 line_number 从 1 开始并单独命名，避免同一个 line 字段两种含义。
 - 所有业务输入采用明确 object schema 和 additionalProperties=false。共享输出是业务结果，不包含 MCP 信封；MCP 适配层提供 outputSchema、structuredContent 和兼容的 JSON 文本内容。MCP 协议级取消、请求 ID 与工具业务 request_id 不混用；未来内置 agent 的 provider call ID 也不能取代业务 request_id。
 - 修改结果包含每个文件的 before_revision、after_revision、before_version_id（如已保存恢复快照）、save_status 与有界 diff 摘要；不新增只为回显本次修改而存在的 get_diff 工具。去重与失败语义对所有写工具一致。
+- diff 摘要为 `{format: "unified", hunks, omitted_hunks, abbreviated}`。每个 hunk 给出 1-based 的 before/after 起始行与行数（行数为 0 时起始行是变化发生位置之前的一行，与 unified diff 一致），text 为带 ` `/`-`/`+` 前缀的变化行及上下各 3 行上下文；末行缺少换行时附 `\ No newline at end of file`。超长行围绕变化位置截取 240 个字符，单文件最多 8 个 hunk、约 4000 个字符，被截断或省略时 abbreviated=true。行比较使用有上限的 Myers 算法，编辑量超过上限时把整个变化区间作为一次替换，避免整本书上的二次方开销。此前的 before/after 字段只截取全文开头，已移除。
+- read_file 按行窗口读取，超过 2 MiB 编辑上限的 UTF-8 文本仍可用 start_line/max_lines 分段读取，但不能编辑（写工具返回 file_too_large）。路径不存在返回 not_found；尚未下载、符号链接或特殊文件返回 unavailable；图片与其他二进制保持 not_text，图片额外给出 suggested_tool=read_image。错误对象可带附加字段（suggested_tool、hunk 等），code 与 message 含义不变。
 
 ### 工作流完整性与不重复的边界
 
@@ -280,7 +282,7 @@ old_str 非空且必须唯一、精确匹配，包含空白。需要插入时替
 
 status 区分 rejected、applied、partially_applied。每个文件报告实际是否应用、当前版本、保存结果和相关错误。已应用但保存失败不能被描述成未修改；本机保存成功不表示 iCloud 已同步。
 
-业务失败通过 MCP `isError: true` 和结构化错误返回；混合结果也保留逐文件状态。错误码包括 revision_conflict、text_not_found、ambiguous_match、overlapping_edits、invalid_patch、path_not_allowed、file_not_found、download_pending、unresolved_conflict、busy、save_failed、engine_unavailable、timeout、outcome_unknown。
+业务失败通过 MCP `isError: true` 和结构化错误返回；混合结果也保留逐文件状态。apply_patch 的 patch_mismatch 指明文件、第几个 hunk、首行摘要和匹配次数；零次匹配时再说明第一处找不到的行是只匹配了文件某行的一部分（partial_line_match）、仅空白或换行符不同（whitespace_mismatch_line），还是各行都在但不连续。错误码包括 revision_conflict、text_not_found、ambiguous_match、overlapping_edits、invalid_patch、path_not_allowed、file_not_found、download_pending、unresolved_conflict、busy、save_failed、engine_unavailable、timeout、outcome_unknown。
 
 request_id 在服务端按授权连接身份与请求参数摘要去重，拒绝同 ID 不同参数；运行中的重复请求不能再次执行。首版去重缓存有界，保证范围和期限通过连接能力说明公开。实例重启或缓存过期后的未知结果必须重新读取核实，不自动重放。跨重启 exactly-once 不在首版承诺内。
 
@@ -321,6 +323,12 @@ compile_document 校验项目版本后捕获源码、未保存内容、项目内
 校验 HTTP Origin，并检查 Host；拒绝意外来源和重定向泄露凭证。MCP transport 的认证细节随所选稳定版本验证，不向 agent 暴露无认证的文档接口。[传输要求](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
 
 首次启用时分配可用端口并持久化，后续重启优先使用相同端口；冲突时明确报告并要求更新连接，不静默切换到旧配置仍指向的其他服务。凭证可撤销和轮换，不随每次启动变化。首次发行前验证本机 HTTP 和客户端凭证注入的实际兼容性。
+
+应用重启或升级会替换 helper 进程，但端口（port.json）与凭证（access.json）不变，只有停用后重新启用才换凭证，端口冲突时由用户选择新端口。helper 本身无状态，为让已连接的客户端发现新工具：
+
+- 2026-07-28 之前、使用 initialize 的客户端：initialize 响应带 `Mcp-Session-Id`，ID 只属于当前 helper 进程。携带其他进程（即重启前）会话 ID 的请求返回 HTTP 404 与 JSON-RPC 错误 -32001 Session not found，符合 Streamable HTTP 规范，客户端应重新 initialize 并重新读取 tools/list。不带会话 ID 的请求仍按无状态处理；会话 ID 不是凭证，认证先于会话检查。
+- 2026-07-28 客户端：没有会话，tools/list 返回 ttlMs=0。服务端声明 `tools.listChanged`，支持 `subscriptions/listen`，每条新的 listen 流先发送一次 `notifications/tools/list_changed`：新 helper 无法得知客户端缓存了前一个进程的哪些工具，宁可让客户端多读一次列表。
+- 应用退出到新 helper 就绪之间端口无人监听，期间的调用会失败。客户端是否自动重连、重连后是否刷新工具列表由客户端决定；不支持时仍需在客户端手动重连。
 
 Standard 与 Preview 使用独立连接名称、监听端口、凭证和实例标识，例如 leftblank 与 leftblank-preview。两者可能访问同一 iCloud 文档库，发行版隔离不能被当成内容并发隔离；仍须协调文件访问和检查版本。
 

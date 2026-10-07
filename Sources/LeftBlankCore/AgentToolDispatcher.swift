@@ -270,11 +270,11 @@ public final class AgentToolDispatcher {
         case "read_file":
             let path = args.string("path")
             _ = try AgentProjectFiles.url(path, in: document.folderURL)
-            guard let data = snapshot.files[path], let source = snapshot.texts[path] else {
-                throw AgentToolError(
-                    "not_text",
-                    "The file is unavailable, too large or not UTF-8 text.",
-                )
+            // Reads are windowed, so UTF-8 text past the 2 MiB edit limit is still readable.
+            guard let data = snapshot.files[path], !data.contains(0),
+                  let source = String(data: data, encoding: .utf8)
+            else {
+                throw unreadable(path, snapshot: snapshot)
             }
             return try AgentToolResult(read(
                 source,
@@ -337,6 +337,42 @@ public final class AgentToolDispatcher {
             return AgentToolResult(.object(result), isError: !compiled)
         default: return try await edit(name, args: args, document: document, snapshot: snapshot)
         }
+    }
+
+    /// Why a path has no text in the snapshot. Codes stay stable; hints say what to do instead.
+    func unreadable(_ path: String, snapshot: AgentProjectSnapshot) -> AgentToolError {
+        guard let data = snapshot.files[path] else {
+            if snapshot.omitted.contains(path) {
+                return AgentToolError(
+                    "unavailable",
+                    "\(path) is still downloading, or is a symlink or special file that agent tools cannot read.",
+                )
+            }
+            return AgentToolError(
+                "not_found",
+                "No file exists at \(path). Use list_files to find project paths.",
+                details: ["suggested_tool": .string("list_files")],
+            )
+        }
+        if !data.contains(0), String(data: data, encoding: .utf8) != nil {
+            return AgentToolError(
+                "file_too_large",
+                "\(path) is \(data.count) bytes; files over 2 MiB can be read with read_file " +
+                    "(start_line and max_lines) but not edited.",
+                details: ["suggested_tool": .string("read_file")],
+            )
+        }
+        if AgentImage.isImage(data) {
+            return AgentToolError(
+                "not_text",
+                "\(path) is an image. Use read_image to view it.",
+                details: ["suggested_tool": .string("read_image")],
+            )
+        }
+        return AgentToolError(
+            "not_text",
+            "\(path) is binary or not valid UTF-8 text; only UTF-8 text files can be read or edited as text.",
+        )
     }
 
     func document(_ args: AgentArguments, access: AgentToolAccess) async throws -> LibraryDocument {

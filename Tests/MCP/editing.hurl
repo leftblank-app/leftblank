@@ -55,9 +55,43 @@ MCP-Protocol-Version: 2025-11-25
   }
 }
 HTTP 200
+[Captures]
+session: header "Mcp-Session-Id"
 [Asserts]
+header "Mcp-Session-Id" exists
 jsonpath "$.result.protocolVersion" == "2025-11-25"
-jsonpath "$.result.capabilities.tools" exists
+jsonpath "$.result.capabilities.tools.listChanged" == true
+
+# The session issued above is honoured; one from an earlier helper (app restart) gets 404.
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+Mcp-Session-Id: {{session}}
+{
+  "jsonrpc": "2.0",
+  "id": 41,
+  "method": "tools/list"
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.tools" count == {{tool_count}}
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+Mcp-Session-Id: 00000000000000000000000000000000-0
+{
+  "jsonrpc": "2.0",
+  "id": 42,
+  "method": "tools/list"
+}
+HTTP 404
+[Asserts]
+jsonpath "$.error.code" == -32001
 
 POST {{url}}
 Authorization: Bearer {{token}}
@@ -149,6 +183,29 @@ Accept: application/json, text/event-stream
 MCP-Protocol-Version: 2025-11-25
 {
   "jsonrpc": "2.0",
+  "id": 81,
+  "method": "tools/call",
+  "params": {
+    "name": "read_file",
+    "arguments": {
+      "document_id": "{{document}}",
+      "path": "missing.typ"
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.isError" == true
+jsonpath "$.result.structuredContent.error.code" == "not_found"
+jsonpath "$.result.structuredContent.error.suggested_tool" == "list_files"
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+{
+  "jsonrpc": "2.0",
   "id": 9,
   "method": "tools/call",
   "params": {
@@ -170,6 +227,9 @@ before_version: jsonpath "$.result.structuredContent.files[0].before_version_id"
 [Asserts]
 jsonpath "$.result.structuredContent.status" == "applied"
 jsonpath "$.result.structuredContent.files[0].save_status" == "saved"
+jsonpath "$.result.structuredContent.files[0].diff.hunks[0].before_start_line" == 1
+jsonpath "$.result.structuredContent.files[0].diff.hunks[0].text" == "-Hello 中文\n+Updated 中文\n"
+jsonpath "$.result.structuredContent.files[0].diff.abbreviated" == false
 
 POST {{url}}
 Authorization: Bearer {{token}}

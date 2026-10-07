@@ -268,6 +268,115 @@ struct AgentToolsTests {
         #expect(partial.value["files"].array.count == 1)
     }
 
+    @Test func writeResultsShowEachChangedRegion() async throws {
+        let fixture = try AgentFixture()
+        defer { fixture.close() }
+        let source = (1 ... 40).map { "第\($0)行" }.joined(separator: "\n") + "\n"
+        let document = try await fixture.library.create(title: "Diff", text: source)
+        let id = JSONValue.string(document.id.uuidString)
+        let read = await fixture.call("read_file", ["document_id": id, "path": .string("main.typ")])
+        let replaced = await fixture.call("str_replace", [
+            "document_id": id, "path": .string("main.typ"), "old_str": .string("第20行"),
+            "new_str": .string("第二十行 😀"), "expected_revision": read.value["revision"],
+            "request_id": .string("diff-replace"),
+        ])
+        let diff = replaced.value["files"].array.first?["diff"] ?? .null
+        #expect(diff["abbreviated"].foundationValue as? Bool == false)
+        let hunk = try #require(diff["hunks"].array.first)
+        #expect(diff["hunks"].array.count == 1)
+        #expect(hunk["before_start_line"].int == 17 && hunk["after_line_count"].int == 7)
+        #expect(hunk["text"].string == " 第17行\n 第18行\n 第19行\n-第20行\n+第二十行 😀\n 第21行\n 第22行\n 第23行\n")
+        let patched = await fixture.call("apply_patch", [
+            "document_id": id, "request_id": .string("diff-patch"),
+            "expected_revisions": .object([
+                "main.typ": replaced.value["files"].array.first?["after_revision"] ?? .null,
+                "new.typ": .null,
+            ]),
+            "input": .string(
+                "*** Begin Patch\n*** Update File: main.typ\n@@\n 第2行\n-第3行\n+三\n@@\n 第35行\n-第36行\n" +
+                    "*** Add File: new.typ\n+新文件\n*** End Patch",
+            ),
+        ])
+        #expect(!patched.isError)
+        let files = patched.value["files"].array
+        let hunks = files.first { $0["path"].string == "main.typ" }?["diff"]["hunks"].array ?? []
+        #expect(hunks.map { $0["before_start_line"].int } == [1, 33])
+        #expect(hunks.last?["after_line_count"].int == 6)
+        #expect(hunks.last?["text"].string?.contains("-第36行\n 第37行") == true)
+        let added = files.first { $0["path"].string == "new.typ" }?["diff"]["hunks"].array.first
+        #expect(added?["text"].string == "+新文件\n" && added?["before_line_count"].int == 0)
+    }
+
+    @Test func unreadableFilesExplainWhyAndWhatToUseInstead() async throws {
+        let fixture = try AgentFixture()
+        defer { fixture.close() }
+        let document = try await fixture.library.create(title: "Files", text: "= Files\n")
+        let folder = document.folderURL
+        try #require(testImage(width: 2, height: 2, type: .png)).write(to: folder.appendingPathComponent("figure.png"))
+        try Data([0, 1, 2, 255]).write(to: folder.appendingPathComponent("data.bin"))
+        let large = String(repeating: "长行 0123456789\n", count: 160_000)
+        try Data(large.utf8).write(to: folder.appendingPathComponent("large.txt"))
+        func read(_ path: String, _ extra: [String: JSONValue] = [:]) async -> AgentToolResult {
+            await fixture.call(
+                "read_file",
+                ["document_id": .string(document.id.uuidString), "path": .string(path)]
+                    .merging(extra) { _, new in new },
+            )
+        }
+        let image = await read("figure.png")
+        #expect(image.value["error"]["code"].string == "not_text")
+        #expect(image.value["error"]["suggested_tool"].string == "read_image")
+        #expect(image.value["error"]["message"].string?.contains("read_image") == true)
+        let binary = await read("data.bin")
+        #expect(binary.value["error"]["code"].string == "not_text" && binary.value["error"]["suggested_tool"].isNull)
+        let missing = await read("missing.typ")
+        #expect(missing.value["error"]["code"].string == "not_found")
+        #expect(missing.value["error"]["suggested_tool"].string == "list_files")
+        // Text past the 2 MiB edit limit is read in windows but cannot be edited.
+        #expect(large.utf8.count > AgentTools.maximumTextBytes)
+        let window = await read("large.txt", ["start_line": .number(150_000), "max_lines": .number(2)])
+        #expect(!window.isError && window.value["text"].string == "长行 0123456789\n长行 0123456789\n")
+        #expect(window.value["truncated"].foundationValue as? Bool == true)
+        let edit = await fixture.call("str_replace", [
+            "document_id": .string(document.id.uuidString), "path": .string("large.txt"),
+            "old_str": .string("长行"), "new_str": .string("短"), "expected_revision": window.value["revision"],
+            "request_id": .string("large-edit"),
+        ])
+        #expect(edit.value["error"]["code"].string == "file_too_large")
+        #expect(edit.value["error"]["message"].string?.contains("start_line") == true)
+    }
+
+    @Test func patchMismatchNamesTheHunkAndPartialLines() throws {
+        func failure(_ body: String, source: String) -> AgentToolError? {
+            do {
+                _ = try AgentPatch.parse(
+                    "*** Begin Patch\n*** Update File: main.typ\n" + body + "*** End Patch",
+                    sources: ["main.typ": source],
+                )
+                return nil
+            } catch { return error as? AgentToolError }
+        }
+        let paragraph = "这是一段很长的中文段落，" + String(repeating: "包含许多内容", count: 30) + "。"
+        let source = "= 标题\n\n" + paragraph + "\n结尾\n"
+        let partial = try #require(failure("@@\n-= 标题\n+= 新标题\n@@\n-包含许多内容\n+新\n", source: source))
+        #expect(partial.code == "patch_mismatch")
+        #expect(partial.details["hunk"]?.int == 2 && partial.details["matches"]?.int == 0)
+        #expect(partial.details["partial_line_match"]?.int == 3)
+        #expect(partial.message.contains("Hunk 2 in main.typ") && partial.message.contains("part of file line 3"))
+        let long = try #require(failure("@@\n-" + paragraph + "X\n+新\n", source: source))
+        #expect(long.details["first_line"]?.string?.hasSuffix("…") == true)
+        #expect(long.details["unmatched_line"]?.string.map { $0.count <= 81 } == true)
+        #expect(long.message.contains("does not occur"))
+        let repeated = try #require(failure("@@\n-x\n+y\n", source: "x\nx\n"))
+        #expect(repeated.details["matches"]?.int == 2 && repeated.message.contains("matched 2 times"))
+        let spaced = try #require(failure("@@\n-结尾 \n+完\n", source: source))
+        #expect(spaced.details["whitespace_mismatch_line"]?.int == 4)
+        let order = try #require(failure("@@\n-结尾\n-= 标题\n+x\n", source: source))
+        #expect(order.message.contains("not consecutively"))
+        let anchor = try #require(failure("@@ x\n-y\n+z\n", source: "x\ny\nx\ny\n"))
+        #expect(anchor.code == "ambiguous_match" && anchor.details["hunk"]?.int == 1)
+    }
+
     @Test func readImageReturnsViewableImagesAndConvertsOtherFormats() async throws {
         let fixture = try AgentFixture()
         defer { fixture.close() }

@@ -22,10 +22,7 @@ extension AgentToolDispatcher {
         case "str_replace":
             let path = args.string("path")
             guard let source = snapshot.texts[path] else {
-                throw AgentToolError(
-                    "not_text",
-                    "Read an available UTF-8 file first.",
-                )
+                throw unreadable(path, snapshot: snapshot)
             }
             let old = args.string("old_str"), new = args.string("new_str")
             guard !old.isEmpty else {
@@ -131,11 +128,7 @@ extension AgentToolDispatcher {
                     )) } ?? .null,
                     "before_version_id": versions[change.path].map(JSONValue.string) ?? .null,
                     "save_status": .string(saveStatus), "deleted": .bool(change.text == nil),
-                    "diff": .object([
-                        "before": .string(AgentTools.excerpt(snapshot.texts[change.path] ?? "", limit: 300)),
-                        "after": .string(AgentTools.excerpt(change.text ?? "", limit: 300)),
-                        "abbreviated": .bool(true),
-                    ]),
+                    "diff": AgentDiff.json(before: snapshot.texts[change.path], after: change.text),
                 ]))
             } catch {
                 issue = failure(error).value["error"]
