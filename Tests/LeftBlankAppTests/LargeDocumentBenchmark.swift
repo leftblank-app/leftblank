@@ -77,7 +77,10 @@ extension WritingFlowTests {
             let range = ns.paragraphRange(for: NSRange(location: start, length: 0))
             return min(ns.length - 1, range.location + min(4, max(0, range.length - 2)))
         }
+        let sampler = MainThreadSampler()
         for offset in offsets {
+            let paragraphsBefore = VisualEditorSession.paragraphsBuilt
+            sampler.start()
             let start = ContinuousClock.now
             app.workspace.jump(to: offset)
             jumpTimes.append(seconds(start.duration(to: .now)))
@@ -89,6 +92,10 @@ extension WritingFlowTests {
             editor.cacheDisplay(in: editor.visibleRect, to: bitmap)
             layoutTimes.append(seconds(layoutStart.duration(to: .now)))
             navigation.append(seconds(start.duration(to: .now)))
+            let profile = sampler.stop()
+            let total = Int((navigation.last ?? 0) * 1000)
+            let count = VisualEditorSession.paragraphsBuilt - paragraphsBefore
+            print("LEFTBLANK SAMPLE jump \(offset) \(total) ms, paragraphs \(count)\n\(profile)")
             try navigationSamples.append(["offset": Double(offset), "total_ms": #require(navigation.last) * 1000,
                                           "jump_ms": #require(jumpTimes.last) * 1000,
                                           "highlight_ms": #require(highlightTimes.last) * 1000,
