@@ -72,7 +72,7 @@ extension WritingFlowTests {
         var navigationSamples: [[String: Double]] = []
         var jumpsOnTarget = 0, maximumHitError = 0
         let ns = source as NSString
-        let offsets = (ProcessInfo.processInfo.environment["DIAG_ORDER"] != nil ? [0.9, 0.5, 0.1, 0.99, 0.01, 0.75] : [0.1, 0.9, 0.5, 0.99, 0.01, 0.75]).map { fraction in
+        let offsets = [0.1, 0.9, 0.5, 0.99, 0.01, 0.75].map { fraction in
             let start = Int(Double(ns.length) * fraction)
             let range = ns.paragraphRange(for: NSRange(location: start, length: 0))
             return min(ns.length - 1, range.location + min(4, max(0, range.length - 2)))
