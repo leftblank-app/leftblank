@@ -32,12 +32,30 @@ public final class VisualAttachment: NSTextAttachment {
         self.session = session
         super.init(data: nil, ofType: nil)
         bounds = CGRect(x: 0, y: -descent, width: size.width, height: size.height)
-        allowsTextAttachmentView = true
+        #if canImport(AppKit)
+            allowsTextAttachmentView = true
+        #else
+            allowsTextAttachmentView = false
+        #endif
     }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) {
         nil
+    }
+
+    /// The box drawn for the construct starting at `offset` of a display
+    /// paragraph: the U+FFFC that ends its zero-width run.
+    public static func box(in paragraph: NSAttributedString, at offset: Int) -> VisualAttachment? {
+        let text = paragraph.string as NSString
+        var index = offset
+        while index < text.length, text.character(at: index) == 0x200B {
+            index += 1
+        }
+        guard index < text.length, text.character(at: index) == 0xFFFC else {
+            return nil
+        }
+        return paragraph.attribute(.attachment, at: index, effectiveRange: nil) as? VisualAttachment
     }
 
     /// What assistive technology and tests read for the box.
@@ -68,79 +86,126 @@ public final class VisualAttachment: NSTextAttachment {
         )
     }
 
-    override public func viewProvider(
-        for parentView: PlatformView?,
-        location: any NSTextLocation,
-        textContainer: NSTextContainer?,
-    ) -> NSTextAttachmentViewProvider? {
-        let provider = VisualAttachmentViewProvider(
-            textAttachment: self,
-            parentView: parentView,
-            textLayoutManager: textContainer?.textLayoutManager,
-            location: location,
-        )
-        provider.tracksTextAttachmentViewBounds = true
-        return provider
-    }
-}
-
-final class VisualAttachmentViewProvider: NSTextAttachmentViewProvider {
-    override func loadView() {
-        guard let attachment = textAttachment as? VisualAttachment else {
-            return
-        }
-        // TextKit loads attachment views on the main thread.
-        nonisolated(unsafe) let box = attachment, location = location
-        view = MainActor.assumeIsolated {
-            let view = VisualBoxView(attachment: box)
-            view.activate = { [weak view] in
-                if let view {
-                    box.session?.activateChip(at: location, view: view)
-                }
+    /// Draws the box into `rect`, in the current graphics context.
+    func paint(_ rect: CGRect) {
+        switch content {
+        case let .chip(label):
+            let path = PlatformBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 2), radius: 5)
+            style.chipFill.setFill()
+            path.fill()
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: Self.chipFont(style),
+                .foregroundColor: style.chip,
+            ]
+            let size = (label as NSString).size(withAttributes: attributes)
+            (label as NSString).draw(
+                at: CGPoint(x: rect.minX + Self.chipPadding, y: rect.midY - size.height / 2),
+                withAttributes: attributes,
+            )
+        case .bullet:
+            let attributes: [NSAttributedString.Key: Any] = [.font: style.font, .foregroundColor: style.marker]
+            ("•" as NSString).draw(
+                at: CGPoint(x: rect.minX, y: rect.maxY - descent - style.font.ascender),
+                withAttributes: attributes,
+            )
+        case let .image(image, name):
+            if let image {
+                PlatformImage(cgImage: image, size: rect.size).draw(in: rect)
+            } else {
+                style.codeBackground.setFill()
+                PlatformBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), radius: 4).fill()
+                (name as NSString).draw(
+                    in: rect.insetBy(dx: 6, dy: 6),
+                    withAttributes: [.font: Self.chipFont(style), .foregroundColor: style.marker],
+                )
             }
-            return view
+        case let .math(image):
+            PlatformImage(cgImage: image, size: rect.size).draw(in: rect)
         }
-    }
-}
-
-/// Draws one box. Only chips respond to the pointer: they open their form.
-@MainActor
-final class VisualBoxView: PlatformView {
-    let attachment: VisualAttachment
-    var activate: (() -> Void)?
-
-    init(attachment: VisualAttachment) {
-        self.attachment = attachment
-        super.init(frame: CGRect(origin: .zero, size: attachment.size))
-        #if canImport(AppKit)
-            setAccessibilityElement(true)
-            setAccessibilityLabel(attachment.label)
-            setAccessibilityRole(isChip ? .button : .image)
-        #else
-            backgroundColor = .clear
-            isAccessibilityElement = true
-            accessibilityLabel = attachment.label
-            accessibilityTraits = isChip ? .button : .image
-            isUserInteractionEnabled = isChip
-            if isChip {
-                addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
-            }
-        #endif
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
-        nil
-    }
-
-    private var isChip: Bool {
-        if case .chip = attachment.content {
-            return true
-        }
-        return false
     }
 
     #if canImport(AppKit)
+        override public func viewProvider(
+            for parentView: PlatformView?,
+            location: any NSTextLocation,
+            textContainer: NSTextContainer?,
+        ) -> NSTextAttachmentViewProvider? {
+            let provider = VisualAttachmentViewProvider(
+                textAttachment: self,
+                parentView: parentView,
+                textLayoutManager: textContainer?.textLayoutManager,
+                location: location,
+            )
+            provider.tracksTextAttachmentViewBounds = true
+            return provider
+        }
+    #else
+        /// UIKit hosts attachment views only for attachments in the text
+        /// storage (iOS 27); a box exists only in the display paragraph, so
+        /// UIKit draws this image instead. It resolves dynamic colours in the
+        /// drawing view's traits. Chips are tapped through the text view.
+        override public func image(
+            for bounds: CGRect,
+            attributes _: [NSAttributedString.Key: Any] = [:],
+            location _: any NSTextLocation,
+            textContainer _: NSTextContainer?,
+        ) -> UIImage? {
+            if case let .math(image) = content {
+                return UIImage(cgImage: image, scale: CGFloat(image.width) / max(1, size.width), orientation: .up)
+            }
+            return UIGraphicsImageRenderer(size: bounds.size).image { _ in
+                paint(CGRect(origin: .zero, size: bounds.size))
+            }
+        }
+    #endif
+}
+
+#if canImport(AppKit)
+    final class VisualAttachmentViewProvider: NSTextAttachmentViewProvider {
+        override func loadView() {
+            guard let attachment = textAttachment as? VisualAttachment else {
+                return
+            }
+            // TextKit loads attachment views on the main thread.
+            nonisolated(unsafe) let box = attachment, location = location
+            view = MainActor.assumeIsolated {
+                let view = VisualBoxView(attachment: box)
+                view.activate = { [weak view] in
+                    if let view {
+                        box.session?.activateChip(at: location, view: view)
+                    }
+                }
+                return view
+            }
+        }
+    }
+
+    /// Draws one box. Only chips respond to the pointer: they open their form.
+    @MainActor
+    final class VisualBoxView: NSView {
+        let attachment: VisualAttachment
+        var activate: (() -> Void)?
+
+        init(attachment: VisualAttachment) {
+            self.attachment = attachment
+            super.init(frame: CGRect(origin: .zero, size: attachment.size))
+            setAccessibilityElement(true)
+            setAccessibilityLabel(attachment.label)
+            setAccessibilityRole(isChip ? .button : .image)
+        }
+
+        @available(*, unavailable)
+        required init?(coder _: NSCoder) {
+            nil
+        }
+
+        private var isChip: Bool {
+            if case .chip = attachment.content {
+                return true
+            }
+            return false
+        }
+
         override var isFlipped: Bool {
             true
         }
@@ -165,61 +230,10 @@ final class VisualBoxView: PlatformView {
         }
 
         override func draw(_: NSRect) {
-            paint(bounds)
-        }
-    #else
-        @objc private func tapped() {
-            activate?()
-        }
-
-        override func accessibilityActivate() -> Bool {
-            activate?()
-            return isChip
-        }
-
-        override func draw(_ rect: CGRect) {
-            paint(bounds)
-        }
-    #endif
-
-    private func paint(_ rect: CGRect) {
-        let style = attachment.style
-        switch attachment.content {
-        case let .chip(label):
-            let path = PlatformBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 2), radius: 5)
-            style.chipFill.setFill()
-            path.fill()
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: VisualAttachment.chipFont(style),
-                .foregroundColor: style.chip,
-            ]
-            let size = (label as NSString).size(withAttributes: attributes)
-            (label as NSString).draw(
-                at: CGPoint(x: rect.minX + VisualAttachment.chipPadding, y: rect.midY - size.height / 2),
-                withAttributes: attributes,
-            )
-        case .bullet:
-            let attributes: [NSAttributedString.Key: Any] = [.font: style.font, .foregroundColor: style.marker]
-            ("•" as NSString).draw(
-                at: CGPoint(x: rect.minX, y: rect.maxY - attachment.descent - style.font.ascender),
-                withAttributes: attributes,
-            )
-        case let .image(image, name):
-            if let image {
-                PlatformImage(cgImage: image, size: rect.size).draw(in: rect)
-            } else {
-                style.codeBackground.setFill()
-                PlatformBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), radius: 4).fill()
-                (name as NSString).draw(
-                    in: rect.insetBy(dx: 6, dy: 6),
-                    withAttributes: [.font: VisualAttachment.chipFont(style), .foregroundColor: style.marker],
-                )
-            }
-        case let .math(image):
-            PlatformImage(cgImage: image, size: rect.size).draw(in: rect)
+            attachment.paint(bounds)
         }
     }
-}
+#endif
 
 #if canImport(AppKit)
     typealias PlatformImage = NSImage

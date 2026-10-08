@@ -188,6 +188,8 @@ final class ManuscriptTextView: NSTextView {
         super.viewDidChangeEffectiveAppearance()
         // Dynamic colors already live in storage and TextKit's temporary runs.
         // Repaint only: changing appearance must not reflow or touch source text.
+        // Equations are images in the old colour; they are typeset again.
+        session?.appearanceDidChange()
         needsDisplay = true
         enclosingScrollView?.needsDisplay = true
     }

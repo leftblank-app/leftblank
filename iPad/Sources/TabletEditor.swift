@@ -210,6 +210,7 @@ struct TabletEditor: UIViewRepresentable {
     lazy var sourceHover = TabletSourceHover(editor: self)
     /// The visual layer: concealment, styles, chips, images and equations.
     var session: VisualEditorSession?
+    lazy var chipTap = TabletChipTap()
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         sourceHover.dismiss()

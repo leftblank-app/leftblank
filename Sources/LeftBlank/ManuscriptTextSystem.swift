@@ -170,10 +170,11 @@ extension ManuscriptTextView {
         }
     }
 
-    /// The box TextKit draws at `offset`, if any.
+    /// The box TextKit draws for the construct starting at `offset`, if any:
+    /// the U+FFFC that ends the construct's zero-width run.
     func displayedAttachment(at offset: Int) -> VisualAttachment? {
         displayParagraph(at: offset).flatMap { paragraph, local in
-            paragraph.attribute(.attachment, at: local, effectiveRange: nil) as? VisualAttachment
+            VisualAttachment.box(in: paragraph, at: local)
         }
     }
 
