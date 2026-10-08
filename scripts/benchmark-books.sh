@@ -16,12 +16,6 @@ LEFTBLANK_INTEGRATION=1 \
   LEFTBLANK_LARGE_FIXTURE="$PWD/Examples/Books/WarAndPeace/war-and-peace-highlighted.typ" \
   LEFTBLANK_PERFORMANCE_REPORT="$PWD/build/benchmarks/war-and-peace.json" \
   swift test --skip-build --enable-code-coverage --filter realMultiMegabyteDocumentNavigationScrollingAndTyping || status=1
-for attempt in 1 2 3 4 5; do
-  echo "DIAGNOSTIC SICP attempt $attempt"
-  LEFTBLANK_INTEGRATION=1 LEFTBLANK_CODE_WORD="define size" LEFTBLANK_SEARCH_WORD=procedure \
-    LEFTBLANK_LARGE_FIXTURE="$PWD/Examples/Books/SICP/main.typ" \
-    swift test --skip-build --enable-code-coverage --filter realMultiMegabyteDocumentNavigationScrollingAndTyping || true
-done
 LEFTBLANK_INTEGRATION=1 LEFTBLANK_CODE_WORD="define size" LEFTBLANK_SEARCH_WORD=procedure LEFTBLANK_BENCH_EXPORT=1 \
   LEFTBLANK_LARGE_FIXTURE="$PWD/Examples/Books/SICP/main.typ" \
   LEFTBLANK_PERFORMANCE_REPORT="$PWD/build/benchmarks/sicp.json" \
