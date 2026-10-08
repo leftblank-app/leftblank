@@ -72,15 +72,22 @@ extension WritingFlowTests {
         var navigationSamples: [[String: Double]] = []
         var jumpsOnTarget = 0, maximumHitError = 0
         let ns = source as NSString
-        let offsets = [0.1, 0.9, 0.5, 0.99, 0.01, 0.75].map { fraction in
+        let offsets = (ProcessInfo.processInfo.environment["DIAG_ORDER"] != nil ? [0.9, 0.5, 0.1, 0.99, 0.01, 0.75] : [0.1, 0.9, 0.5, 0.99, 0.01, 0.75]).map { fraction in
             let start = Int(Double(ns.length) * fraction)
             let range = ns.paragraphRange(for: NSRange(location: start, length: 0))
             return min(ns.length - 1, range.location + min(4, max(0, range.length - 2)))
         }
         let sampler = MainThreadSampler()
+        if ProcessInfo.processInfo.environment["DIAG_FOCUS"] != nil {
+            let focusStart = ContinuousClock.now
+            editor.window?.makeFirstResponder(editor)
+            print("LEFTBLANK FOCUS \(seconds(focusStart.duration(to: .now)) * 1000) ms")
+            await app.layout()
+        }
         for offset in offsets {
             let paragraphsBefore = VisualEditorSession.paragraphsBuilt
             let load = hostTicks()
+            let childrenBefore = childrenCPU()
             let cpuBefore = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             sampler.start()
             let start = ContinuousClock.now
@@ -100,8 +107,9 @@ extension WritingFlowTests {
             let busy = Double(after.busy - load.busy) / Double(max(1, after.total - load.total))
             let total = Int((navigation.last ?? 0) * 1000)
             let count = VisualEditorSession.paragraphsBuilt - paragraphsBefore
-            let host = Int(busy * 100)
+            let host = Int(busy * 100), children = Int(childrenCPU() - childrenBefore)
             print("LEFTBLANK SAMPLE jump \(offset) \(total) ms, main cpu \(Int(cpu)) ms, host \(host)%, n \(count)")
+            print("LEFTBLANK CHILDREN \(children) ms cpu during jump; process cpu \(Int(processCPU() * 1000)) ms")
             print(profile)
             try navigationSamples.append(["offset": Double(offset), "total_ms": #require(navigation.last) * 1000,
                                           "jump_ms": #require(jumpTimes.last) * 1000,
@@ -235,6 +243,35 @@ extension WritingFlowTests {
         }
         print("LEFTBLANK LARGE REPORT\n" + String(decoding: json, as: UTF8.self))
     }
+}
+
+/// CPU time of this process's children (Tinymist), in milliseconds.
+private func childrenCPU() -> Double {
+    var pids = [pid_t](repeating: 0, count: 64)
+    let count = Int(proc_listchildpids(getpid(), &pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
+    var timebase = mach_timebase_info_data_t()
+    mach_timebase_info(&timebase)
+    var total = 0.0
+    for pid in pids.prefix(max(0, count)) where pid > 0 {
+        var info = rusage_info_v2()
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+                proc_pid_rusage(pid, RUSAGE_INFO_V2, $0)
+            }
+        }
+        if result == 0 {
+            let ticks = Double(info.ri_user_time + info.ri_system_time)
+            total += ticks * Double(timebase.numer) / Double(timebase.denom) / 1e6
+        }
+    }
+    return total
+}
+
+private func processCPU() -> Double {
+    var usage = rusage()
+    getrusage(RUSAGE_SELF, &usage)
+    return Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec)
+        + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1e6
 }
 
 private func hostTicks() -> (busy: UInt64, total: UInt64) {
