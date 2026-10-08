@@ -935,3 +935,7 @@
 "Unknown parameter %@" = "Unknown parameter %@";
 "%@ is not a valid value for %@" = "%@ is not a valid value for %@";
 "Fill in %@ first" = "Fill in %@ first";
+"Update Channel" = "Update Channel";
+"Nightly (more stable)" = "Nightly (more stable)";
+"Every merge (Alpha)" = "Every merge (Alpha)";
+"Alpha builds arrive after every merge to main. After switching back to Nightly, the next nightly build newer than this one installs." = "Alpha builds arrive after every merge to main. After switching back to Nightly, the next nightly build newer than this one installs.";

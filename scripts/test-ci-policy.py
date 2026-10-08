@@ -59,6 +59,7 @@ class PathClassificationTests(unittest.TestCase):
         'scripts/tinymist-native-tls.patch': {'mac'},
         'scripts/release.sh': {'mac'},
         'scripts/publish-preview.py': {'mac'},
+        'scripts/preview_channels.py': {'mac'},
         'scripts/check-memory.sh': {'mac'},
         'Benchmarks/Diffing/TextDiffingRoundTripTests.swift': {'mac'},
         '.swiftlint.yml': {'mac'},
@@ -265,11 +266,21 @@ class OutputTests(unittest.TestCase):
         values = ci.outputs(selection, event, ref, 'smoke', publish_preview)
         return values['release'], values['publish']
 
-    def test_pull_requests_and_main_pushes_never_release_or_publish(self):
-        for event, ref in (('pull_request', 'refs/pull/79/merge'), ('push', self.MAIN)):
-            with self.subTest(event=event):
-                self.assertEqual(self.result(event, ref), (False, False))
-                self.assertEqual(self.result(event, ref, publish_preview=True), (False, False))
+    def channel(self, event, **kwargs):
+        return ci.outputs({'mac': True, 'ipad': True}, event, self.MAIN, 'smoke', **kwargs)['channel']
+
+    def test_pull_requests_never_release_or_publish(self):
+        self.assertEqual(self.result('pull_request', 'refs/pull/79/merge'), (False, False))
+        self.assertEqual(self.result('pull_request', 'refs/pull/79/merge', publish_preview=True), (False, False))
+
+    def test_mac_affecting_main_pushes_publish_the_alpha_channel(self):
+        self.assertEqual(self.result('push'), (False, True))
+        self.assertEqual(self.channel('push'), 'alpha')
+        # Docs- and iPad-only pushes select no Mac job, so they publish nothing.
+        self.assertEqual(self.result('push', mac=False), (False, False))
+        self.assertEqual(self.result('push', self.BRANCH), (False, False))
+        for event in ('schedule', 'workflow_dispatch'):
+            self.assertEqual(self.channel(event, publish_preview=True), 'nightly')
 
     def test_nightly_releases_and_publishes_from_main(self):
         self.assertEqual(self.result('schedule'), (True, True))
@@ -420,6 +431,20 @@ class WorkflowContractTests(unittest.TestCase):
     def test_newer_runs_cancel_older_ones_of_the_same_event_only(self):
         self.assertIn('\nconcurrency:\n  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}\n'
                       '  cancel-in-progress: true\n', self.text)
+
+    def test_preview_publishes_each_channel_after_its_checks(self):
+        preview, publish = self.jobs['preview'], self.jobs['publish-preview']
+        self.assertEqual(needs(preview), {'changes', 'integration', 'appstore', 'gate'})
+        condition = re.search(r'    if: >-\n((?:      .*\n)+)', preview).group(1)
+        # Nightly needs only the Mac checks; alpha needs the whole PR-level gate.
+        for clause in ("!cancelled() && needs.changes.outputs.publish == 'true'",
+                       "needs.integration.result == 'success'",
+                       "needs.changes.outputs.channel == 'nightly' && needs.appstore.result == 'success'",
+                       "needs.changes.outputs.channel == 'alpha' && needs.gate.result == 'success'"):
+            self.assertIn(clause, ' '.join(condition.split()))
+        self.assertIn('LEFTBLANK_PREVIEW_CHANNEL: ${{ needs.changes.outputs.channel }}', preview)
+        self.assertIn('PREVIEW_CHANNEL: ${{ needs.changes.outputs.channel }}', publish)
+        self.assertIn('channel: ${{ steps.select.outputs.channel }}', self.jobs['changes'])
 
 if __name__ == '__main__':
     unittest.main()

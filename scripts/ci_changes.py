@@ -2,10 +2,11 @@
 """Select CI jobs from changed paths, and check the selected jobs' results.
 
 `select` runs in the small ubuntu `changes` job of .github/workflows/ci.yml and
-writes the `mac`, `ipad`, `suite`, `release` and `publish` outputs that every
-macOS job's `if:` consumes. `release` adds the Mac App Store and memory checks
-and `publish` the signed Preview; both run only from main's nightly schedule or
-a manual main dispatch, never from pull requests or main pushes.
+writes the `mac`, `ipad`, `suite`, `release`, `publish` and `channel` outputs
+that every macOS job's `if:` consumes. `release` adds the Mac App Store and
+memory checks; it runs only from main's nightly schedule or a manual main
+dispatch. `publish` signs LeftBlank Preview: the nightly channel from those
+runs, the opt-in alpha channel from each Mac-affecting main push.
 `gate` runs in the required `build and test` job and fails unless each job
 either passed (selected) or was skipped (not selected).
 
@@ -42,7 +43,8 @@ MAC = (
     'scripts/benchmark-books.sh', 'scripts/bootstrap.sh', 'scripts/build.sh', 'scripts/build-mcp.sh',
     'scripts/build-syntax.sh', 'scripts/build-tinymist.sh', 'scripts/check-memory.sh', 'scripts/export-appstore.py', 'scripts/package-app.py',
     'scripts/package-sicp.py', 'scripts/prepare-icloud-profile.py', 'scripts/prepare-large-document.py',
-    'scripts/prepare-mcp-hurl.sh', 'scripts/prepare-sicp.py', 'scripts/preview-feed.py', 'scripts/publish-preview.py',
+    'scripts/prepare-mcp-hurl.sh', 'scripts/prepare-sicp.py', 'scripts/preview-feed.py', 'scripts/preview_channels.py',
+    'scripts/publish-preview.py',
     'scripts/release.sh', 'scripts/release-appstore.sh', 'scripts/running_app.py', 'scripts/sign-app.sh',
     'scripts/smoke-app.py', 'scripts/sparkle-tools.sh', 'scripts/test-icloud-profile.py',
     'scripts/test-preview-release.py', 'scripts/test-running-app.py', 'scripts/test-tinymist-build.py',
@@ -157,9 +159,12 @@ def plan(event, head, suite, repository, runs=successful_runs, pr_base=None, pub
 
 def outputs(selection, event, ref, suite, publish_preview=False):
     """The job outputs: platform selection plus the main-only release and publish steps."""
-    release = selection['mac'] and ref == 'refs/heads/main' and event in ('schedule', 'workflow_dispatch')
-    publish = release and (event == 'schedule' or publish_preview)
-    return {'mac': selection['mac'], 'ipad': selection['ipad'], 'suite': suite, 'release': release, 'publish': publish}
+    main = selection['mac'] and ref == 'refs/heads/main'
+    release = main and event in ('schedule', 'workflow_dispatch')
+    alpha = main and event == 'push'
+    publish = alpha or (release and (event == 'schedule' or publish_preview))
+    return {'mac': selection['mac'], 'ipad': selection['ipad'], 'suite': suite, 'release': release, 'publish': publish,
+            'channel': 'alpha' if alpha else 'nightly'}
 
 
 def expected_results(mac, ipad, suite, release):
@@ -228,7 +233,7 @@ def main():
     selection, reason = plan(event, os.environ['GITHUB_SHA'], suite, os.environ['GITHUB_REPOSITORY'],
                              pr_base=os.environ.get('PR_BASE_SHA'), publish_preview=publish_preview)
     result = outputs(selection, event, os.environ['GITHUB_REF'], suite, publish_preview)
-    lines = [f'{name}={str(value).lower()}' for name, value in result.items()]
+    lines = [f'{name}={str(value).lower() if isinstance(value, bool) else value}' for name, value in result.items()]
     print('\n'.join(lines))
     print(reason)
     with open(os.environ['GITHUB_OUTPUT'], 'a') as output:

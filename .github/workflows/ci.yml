@@ -31,7 +31,8 @@ permissions:
 #   cancelled or failed run's changes stay selected.
 # - Pull requests and main pushes run exactly the same checks: the selected
 #   Mac regression and iPad smoke suite (native unit tests plus a few curated
-#   UI scenarios on one 11-inch simulator).
+#   UI scenarios on one 11-inch simulator). A main push that selected the Mac
+#   jobs then publishes the opt-in alpha channel of LeftBlank Preview.
 # - The nightly schedule on main runs everything: the full iPad suite (every
 #   UI scenario on both sizes, coverage, memory metrics and sanitizers), Mac App
 #   Store validation and Mac memory safety, then signs and publishes LeftBlank
@@ -69,6 +70,7 @@ jobs:
       suite: ${{ steps.select.outputs.suite }}
       release: ${{ steps.select.outputs.release }}
       publish: ${{ steps.select.outputs.publish }}
+      channel: ${{ steps.select.outputs.channel }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -292,13 +294,18 @@ jobs:
           path: build/memory
           if-no-files-found: warn
           retention-days: 14
-  # Preview publishes from the nightly run, or on demand from a main dispatch
-  # with publish_preview. It depends on Mac validation only: an iPad failure
-  # fails the gate and is reported, but does not hold back the Mac preview.
+  # The nightly channel publishes from the nightly run, or on demand from a
+  # main dispatch with publish_preview, after the Mac checks pass: an iPad
+  # failure fails the gate and is reported, but does not hold back the Mac
+  # preview. The alpha channel publishes from a Mac-affecting main push once
+  # its whole PR-level gate passes; a newer push cancels it with the run.
   preview:
     name: Signed preview
-    needs: [changes, integration, appstore]
-    if: needs.changes.outputs.publish == 'true'
+    needs: [changes, integration, appstore, gate]
+    if: >-
+      !cancelled() && needs.changes.outputs.publish == 'true' && needs.integration.result == 'success' &&
+      ((needs.changes.outputs.channel == 'nightly' && needs.appstore.result == 'success') ||
+      (needs.changes.outputs.channel == 'alpha' && needs.gate.result == 'success'))
     runs-on: macos-15
     timeout-minutes: 60
     outputs:
@@ -307,6 +314,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       LEFTBLANK_DISTRIBUTION: preview
       LEFTBLANK_BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+      LEFTBLANK_PREVIEW_CHANNEL: ${{ needs.changes.outputs.channel }}
     steps:
       - name: Identify this package
         id: package-name
@@ -391,7 +399,7 @@ jobs:
           retention-days: 7
   publish-preview:
     name: Publish preview update
-    needs: preview
+    needs: [changes, preview]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -409,6 +417,7 @@ jobs:
       - name: Publish versioned package and signed feed
         env:
           GH_TOKEN: ${{ github.token }}
+          PREVIEW_CHANNEL: ${{ needs.changes.outputs.channel }}
         run: python3 scripts/publish-preview.py
   ipad-build:
     name: iPad ${{ matrix.platform }}
