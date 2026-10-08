@@ -53,40 +53,46 @@ final class MainThreadSampler: @unchecked Sendable {
         return Self.report(taken)
     }
 
+    /// Never allocates while the main thread is suspended: it may hold the
+    /// malloc lock.
+    private let buffer = UnsafeMutablePointer<UInt>.allocate(capacity: 200)
+
     private func sample() -> [UInt]? {
+        var count = 0
         guard thread_suspend(target) == KERN_SUCCESS else {
             return nil
         }
-        defer { thread_resume(target) }
         var state = arm_thread_state64_t()
-        var count = mach_msg_type_number_t(MemoryLayout<arm_thread_state64_t>.size / MemoryLayout<UInt32>.size)
+        var size = mach_msg_type_number_t(MemoryLayout<arm_thread_state64_t>.size / MemoryLayout<UInt32>.size)
         let result = withUnsafeMutablePointer(to: &state) {
-            $0.withMemoryRebound(to: natural_t.self, capacity: Int(count)) {
-                thread_get_state(target, ARM_THREAD_STATE64, $0, &count)
+            $0.withMemoryRebound(to: natural_t.self, capacity: Int(size)) {
+                thread_get_state(target, ARM_THREAD_STATE64, $0, &size)
             }
         }
-        guard result == KERN_SUCCESS else {
-            return nil
+        if result == KERN_SUCCESS {
+            let mask: UInt = 0x0000_7FFF_FFFF_FFFF
+            buffer[0] = UInt(state.__pc) & mask
+            buffer[1] = UInt(state.__lr) & mask
+            count = 2
+            var fp = UInt(state.__fp) & mask
+            while fp >= stackBottom, fp + 16 <= stackTop, count < 200,
+                  let frame = UnsafePointer<UInt>(bitPattern: fp)
+            {
+                let next = frame[0] & mask
+                let ret = frame[1] & mask
+                if ret == 0 {
+                    break
+                }
+                buffer[count] = ret
+                count += 1
+                if next <= fp {
+                    break
+                }
+                fp = next
+            }
         }
-        let mask: UInt = 0x0000_7FFF_FFFF_FFFF
-        var stack = [UInt(state.__pc) & mask, UInt(state.__lr) & mask]
-        var fp = UInt(state.__fp) & mask
-        while fp >= stackBottom, fp + 16 <= stackTop, stack.count < 200 {
-            guard let frame = UnsafePointer<UInt>(bitPattern: fp) else {
-                break
-            }
-            let next = frame[0] & mask
-            let ret = frame[1] & mask
-            if ret == 0 {
-                break
-            }
-            stack.append(ret)
-            if next <= fp {
-                break
-            }
-            fp = next
-        }
-        return stack
+        thread_resume(target)
+        return count > 0 ? Array(UnsafeBufferPointer(start: buffer, count: count)) : nil
     }
 
     private static func report(_ samples: [[UInt]]) -> String {
