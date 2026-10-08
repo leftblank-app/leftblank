@@ -18,8 +18,10 @@ construct, an `NSTextContentStorageDelegate` returns a display paragraph with
 the **same UTF-16 length** as the source:
 
 - concealed markers become U+200B (zero width);
-- a chip, image or math box becomes U+FFFC carrying an attachment, and the rest
-  of its range becomes U+200B.
+- a chip, image or math box becomes U+200B ending in one U+FFFC, which
+  carries an attachment. The box comes last because TextKit 2 drops the height
+  of a box that only zero-width characters follow to the end of its line: an
+  equation or image alone on its line overlapped the lines around it.
 
 Because display and source locations map 1:1, TextKit 2's own selection, hit
 testing, IME and editing ranges remain source ranges. `NSTextStorage` (save,
@@ -83,7 +85,11 @@ The same results hold for both TK2 rows on both platforms:
   `characterIndexForInsertion` answers start + 1, which is inside the call. The
   selection then touches the construct and reveals it, so no snapping is needed.
   Attachment view providers are created only for an ordered-in window (0
-  requests hidden, 6 visible). This matters for tests, not users.
+  requests hidden, 6 visible). This matters for tests, not users. On iOS 27,
+  `UITextView` hosts attachment views only for attachments in the text storage,
+  not in display paragraphs: the views load but never join the hierarchy, and
+  UIKit draws its placeholder icon instead. The iPad therefore draws every box
+  as the attachment's image (§E).
 - **Caret navigation.** With a static plan, `NSTextSelectionNavigation`
   (`destinationSelection`, the engine behind arrow keys on both platforms) moves
   from before `*粗体*` straight to the first visible unit inside it. The stops
@@ -599,12 +605,13 @@ flowchart LR
 |---|---|
 | `PresentationEngine` | Actor owning the tree, the plan store, the source copy, chip value labels and the math preamble. Receives batches of native edits with the current selection; one request is in flight at a time and later edits queue. |
 | `PresentationSnapshot` | The plan as a value. The main thread rebases it across each native edit in O(blocks): later entries move, entries the edit touches are dropped. A reply is rebased by edits made meanwhile, and only entries that changed are invalidated. |
-| `VisualEditorSession` | `NSTextContentStorageDelegate`: builds each paragraph's display text (same UTF-16 length; U+200B conceals, U+FFFC boxes; heading sizes, strong, emphasis, code, links, references, labels, list markers, revealed markers). Invalidates changed paragraphs with attribute-only edits (no undo record, no selection change); defers while text is marked. |
+| `VisualEditorSession` | `NSTextContentStorageDelegate`: builds each paragraph's display text (same UTF-16 length; U+200B conceals, U+200B…U+FFFC boxes; heading sizes, strong, emphasis, code, links, references, labels, list markers, revealed markers). Invalidates changed paragraphs with attribute-only edits (no undo record, no selection change); defers while text is marked. |
 | `RenderingAttributes` | Tinymist semantic colours as rendering attributes, so a reply never re-lays out text. A mirror answers reads; changed spans are pushed, and many changes become one ordered rebuild (single removals cost O(runs) in TextKit 2: 3 s for 100,000 in War and Peace). |
 | `TextKit2Geometry` | Caret, segments, hit tests and reveal without `layoutManager`. Mac jumps lay out the target and the text above it, and repeat until it stops moving; iPad jumps anchor the viewport on the target (`relocateViewport`). Hit tests that matter after a jump use the laid-out viewport fragments (`viewportInsertionOffset`). |
 | `ChipForm` | One SwiftUI form for both platforms, generated from the `#let` signature. Labelled values become pickers. Apply writes one replacement (`ChipEditing.edit`), so one undo restores the call. |
 | `InlineImageCache` | Decodes `#image` files off the main thread (ImageIO thumbnails, at most 960 px; SVG and PDF through `NSImage` on the Mac), caches by path and modification date (64 entries), and shows at most 480 × 360 pt. A missing or undecodable file shows its name. |
-| Math | `EngineMathRenderer` (§D): the Mac's own Tinymist helper, the iPad's second embedded session. Visible equations are requested in one batch per layout pass; cached and stale images show at once; the caret entering an equation shows its source. |
+| `VisualAttachment` | The box. On the Mac it is a view (`VisualBoxView`); chips take clicks. On the iPad UIKit draws it as the attachment's image, resolving theme colours in the view's traits, and `TabletTextView` hit-tests chip taps (`chip(at:)`) to open the form. |
+| Math | `EngineMathRenderer` (§D): the Mac's own Tinymist helper, the iPad's second embedded session. Visible equations are requested in one batch per layout pass; cached and stale images show at once; the caret entering an equation shows its source. Images carry the theme's colour, so a change to dark or light mode typesets them again (`appearanceDidChange`); each keeps its previous image until then. |
 
 **Reveal.** A construct shows its source while the selection touches it; the
 others in the paragraph stay concealed (Obsidian's live preview). Typing never

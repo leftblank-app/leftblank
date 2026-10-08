@@ -12,8 +12,8 @@ import Foundation
 /// Source stays the document of record. As `NSTextContentStorage`'s delegate,
 /// the session returns each paragraph's display text with the *same UTF-16
 /// length* as the source: concealed markers become U+200B (zero width), and a
-/// chip, bullet, image or typeset equation becomes U+FFFC carrying an
-/// attachment, followed by U+200B. Display and source locations therefore map
+/// chip, bullet, image or typeset equation becomes U+200B ending in U+FFFC,
+/// which carries an attachment. Display and source locations therefore map
 /// 1:1, so TextKit's selection, hit testing, IME and editing ranges stay source
 /// ranges, and the text storage (undo, copy, find, save) never sees a display
 /// character. Construct styles (heading sizes, strong, emphasis, code) live in
@@ -54,14 +54,24 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
     public var mathRenderer: (any InlineMathRenderer)? {
         didSet {
             pendingMath = []
-            invalidate(requestRanges {
-                if case .math = $0 {
-                    true
-                } else {
-                    false
-                }
-            })
+            invalidate(mathRanges)
         }
+    }
+
+    #if !canImport(AppKit)
+        /// The traits equations are typeset for: the text view's, which
+        /// `UITraitCollection.current` is not while TextKit asks for a paragraph.
+        public var traits: () -> UITraitCollection = { .current }
+    #endif
+
+    /// Equations are images in the theme's colour: a new appearance typesets
+    /// them again. Until then each keeps its previous image.
+    public func appearanceDidChange() {
+        guard let drawn = mathColor, mathStyle.color != drawn else {
+            return
+        }
+        mathColor = nil
+        invalidate(mathRanges)
     }
 
     /// The document's rules for equations (`MathPreamble`), kept by the engine.
@@ -92,6 +102,8 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
     /// Equations waiting for the next render batch.
     private var pendingMath: [MathRenderRequest] = []
     private var mathScheduled = false
+    /// The colour equations were last requested in.
+    private var mathColor: MathColor?
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
     public init(contentStorage: NSTextContentStorage, textLayoutManager: NSTextLayoutManager, style: VisualStyle) {
@@ -406,11 +418,14 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
             let attributes = display.attributes(at: span.location, effectiveRange: nil)
             var boxAttributes = attributes
             boxAttributes[.attachment] = box
-            let replacement = NSMutableAttributedString(string: "\u{FFFC}", attributes: boxAttributes)
-            replacement.append(NSAttributedString(
+            // The box comes last: TextKit 2 drops the height of a box that
+            // only zero-width characters follow to the end of its line, so an
+            // equation or image alone on its line overlapped its neighbours.
+            let replacement = NSMutableAttributedString(
                 string: String(repeating: "\u{200B}", count: span.length - 1),
                 attributes: attributes,
-            ))
+            )
+            replacement.append(NSAttributedString(string: "\u{FFFC}", attributes: boxAttributes))
             display.replaceCharacters(in: span, with: replacement)
         }
         return display
@@ -456,6 +471,7 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
             return nil
         }
         let request = MathRenderRequest(source: source, isBlock: isBlock, style: mathStyle)
+        mathColor = request.style.color
         let cached = renderer.cached(request)
         if cached == nil || cached?.isStale == true, !pendingMath.contains(request) {
             pendingMath.append(request)
@@ -506,8 +522,9 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
             NSApp?.effectiveAppearance.performAsCurrentDrawingAppearance { color = style.math.cgColor }
             let scale = NSScreen.main?.backingScaleFactor ?? 2
         #else
-            let color = style.math.resolvedColor(with: UITraitCollection.current).cgColor
-            let scale = UITraitCollection.current.displayScale
+            let traits = traits()
+            let color = style.math.resolvedColor(with: traits).cgColor
+            let scale = traits.displayScale
         #endif
         let folder = documentURL?.deletingLastPathComponent()
         return MathRenderStyle(
@@ -517,6 +534,16 @@ public final class VisualEditorSession: NSObject, @preconcurrency NSTextContentS
             scale: Double(max(1, scale)),
             directory: folder,
         )
+    }
+
+    private var mathRanges: [NSRange] {
+        requestRanges {
+            if case .math = $0 {
+                true
+            } else {
+                false
+            }
+        }
     }
 
     /// Ranges of the requests (equations, images) that match.

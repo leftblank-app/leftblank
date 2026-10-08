@@ -126,6 +126,15 @@ private final class Harness {
         manager.textViewportLayoutController.layoutViewport()
     }
 
+    func wait(_ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+            await settle()
+        }
+        try #require(condition())
+    }
+
     func width(_ range: NSRange) -> CGFloat {
         TextKit2Geometry.segments(range, type: .standard, in: manager).reduce(0) { $0 + $1.width }
     }
@@ -150,7 +159,7 @@ private final class Harness {
             return nil
         }
         let local = offset - TextKit2Geometry.offset(of: start, in: manager)
-        return paragraph.attributedString.attribute(.attachment, at: local, effectiveRange: nil) as? VisualAttachment
+        return VisualAttachment.box(in: paragraph.attributedString, at: local)
     }
 
     func replace(_ range: NSRange, with text: String) {
@@ -194,6 +203,45 @@ private final class Harness {
     var undoManager: UndoManager? {
         view.undoManager
     }
+}
+
+/// Renders every equation as a 30 x 40 pt box, 10 pt of it below the baseline.
+private final class TallMathRenderer: InlineMathRenderer, @unchecked Sendable {
+    private let lock = NSLock()
+    private var results: [MathRenderRequest: MathRenderResult] = [:]
+    private var requested: [MathColor] = []
+
+    /// The colours of the requests rendered so far, in order, without repeats.
+    var colors: [MathColor] {
+        lock.withLock { requested }
+    }
+
+    func render(_ requests: [MathRenderRequest]) -> [MathRenderResult] {
+        let context = CGContext(
+            data: nil, width: 60, height: 80, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+        )
+        let image = context?.makeImage().map { MathImage(image: $0, size: CGSize(width: 30, height: 40), baseline: 30) }
+        let rendered = requests.map { MathRenderResult(request: $0, image: image, diagnostics: [], isStale: false) }
+        lock.withLock {
+            for result in rendered {
+                results[result.request] = result
+                if requested.last != result.request.style.color {
+                    requested.append(result.request.style.color)
+                }
+            }
+        }
+        return rendered
+    }
+
+    func cached(_ request: MathRenderRequest) -> MathRenderResult? {
+        lock.withLock { results[request] }
+    }
+}
+
+/// The appearance a dynamic test colour resolves for.
+private final class Theme: @unchecked Sendable {
+    var dark = false
 }
 
 @MainActor
@@ -319,6 +367,58 @@ private final class Forwarder: NSObject, @preconcurrency NSTextStorageDelegate {
             .contains { $0.location == emph + 7 })
         await harness.settle()
         #expect(harness.displayed(emph + 7) == "\u{200B}")
+    }
+
+    @Test func aBoxAloneOnItsLineIsAsTallAsTheBox() async throws {
+        let source = "Before\n\n#image(\"missing.png\")\n\n$ x $\n\nAn inline $y$ box.\n"
+        let harness = try Harness(source)
+        defer { harness.close() }
+        harness.session.mathRenderer = TallMathRenderer()
+        await harness.settle()
+        let text = harness.string
+        let image = text.range(of: "#image(\"missing.png\")")
+        let block = text.range(of: "$ x $")
+        try await harness.wait { harness.attachment(block.location)?.label == "equation" }
+        // TextKit 2 drops the height of a box that only zero-width characters
+        // follow on its line, so the box character ends its span.
+        for span in [image, block] {
+            #expect(harness.displayed(span.location) == "\u{200B}")
+            #expect(harness.displayed(NSMaxRange(span) - 1) == "\u{FFFC}")
+            let box = try #require(harness.attachment(span.location))
+            let location = try #require(TextKit2Geometry.location(span.location, in: harness.manager))
+            let fragment = try #require(harness.manager.textLayoutFragment(for: location))
+            #expect(fragment.layoutFragmentFrame.height >= box.size.height, "\(box.label) fits its line")
+        }
+        #expect(harness.attachment(text.range(of: "$y$").location)?.label == "equation")
+    }
+
+    @Test func aNewAppearanceTypesetsEquationsInItsColour() async throws {
+        let harness = try Harness("Inline $x^2$ math.\n\nEnd\n")
+        defer { harness.close() }
+        let theme = Theme()
+        var style = harness.session.style
+        #if canImport(AppKit)
+            style.math = NSColor(name: nil) { _ in theme.dark ? .white : .black }
+        #else
+            style.math = UIColor { _ in theme.dark ? .white : .black }
+        #endif
+        harness.session.style = style
+        let renderer = TallMathRenderer()
+        harness.session.mathRenderer = renderer
+        await harness.settle()
+        let dollar = harness.string.range(of: "$x^2$").location
+        try await harness.wait { harness.attachment(dollar)?.label == "equation" }
+        let black = MathColor(red: 0, green: 0, blue: 0), white = MathColor(red: 255, green: 255, blue: 255)
+        #expect(renderer.colors == [black])
+        // The same appearance typesets nothing again.
+        harness.session.appearanceDidChange()
+        await harness.settle()
+        #expect(renderer.colors == [black])
+        theme.dark = true
+        harness.session.appearanceDidChange()
+        await harness.settle()
+        try await harness.wait { renderer.colors.contains(white) }
+        #expect(harness.attachment(dollar)?.label == "equation", "The previous image shows meanwhile")
     }
 }
 
