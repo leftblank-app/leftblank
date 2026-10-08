@@ -212,6 +212,17 @@ struct TabletEditor: UIViewRepresentable {
     var session: VisualEditorSession?
     lazy var chipTap = TabletChipTap()
 
+    /// A tap on a chip opens its form (`TabletChipTap`) instead of placing
+    /// the caret, which would reveal the call's source.
+    override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+        if gesture is UITapGestureRecognizer, gesture.delegate !== chipTap, !(gesture.delegate is TabletSourceHover),
+           chip(at: gesture.location(in: self)) != nil
+        {
+            return false
+        }
+        return super.gestureRecognizerShouldBegin(gesture)
+    }
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         sourceHover.dismiss()
         super.touchesBegan(touches, with: event)

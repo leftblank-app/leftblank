@@ -53,8 +53,11 @@ extension TabletTextView {
         return nil
     }
 
-    @objc private func tappedChip(_ tap: UITapGestureRecognizer) {
-        if let (chip, frame) = chip(at: tap.location(in: self)) {
+    @objc private func tappedChip(_: UITapGestureRecognizer) {
+        // The chip under the touch when it began: by now UIKit may have moved
+        // the caret.
+        if let (chip, frame) = chipTap.touched {
+            chipTap.touched = nil
             showChipForm(chip, from: frame)
         }
     }
@@ -147,19 +150,18 @@ extension TabletTextView {
     }
 }
 
-/// A tap on a chip opens its form instead of placing the caret; every other
-/// touch goes to the text view.
+/// A tap on a chip opens its form; every other touch goes to the text view.
+/// `TabletTextView.gestureRecognizerShouldBegin` keeps UIKit's own taps from
+/// placing the caret in the chip. No failure requirement: this recognizer
+/// never fails without a touch, and with others waiting on it the app never
+/// went idle after ⌘← in the iPadOS 26 smoke UI test.
 @MainActor final class TabletChipTap: NSObject, UIGestureRecognizerDelegate {
     weak var editor: TabletTextView?
+    /// The chip the current touch began on.
+    var touched: (Chip, CGRect)?
 
     func gestureRecognizer(_: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        guard let editor else {
-            return false
-        }
-        return editor.chip(at: touch.location(in: editor)) != nil
-    }
-
-    func gestureRecognizer(_: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
-        !(other is UIPanGestureRecognizer)
+        touched = editor.flatMap { $0.chip(at: touch.location(in: $0)) }
+        return touched != nil
     }
 }
