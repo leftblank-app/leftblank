@@ -36,7 +36,7 @@ final class MainThreadSampler: @unchecked Sendable {
                     samples.append(stack)
                     lock.unlock()
                 }
-                usleep(500)
+                usleep(200)
             }
         }
         thread.qualityOfService = .userInteractive

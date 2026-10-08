@@ -80,6 +80,8 @@ extension WritingFlowTests {
         let sampler = MainThreadSampler()
         for offset in offsets {
             let paragraphsBefore = VisualEditorSession.paragraphsBuilt
+            let load = hostTicks()
+            let cpuBefore = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             sampler.start()
             let start = ContinuousClock.now
             app.workspace.jump(to: offset)
@@ -92,10 +94,15 @@ extension WritingFlowTests {
             editor.cacheDisplay(in: editor.visibleRect, to: bitmap)
             layoutTimes.append(seconds(layoutStart.duration(to: .now)))
             navigation.append(seconds(start.duration(to: .now)))
+            let cpu = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - cpuBefore) / 1e6
             let profile = sampler.stop()
+            let after = hostTicks()
+            let busy = Double(after.busy - load.busy) / Double(max(1, after.total - load.total))
             let total = Int((navigation.last ?? 0) * 1000)
             let count = VisualEditorSession.paragraphsBuilt - paragraphsBefore
-            print("LEFTBLANK SAMPLE jump \(offset) \(total) ms, paragraphs \(count)\n\(profile)")
+            let host = Int(busy * 100)
+            print("LEFTBLANK SAMPLE jump \(offset) \(total) ms, main cpu \(Int(cpu)) ms, host \(host)%, n \(count)")
+            print(profile)
             try navigationSamples.append(["offset": Double(offset), "total_ms": #require(navigation.last) * 1000,
                                           "jump_ms": #require(jumpTimes.last) * 1000,
                                           "highlight_ms": #require(highlightTimes.last) * 1000,
@@ -228,6 +235,19 @@ extension WritingFlowTests {
         }
         print("LEFTBLANK LARGE REPORT\n" + String(decoding: json, as: UTF8.self))
     }
+}
+
+private func hostTicks() -> (busy: UInt64, total: UInt64) {
+    var info = host_cpu_load_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
+    _ = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+            host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &count)
+        }
+    }
+    let user = UInt64(info.cpu_ticks.0), system = UInt64(info.cpu_ticks.1)
+    let idle = UInt64(info.cpu_ticks.2), nice = UInt64(info.cpu_ticks.3)
+    return (user + system + nice, user + system + idle + nice)
 }
 
 private func firstCompileSeconds(in state: URL) -> Double? {
