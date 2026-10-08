@@ -34,6 +34,7 @@ class FakeApple:
         self.locales = [resource('appStoreVersionLocalizations', locale, locale=locale) for locale in meta.LOCALES]
         self.writes = []
         self.other_versions = []
+        self.review_detail = resource('appStoreReviewDetails', 'review', contactEmail='review@example.com', notes='Old notes')
 
     def list(self, path, **query):
         if path.endswith('/appStoreVersions'):
@@ -58,6 +59,8 @@ class FakeApple:
                 return {'data': self.attached}
             if path.startswith('/v1/reviewSubmissions/'):
                 return {'data': self.submission}
+            if path.endswith('/appStoreReviewDetail'):
+                return {'data': self.review_detail}
             raise AssertionError(path)
         self.writes.append((method, path, copy.deepcopy(payload)))
         if path == '/v1/appStoreVersions':
@@ -79,11 +82,16 @@ class FakeApple:
             self.version['attributes']['appVersionState'] = 'WAITING_FOR_REVIEW'
         elif path == '/v1/appStoreVersions/version':
             self.version['attributes'].update(payload['data']['attributes'])
+        elif path == '/v1/appStoreReviewDetails/review':
+            self.review_detail['attributes'].update(payload['data']['attributes'])
         elif path.startswith('/v1/appStoreVersionLocalizations/'):
             next(item for item in self.locales if item['id'] == path.split('/')[-1])['attributes'].update(payload['data']['attributes'])
         else:
             raise AssertionError(path)
         return {}
+
+    def optional(self, path):
+        return self.request('GET', path)['data']
 
     def patch(self, kind, identifier, attributes):
         return self.request('PATCH', f'/v1/{kind}/{identifier}',
@@ -126,8 +134,31 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(result['attributes']['state'], 'WAITING_FOR_REVIEW')
         self.assertEqual(self.apple.version['attributes']['releaseType'], 'AFTER_APPROVAL')
         self.assertEqual({l['id']: l['attributes']['whatsNew'] for l in self.apple.locales}, self.metadata['notes'])
+        self.assertEqual(self.apple.review_detail['attributes']['notes'], asc.MAC_REVIEW_NOTES)
+        self.assertEqual(self.apple.review_detail['attributes']['contactEmail'], 'review@example.com')
         writes = len(self.apple.writes)
         self.release.submit(self.apple.build)
+        self.assertEqual(len(self.apple.writes), writes)
+
+    def test_review_notes_say_the_ipad_subscription_is_not_in_the_mac_app(self):
+        for phrase in ('no in-app purchases', 'app.leftblank.writer.ipad.monthly', 'only in the iPad app'):
+            self.assertIn(phrase, asc.MAC_REVIEW_NOTES)
+        self.assertLessEqual(len(asc.MAC_REVIEW_NOTES), 4000)
+
+    def test_missing_review_contact_stops_before_submission(self):
+        self.apple.review_detail = None
+        with self.assertRaisesRegex(RuntimeError, 'App Review contact'):
+            self.release.submit(self.release.wait_build(1))
+        self.assertIsNone(self.apple.submission)
+
+    def test_ready_draft_with_other_review_notes_is_not_submitted(self):
+        self.release.submit(self.release.wait_build(1))
+        self.apple.submission['attributes']['state'] = 'READY_FOR_REVIEW'
+        self.apple.version['attributes']['appVersionState'] = 'READY_FOR_REVIEW'
+        self.apple.review_detail['attributes']['notes'] = 'Edited by hand'
+        writes = len(self.apple.writes)
+        with self.assertRaisesRegex(RuntimeError, 'App Review notes'):
+            self.release.submit(self.apple.build)
         self.assertEqual(len(self.apple.writes), writes)
 
     def test_retry_after_item_added_does_not_duplicate_it(self):

@@ -64,7 +64,10 @@ review. The next version should describe actual application changes.
    or mismatched builds stop release. Pre-existing manual builds cannot be claimed.
 7. Creates or reuses the App Store version, uses its inherited storefront assets,
    writes bilingual update notes, attaches the build, and submits a review containing
-   only this app version. Confirms the submission state with a separate API read.
+   only this app version. The App Review notes state that the Mac app is free and has
+   no in-app purchases: Mac and iPad share one app record, so reviewers otherwise look
+   for the iPad-only subscription in the Mac app (guideline 2.1(b) on the first Mac
+   review). The review contact is inherited from the previous version. Confirms the submission state with a separate API read.
 8. Publishes the GitHub ZIP, checksum and shared release message. Saves the App Store
    installer, source metadata and submission result as Actions artifacts for 14 days.
 
