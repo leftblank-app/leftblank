@@ -16,6 +16,13 @@ SUBMITTED = {'WAITING_FOR_REVIEW', 'IN_REVIEW', 'ACCEPTED', 'PENDING_APPLE_RELEA
              'PROCESSING_FOR_DISTRIBUTION', 'READY_FOR_DISTRIBUTION', 'PENDING_DEVELOPER_RELEASE',
              'PROCESSING_FOR_APP_STORE', 'READY_FOR_SALE', 'PENDING_CONTRACT'}
 EDITABLE = {'PREPARE_FOR_SUBMISSION', 'DEVELOPER_REJECTED', 'REJECTED', 'METADATA_REJECTED', 'INVALID_BINARY'}
+# Mac and iPad share one app record, so App Review sees the iPad subscription on
+# Mac submissions too and asks where to buy it (2.1(b), Mac 1.0 review).
+MAC_REVIEW_NOTES = (
+    'The Mac app is free and has no in-app purchases. The auto-renewable subscription '
+    'in this app record (app.leftblank.writer.ipad.monthly) is offered only in the iPad '
+    'app; the Mac app never offers, sells or checks it. No login is required. Rendering '
+    'runs locally. Additional Typst packages are downloaded over HTTPS.')
 
 
 class APIError(RuntimeError):
@@ -260,6 +267,12 @@ class Release:
                 self.client.patch('appStoreVersionLocalizations', by_locale[locale]['id'], {'whatsNew': notes})
             self.client.patch('appStoreVersions', identifier, {'releaseType': 'AFTER_APPROVAL'})
             self.client.request('PATCH', f'/v1/appStoreVersions/{identifier}/relationships/build', relationship('builds', build['id']))
+            # Apple copies the review contact from the previous version; only the notes are ours.
+            details = self.client.optional(f'/v1/appStoreVersions/{identifier}/appStoreReviewDetail')
+            if not details:
+                raise RuntimeError('Set App Review contact information on the Mac version first')
+            if details['attributes'].get('notes') != MAC_REVIEW_NOTES:
+                self.client.patch('appStoreReviewDetails', details['id'], {'notes': MAC_REVIEW_NOTES})
         else:
             attached = self.client.request('GET', f'/v1/appStoreVersions/{identifier}/relationships/build').get('data')
             if not attached or attached['id'] != build['id']:
@@ -268,6 +281,9 @@ class Release:
             actual_notes = {item['attributes']['locale']: item['attributes'].get('whatsNew') for item in locales}
             if any(actual_notes.get(locale) != notes for locale, notes in self.metadata['notes'].items()):
                 raise RuntimeError('Ready-for-review draft has different release notes')
+            details = self.client.optional(f'/v1/appStoreVersions/{identifier}/appStoreReviewDetail')
+            if not details or details['attributes'].get('notes') != MAC_REVIEW_NOTES:
+                raise RuntimeError('Ready-for-review draft has different App Review notes')
         if not draft:
             submission = self.client.request('POST', '/v1/reviewSubmissions', {'data': {
                 'type': 'reviewSubmissions', 'attributes': {'platform': 'MAC_OS'},
