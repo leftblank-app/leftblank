@@ -107,7 +107,14 @@ Each scenario uses production Workspace, NSTextView and real Tinymist:
    built-in inside a fenced code block has the embedded-language color. Settle
    the pending native layout and paint the initial viewport before interaction
    timing starts; report this separately as `initial_presentation_ms` and the
-   total opening-to-ready time as `editor_ready_seconds`.
+   total opening-to-ready time as `editor_ready_seconds`. Then wait for
+   Tinymist's first compile and until its processes are idle
+   (`engine_settle_seconds`). That one-time compile and preview of the whole
+   book keeps several Tinymist threads busy. The app's main thread runs at
+   foreground priority above them, but this command-line test process runs it
+   at the same priority. On CI's three cores the compile then preempted
+   whichever jump overlapped it: one SICP jump took 200 ms of wall time for
+   about 40 ms of main-thread work.
 2. Jump among six distant offsets, apply styles, force layout and draw the
    visible region into a bitmap. Require each target's glyph inside the visible
    rect, and map it back to a native insertion point with zero error, rather
@@ -133,7 +140,8 @@ Typing samples time the synchronous editor/Workspace/metrics path. The first
 input is included, with no warm-up discard or automatic retry. For 80 inputs,
 CI requires wall-time p95 below 100 ms, every input below 250 ms wall time,
 and every input below 100 ms of main-thread CPU work. Navigation still has a
-200 ms maximum, including drawing. Thread CPU time helps distinguish work in
+200 ms maximum, including drawing; each jump also reports its main-thread
+CPU time (`thread_cpu_ms`). Thread CPU time helps distinguish work in
 the synchronous input path from time when a shared runner does not schedule
 that thread; it is not a substitute for the wall-time latency gates.
 

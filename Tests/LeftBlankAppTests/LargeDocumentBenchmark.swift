@@ -67,6 +67,16 @@ extension WritingFlowTests {
         editor.cacheDisplay(in: editor.visibleRect, to: bitmap)
         report["initial_presentation_ms"] = seconds(presentationStart.duration(to: .now)) * 1000
         report["editor_ready_seconds"] = seconds(opened.duration(to: .now))
+        // Opening starts Tinymist's one-time first compile and preview of the
+        // whole book, which keeps several of its threads busy for a few
+        // seconds. In the app the editor's main thread runs at foreground
+        // priority, above Tinymist; this command-line test process runs it at
+        // the same priority as Tinymist, so on CI's three cores that compile
+        // preempted whichever jump overlapped it (200 ms wall for 40 ms of
+        // work). Time navigation once the engine is idle.
+        let settleStart = ContinuousClock.now
+        try await engineSettled(state: app.workspace.stateDirectory)
+        report["engine_settle_seconds"] = seconds(settleStart.duration(to: .now))
         var navigation: [Double] = [], hitTesting: [Double] = [], search: [Double] = []
         var jumpTimes: [Double] = [], highlightTimes: [Double] = [], layoutTimes: [Double] = []
         var navigationSamples: [[String: Double]] = []
@@ -77,7 +87,9 @@ extension WritingFlowTests {
             let range = ns.paragraphRange(for: NSRange(location: start, length: 0))
             return min(ns.length - 1, range.location + min(4, max(0, range.length - 2)))
         }
+        var navigationCPU: [Double] = []
         for offset in offsets {
+            let cpuStart = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             let start = ContinuousClock.now
             app.workspace.jump(to: offset)
             jumpTimes.append(seconds(start.duration(to: .now)))
@@ -89,10 +101,12 @@ extension WritingFlowTests {
             editor.cacheDisplay(in: editor.visibleRect, to: bitmap)
             layoutTimes.append(seconds(layoutStart.duration(to: .now)))
             navigation.append(seconds(start.duration(to: .now)))
+            navigationCPU.append(Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - cpuStart) / 1e9)
             try navigationSamples.append(["offset": Double(offset), "total_ms": #require(navigation.last) * 1000,
                                           "jump_ms": #require(jumpTimes.last) * 1000,
                                           "highlight_ms": #require(highlightTimes.last) * 1000,
-                                          "draw_ms": #require(layoutTimes.last) * 1000])
+                                          "draw_ms": #require(layoutTimes.last) * 1000,
+                                          "thread_cpu_ms": #require(navigationCPU.last) * 1000])
             #expect(editor.selectedRange().location == offset)
             await app.layout()
             let hitStart = ContinuousClock.now
@@ -221,6 +235,44 @@ extension WritingFlowTests {
         }
         print("LEFTBLANK LARGE REPORT\n" + String(decoding: json, as: UTF8.self))
     }
+}
+
+/// Waits for Tinymist's first compile, then until its processes (this
+/// process's children) use under a tenth of a core.
+private func engineSettled(state: URL) async throws {
+    let deadline = ContinuousClock.now + .seconds(60)
+    while firstCompileSeconds(in: state) == nil, deadline > .now {
+        try await Task.sleep(for: .milliseconds(100))
+    }
+    var previous = childrenCPUSeconds()
+    while deadline > .now {
+        try await Task.sleep(for: .milliseconds(200))
+        let current = childrenCPUSeconds()
+        if current - previous < 0.02 {
+            return
+        }
+        previous = current
+    }
+}
+
+private func childrenCPUSeconds() -> Double {
+    var pids = [pid_t](repeating: 0, count: 64)
+    let count = Int(proc_listchildpids(getpid(), &pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
+    var timebase = mach_timebase_info_data_t()
+    mach_timebase_info(&timebase)
+    var ticks: UInt64 = 0
+    for pid in pids.prefix(max(0, count)) where pid > 0 {
+        var info = rusage_info_v2()
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+                proc_pid_rusage(pid, RUSAGE_INFO_V2, $0)
+            }
+        }
+        if result == 0 {
+            ticks += info.ri_user_time + info.ri_system_time
+        }
+    }
+    return Double(ticks) * Double(timebase.numer) / Double(timebase.denom) / 1e9
 }
 
 private func firstCompileSeconds(in state: URL) -> Double? {
