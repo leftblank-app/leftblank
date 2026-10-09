@@ -17,7 +17,7 @@ same framed LSP and local WebKit preview. It does not launch an executable. Pipe
 connect the Swift client to the engine without replacing application stdin/stdout
 or changing its working directory. The same library carries LeftBlank's
 typst-syntax parser bridge, which the app hands to `SyntaxTree.install` at launch
-([visual editing](visual-editing.md)), so the app links one Rust runtime. Each
+([parser bridge](visual-editing.md#parser-typst-syntax-through-a-c-abi)), so the app links one Rust runtime. Each
 document connection owns its worker and runtime. Closing the client delivers EOF and shuts down that worker. The embedded
 build applies `scripts/tinymist-ipad.patch` to the verified upstream revision:
 compile-status notifications tolerate a closed editor channel when a Rayon
@@ -50,12 +50,10 @@ The welcome document now copies its relative SVG asset during both first launch
 and template creation. Opening an older LeftBlank starter repairs a missing mark
 without replacing an existing asset or rewriting the manuscript.
 
-The UIKit editor is a TextKit 2 `UITextView` with the Mac's visual layer
-([visual editing](visual-editing.md#e-the-delivered-editor)): concealed markup,
-chips with the shared form, Repeat Previous Call (⌃⌘R), inline images (no SVG on
-iPad) and engine-typeset equations. UIKit draws these boxes as images, because
-iOS 27 does not host attachment views for display-only text; the text view
-hit-tests chip taps. Taps and jumps use the laid-out viewport,
+The UIKit editor is a TextKit 2 `UITextView` with the Mac's styles
+([editor styles](visual-editing.md#the-editor-now)): larger bold headings by
+level, bold strong text, italic emphasis, monospaced raw text and semantic
+colours, all as attributes on the source. Taps and jumps use the laid-out viewport,
 because UIKit's own hit testing can be 100,000 characters off after a distant
 jump. On an iPad Air (M1), SICP types in 33–48 ms per key and War and Peace
 in about 100 ms. It preserves native selection, IME composition, undo, find,

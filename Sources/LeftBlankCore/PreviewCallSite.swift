@@ -70,14 +70,14 @@ private enum Slot: Equatable {
 
 /// `#let name(…) = body` definitions and calls of named functions, from the syntax tree.
 private struct Index {
-    let tree: Presentation.Tree
+    let tree: SyntaxChildren
     let source: NSString
     var definitions: [Definition] = []
     /// Call nodes by callee name, in document order.
     var calls: [String: [Int]] = [:]
 
     init(_ nodes: [SyntaxNode], source: NSString) {
-        tree = Presentation.Tree(nodes)
+        tree = SyntaxChildren(nodes)
         self.source = source
         for (index, node) in nodes.enumerated() {
             if node.kind == .letBinding, let definition = definition(index) {

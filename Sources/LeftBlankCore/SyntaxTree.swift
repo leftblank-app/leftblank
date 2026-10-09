@@ -329,3 +329,68 @@ public final class SyntaxTree {
         handle = nil
     }
 }
+
+/// Children of each node in a pre-order list, as `SyntaxTree.nodes` returns it.
+struct SyntaxChildren {
+    let nodes: [SyntaxNode]
+    let children: [[Int]]
+
+    init(_ nodes: [SyntaxNode]) {
+        var children = [[Int]](repeating: [], count: nodes.count)
+        for (index, node) in nodes.enumerated() {
+            if let parent = node.parent, parent < nodes.count {
+                children[parent].append(index)
+            }
+        }
+        self.nodes = nodes
+        self.children = children
+    }
+
+    func children(_ index: Int, _ kind: SyntaxKind) -> [SyntaxNode] {
+        children[index].map { nodes[$0] }.filter { $0.kind == kind }
+    }
+}
+
+/// Typst string literals.
+enum TypstString {
+    /// The contents of a Typst string literal; nil for an escape this model does not decode.
+    static func decode(_ raw: String) -> String? {
+        guard raw.count >= 2, raw.hasPrefix("\""), raw.hasSuffix("\"") else {
+            return nil
+        }
+        var result = "", escaped = false
+        for character in raw.dropFirst().dropLast() {
+            if escaped {
+                switch character {
+                case "n": result.append("\n")
+                case "r": result.append("\r")
+                case "t": result.append("\t")
+                case "\\", "\"": result.append(character)
+                default: return nil
+                }
+                escaped = false
+            } else if character == "\\" {
+                escaped = true
+            } else {
+                result.append(character)
+            }
+        }
+        return escaped ? nil : result
+    }
+
+    /// A Typst string literal for `value`.
+    static func encode(_ value: String) -> String {
+        var result = "\""
+        for character in value {
+            switch character {
+            case "\\": result += "\\\\"
+            case "\"": result += "\\\""
+            case "\n": result += "\\n"
+            case "\r": result += "\\r"
+            case "\t": result += "\\t"
+            default: result.append(character)
+            }
+        }
+        return result + "\""
+    }
+}

@@ -17,10 +17,10 @@ extension WritingFlowTests {
         let initialMemory = physicalFootprint()
         // On macOS 15 every edit walks each text element TextKit has built
         // after it; a step that builds the whole book makes typing slow.
-        let builtBefore = VisualEditorSession.paragraphsBuilt
+        let builtBefore = SourceStyler.paragraphsBuilt
         var built: [String: Int] = [:]
         func record(_ phase: String) {
-            built[phase] = VisualEditorSession.paragraphsBuilt - builtBefore
+            built[phase] = SourceStyler.paragraphsBuilt - builtBefore
         }
         let opened = ContinuousClock.now
         let app = try WritingFixture(text: source, startService: false)

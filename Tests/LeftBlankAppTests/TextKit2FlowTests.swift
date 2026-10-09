@@ -4,7 +4,7 @@ import LeftBlankCore
 import Testing
 
 /// The TextKit 2 manuscript view: guard against TextKit 1, a full session of
-/// AppKit features, and precise jumps. VisualLayerFlowTests covers display.
+/// AppKit features, and precise jumps. SourceStylingFlowTests covers styles.
 extension WritingFlowTests {
     @Test func textKit2ViewSurvivesAFullEditingSession() async throws {
         let source = "#let note(body) = body\n= Title\n\n*Strong* and _emphasis_ with `code`, 中文 and 😀.\n\n" +
@@ -169,12 +169,12 @@ extension WritingFlowTests {
         await app.layout()
         let top = { TextKit2Geometry.viewportInsertionOffset(at: editor.containerVisibleRect().origin, in: manager) }
         let line = try #require(top())
-        let built = VisualEditorSession.paragraphsBuilt
+        let built = SourceStyler.paragraphsBuilt
         // Re-wrapping discards TextKit 2's layout; finding the viewport by
         // position would lay out all 40,000 paragraphs above it.
         app.window.setContentSize(NSSize(width: 1000, height: 760))
         await app.layout()
-        #expect(VisualEditorSession.paragraphsBuilt - built < 500)
+        #expect(SourceStyler.paragraphsBuilt - built < 500)
         let after = try #require(top())
         let text = source as NSString
         let start = { text.lineRange(for: NSRange(location: $0, length: 0)).location }

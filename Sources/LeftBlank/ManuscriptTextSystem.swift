@@ -1,11 +1,10 @@
 import AppKit
 import LeftBlankCore
-import SwiftUI
 
-/// The manuscript's TextKit 2 stack and its visual layer
-/// (`VisualEditorSession`, shared with the iPad). Never touch `layoutManager`:
-/// one access, ours or AppKit's, switches the view to TextKit 1 for good and
-/// the visual layer stops drawing. SwiftLint rejects it in the app.
+/// The manuscript's TextKit 2 stack and its reading styles (`SourceStyler`,
+/// shared with the iPad). Never touch `layoutManager`: one access, ours or
+/// AppKit's, switches the view to TextKit 1 for good. SwiftLint rejects it in
+/// the app.
 extension ManuscriptTextView {
     static func make(frame: NSRect) -> ManuscriptTextView {
         let container = NSTextContainer(size: NSSize(width: frame.width, height: .greatestFiniteMagnitude))
@@ -14,14 +13,14 @@ extension ManuscriptTextView {
         content.addTextLayoutManager(manager)
         manager.textContainer = container
         let editor = ManuscriptTextView(frame: frame, textContainer: container)
-        editor.session = VisualEditorSession(
+        editor.styler = SourceStyler(
             contentStorage: content,
             textLayoutManager: manager,
-            style: visualStyle(16),
+            fontSize: 16,
+            textColor: Theme.sourceText,
         )
-        editor.session?.hasMarkedText = { [weak editor] in editor?.hasMarkedText() ?? false }
-        editor.session?.onActivateChip = { [weak editor] chip, view in editor?.showChipForm(chip, from: view) }
-        editor.session?.viewport = (
+        editor.styler?.hasMarkedText = { [weak editor] in editor?.hasMarkedText() ?? false }
+        editor.styler?.viewport = (
             visible: { [weak editor] in editor?.containerVisibleRect() ?? .zero },
             scroll: { [weak editor] in editor?.scrollContainer(to: $0) },
         )
@@ -32,21 +31,6 @@ extension ManuscriptTextView {
             object: editor,
         )
         return editor
-    }
-
-    static func visualStyle(_ size: CGFloat) -> VisualStyle {
-        VisualStyle(
-            fontSize: size,
-            text: Theme.sourceText,
-            strong: Theme.sourceStrong,
-            code: Theme.sourceString,
-            codeBackground: Theme.codeBackground,
-            link: Theme.sourceFunction,
-            marker: Theme.sourceComment,
-            math: Theme.sourceNumber,
-            chip: Theme.nativeAccent,
-            chipFill: Theme.selection,
-        )
     }
 
     @objc func switchingToTextKit1(_: Notification) {
@@ -67,16 +51,11 @@ extension ManuscriptTextView {
         guard let manager = textLayoutManager else {
             return nil
         }
-        let offset = TextKit2Geometry.character(
+        return TextKit2Geometry.character(
             at: CGPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y),
             in: manager,
             text: string as NSString,
         )
-        // A chip stands for its call: hover and command-click mean its function.
-        if let offset, let chip = session?.chip(at: offset) {
-            return chip.range.location + 1
-        }
-        return offset
     }
 
     /// Source of the lines intersecting the visible rect.
@@ -140,7 +119,7 @@ extension ManuscriptTextView {
     }
 
     /// What TextKit draws at `offset`: a rendering attribute (semantic colour),
-    /// else the display paragraph (visual styles), else the source.
+    /// else the source text's own attribute.
     func drawnAttribute(_ key: NSAttributedString.Key, at offset: Int) -> Any? {
         guard let manager = textLayoutManager, let location = TextKit2Geometry.location(offset, in: manager) else {
             return nil
@@ -152,97 +131,14 @@ extension ManuscriptTextView {
             }
             return false
         }
-        if value == nil, let (paragraph, local) = displayParagraph(at: offset) {
-            value = paragraph.attribute(key, at: local, effectiveRange: nil)
+        if value == nil, let storage = textStorage, offset < storage.length {
+            value = storage.attribute(key, at: offset, effectiveRange: nil)
         }
         return value
     }
 
     func drawnColor(at offset: Int) -> NSColor? {
         drawnAttribute(.foregroundColor, at: offset) as? NSColor
-    }
-
-    /// The character TextKit lays out at `offset`: U+200B where markup is
-    /// concealed, U+FFFC where a box stands in for source.
-    func displayedCharacter(at offset: Int) -> Character? {
-        displayParagraph(at: offset).map { paragraph, local in
-            Character((paragraph.string as NSString).substring(with: NSRange(location: local, length: 1)))
-        }
-    }
-
-    /// The box TextKit draws for the construct starting at `offset`, if any:
-    /// the U+FFFC that ends the construct's zero-width run.
-    func displayedAttachment(at offset: Int) -> VisualAttachment? {
-        displayParagraph(at: offset).flatMap { paragraph, local in
-            VisualAttachment.box(in: paragraph, at: local)
-        }
-    }
-
-    private func displayParagraph(at offset: Int) -> (NSAttributedString, Int)? {
-        guard let manager = textLayoutManager, let location = TextKit2Geometry.location(offset, in: manager) else {
-            return nil
-        }
-        manager.ensureLayout(for: NSTextRange(location: location))
-        guard let fragment = manager.textLayoutFragment(for: location),
-              let paragraph = fragment.textElement as? NSTextParagraph,
-              let start = paragraph.elementRange?.location
-        else {
-            return nil
-        }
-        let local = offset - TextKit2Geometry.offset(of: start, in: manager)
-        let text = paragraph.attributedString
-        return local >= 0 && local < text.length ? (text, local) : nil
-    }
-
-    // MARK: - Chips
-
-    func showChipForm(_ chip: Chip, from view: NSView) {
-        guard let session, let signature = session.signature(for: chip), isEditable,
-              workspace?.canEditSource != false
-        else {
-            return
-        }
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: ChipForm(
-            chip: chip,
-            signature: signature,
-            formatter: session.formatter,
-            apply: { [weak self, weak popover] values in
-                if let replacement = try self?.session?.edit(chip, values: values) {
-                    self?.applyReplacement(replacement, actionName: L10n.text("Edit Call"))
-                }
-                popover?.close()
-            },
-            cancel: { [weak popover] in popover?.close() },
-        ))
-        chipPopover = popover
-        popover.show(relativeTo: view.bounds, of: view, preferredEdge: .maxY)
-    }
-
-    /// One native, undoable replacement.
-    func applyReplacement(_ replacement: TextReplacement, actionName: String) {
-        guard replacement.range.location >= 0, NSMaxRange(replacement.range) <= string.utf16.count else {
-            return
-        }
-        breakUndoCoalescing()
-        undoManager?.beginUndoGrouping()
-        insertText(replacement.text, replacementRange: replacement.range)
-        undoManager?.endUndoGrouping()
-        undoManager?.setActionName(actionName)
-    }
-
-    /// Inserts a copy of the previous chip's call with Tab placeholders.
-    func repeatPreviousCall() async {
-        guard let session, workspace?.canEditSource != false else {
-            return
-        }
-        let location = selectedRange().location
-        guard let insertion = await session.repeatPrevious(at: location), selectedRange().location == location else {
-            NSSound.beep()
-            return
-        }
-        insertSnippet(insertion.snippet, replacing: insertion.range)
     }
 }
 
