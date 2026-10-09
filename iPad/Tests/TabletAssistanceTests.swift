@@ -577,6 +577,22 @@ extension TabletAssistanceTests {
         #expect(workspace.sourceURL == document.sourceURL)
     }
 
+    @Test func pointerHelpCardStaysBesideTheWord() throws {
+        let screen = CGRect(x: 0, y: 0, width: 820, height: 1180)
+        let word = CGRect(x: 40, y: 100, width: 50, height: 20)
+        #expect(TabletSourceHover.cardFrame(beside: word, in: screen) == CGRect(x: 40, y: 128, width: 360, height: 400))
+        let low = word.offsetBy(dx: 0, dy: 900)
+        #expect(TabletSourceHover.cardFrame(beside: low, in: screen) == CGRect(x: 40, y: 592, width: 360, height: 400))
+        // Landscape with the keyboard up leaves no room for the full card on
+        // either side; it shortens on the roomier side rather than cover the word.
+        let short = CGRect(x: 0, y: 0, width: 1180, height: 366)
+        for line in [word.offsetBy(dx: 0, dy: -101), word.offsetBy(dx: 0, dy: 150), word.offsetBy(dx: 0, dy: 240)] {
+            let card = try #require(TabletSourceHover.cardFrame(beside: line, in: short))
+            #expect(!card.intersects(line) && short.insetBy(dx: 8, dy: 8).contains(card))
+            #expect(card.height >= 150 && min(abs(card.minY - line.maxY), abs(line.minY - card.maxY)) == 8)
+        }
+    }
+
     @Test func pointerHelpPreservesSelectionAndClosesOnScroll() async throws {
         let (workspace, _, _, _) = try await fixture()
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -613,11 +629,14 @@ extension TabletAssistanceTests {
         var stableSince = ContinuousClock.now
         // A cold simulator may finish keyboard layout after hover starts,
         // cancelling the request. Replay pointer movement at the new geometry
-        // only when the viewport changes; a stable viewport gets one request.
+        // when the viewport changes, or when that cancelled the request: UIKit's
+        // animated scroll to the caret at the end ends back at this viewport,
+        // which can fall between two polls (main run 37804349365). A stable
+        // viewport with live help gets one request.
         try await waitFor {
             window.layoutIfNeeded()
             rect = editor.firstRect(for: textRange)
-            if viewport != editor.bounds {
+            if viewport != editor.bounds || editor.sourceHover.isIdle {
                 viewport = editor.bounds
                 stableSince = .now
                 let point = CGPoint(x: rect.midX, y: rect.midY)
