@@ -442,6 +442,11 @@ class WorkflowContractTests(unittest.TestCase):
                        "needs.changes.outputs.channel == 'nightly' && needs.appstore.result == 'success'",
                        "needs.changes.outputs.channel == 'alpha' && needs.gate.result == 'success'"):
             self.assertIn(clause, ' '.join(condition.split()))
+        # The default success() would also require preview's ancestors: appstore is
+        # skipped on alpha pushes and the gate may fail on a nightly, so every
+        # signed preview was left unpublished (2026-10-08).
+        self.assertEqual(needs(publish), {'changes', 'preview'})
+        self.assertEqual(field(publish, 'if'), "${{ !cancelled() && needs.preview.result == 'success' }}")
         self.assertIn('LEFTBLANK_PREVIEW_CHANNEL: ${{ needs.changes.outputs.channel }}', preview)
         self.assertIn('PREVIEW_CHANNEL: ${{ needs.changes.outputs.channel }}', publish)
         self.assertIn('channel: ${{ steps.select.outputs.channel }}', self.jobs['changes'])
