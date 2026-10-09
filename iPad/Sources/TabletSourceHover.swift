@@ -14,6 +14,11 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
     private var viewport: CGRect?
     private let logger = Logger(subsystem: "app.leftblank.writer", category: "source-hover")
     private(set) var host: UIHostingController<TabletHoverCard>?
+    /// No help is pending or shown; only new pointer movement asks for more.
+    var isIdle: Bool {
+        range == nil
+    }
+
     private var pointerInCard = false
     private var installed = false
 
@@ -224,9 +229,7 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
         guard rect.intersects(editor.bounds) else {
             return
         }
-        let anchor = editor.convert(rect, to: parent)
-        let width = min(360, parent.bounds.width - 16), height = min(400, parent.bounds.height - 16)
-        guard width > 0, height > 0 else {
+        guard let frame = Self.cardFrame(beside: editor.convert(rect, to: parent), in: parent.bounds) else {
             return
         }
         let name = (editor.text as NSString).substring(with: range)
@@ -239,20 +242,28 @@ final class TabletSourceHover: NSObject, UIGestureRecognizerDelegate {
             close: { [weak self] in self?.dismiss() },
         ))
         card.view.backgroundColor = .clear
-        let below = anchor.maxY + 8
-        card.view.frame = CGRect(
-            x: min(max(8, anchor.minX), parent.bounds.maxX - width - 8),
-            y: max(8, min(
-                below + height <= parent.bounds.maxY ? below : anchor.minY - height - 8,
-                parent.bounds.maxY - height - 8,
-            )),
-            width: width,
-            height: height,
-        )
+        card.view.frame = frame
         parent.addSubview(card.view)
         host = card
         shown = range
         logger.notice("Hover presented")
+    }
+
+    /// Beside the word, never over it: below if the card fits, else above,
+    /// else shortened on the roomier side (landscape with the keyboard up).
+    static func cardFrame(beside anchor: CGRect, in bounds: CGRect) -> CGRect? {
+        let below = anchor.maxY + 8
+        let room = (below: bounds.maxY - 8 - below, above: anchor.minY - 8 - bounds.minY - 8)
+        let width = min(360, bounds.width - 16), height = min(400, max(room.below, room.above))
+        guard width > 0, height > 0 else {
+            return nil
+        }
+        return CGRect(
+            x: min(max(bounds.minX + 8, anchor.minX), bounds.maxX - width - 8),
+            y: room.below >= height ? below : anchor.minY - height - 8,
+            width: width,
+            height: height,
+        )
     }
 }
 
