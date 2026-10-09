@@ -8,11 +8,10 @@ struct TabletEditor: UIViewRepresentable {
     @ObservedObject var workspace: TabletWorkspace
 
     func makeUIView(context: Context) -> UITextView {
-        // TextKit 2: the visual layer (VisualEditorSession) is shared with the Mac.
+        // TextKit 2, styled by the same SourceStyler as the Mac.
         let view = TabletTextView(usingTextLayoutManager: true)
         view.workspace = workspace
-        view.installVisualLayer(style: TabletTheme.visualStyle(workspace.fontSize))
-        view.session?.mathRenderer = workspace.makeInlineMathRenderer()
+        view.installStyler(fontSize: workspace.fontSize)
         view.textStorage.delegate = context.coordinator
         context.coordinator.textView = view
         view.sourceHover.install()
@@ -79,31 +78,20 @@ struct TabletEditor: UIViewRepresentable {
         guard replaced || coordinator.fontSize != font.pointSize || syntaxChanged else {
             return
         }
-        let session = (view as? TabletTextView)?.session
-        if replaced || coordinator.fontSize != font.pointSize {
-            // Font changes are rare; the source keeps one base style, and the
-            // visual layer draws reading styles in its display paragraphs.
-            var style = TabletTheme.visualStyle(font.pointSize)
-            style.text = TabletTheme.sourceText
-            var base = style.baseAttributes
-            base[.font] = font
+        let styler = (view as? TabletTextView)?.styler
+        if replaced || coordinator.fontSize != font.pointSize, let styler {
+            // New text and font changes style the whole text again; edits
+            // restyle only what they reparse.
             let selected = view.selectedRange
-            view.textStorage.setAttributes(base, range: NSRange(location: 0, length: view.textStorage.length))
+            styler.open(fontSize: font.pointSize, textColor: TabletTheme.sourceText, isEnabled: true)
             view.selectedRange = selected
-            view.typingAttributes = base
-            session?.style = style
+            view.typingAttributes = styler.baseAttributes
         }
         coordinator.fontSize = font.pointSize
-        if replaced {
-            // Another file of the project may have changed what equations import.
-            (session?.mathRenderer as? EngineMathRenderer)?.cache.removeAll()
-            session?.documentURL = workspace.sourceURL
-            session?.open(selection: view.selectedRange)
-        }
         if syntaxReady {
             coordinator.styledRevision = workspace.highlightRevision
             // Semantic colours are rendering attributes: no re-layout, no undo.
-            session?.colors.setColors(workspace.tokens.map { ($0.range, TabletTheme.color(for: $0)) })
+            styler?.colors.setColors(workspace.tokens.map { ($0.range, TabletTheme.color(for: $0)) })
         }
     }
 
@@ -152,7 +140,7 @@ struct TabletEditor: UIViewRepresentable {
                 range: NSRange(location: editedRange.location, length: editedRange.length - delta),
                 text: (textStorage.string as NSString).substring(with: editedRange),
             ) : nil
-            textView?.session?.textDidChange(edited: editedRange, delta: delta)
+            textView?.styler?.textDidChange(edited: editedRange, delta: delta)
         }
 
         /// Whether the view's text is ahead of the workspace. As the storage's
@@ -191,7 +179,7 @@ struct TabletEditor: UIViewRepresentable {
                 return
             }
             if textView.markedTextRange == nil {
-                (textView as? TabletTextView)?.session?.selectionDidChange(textView.selectedRange)
+                (textView as? TabletTextView)?.styler?.selectionDidChange()
             }
             if textView.markedTextRange == nil, changed(textView) {
                 workspace.edited(textView.text, selection: textView.selectedRange, change: takeChange())
@@ -208,20 +196,8 @@ struct TabletEditor: UIViewRepresentable {
 @MainActor final class TabletTextView: UITextView, UIDropInteractionDelegate {
     weak var workspace: TabletWorkspace?
     lazy var sourceHover = TabletSourceHover(editor: self)
-    /// The visual layer: concealment, styles, chips, images and equations.
-    var session: VisualEditorSession?
-    lazy var chipTap = TabletChipTap()
-
-    /// A tap on a chip opens its form (`TabletChipTap`) instead of placing
-    /// the caret, which would reveal the call's source.
-    override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
-        if gesture is UITapGestureRecognizer, gesture.delegate !== chipTap, !(gesture.delegate is TabletSourceHover),
-           chip(at: gesture.location(in: self)) != nil
-        {
-            return false
-        }
-        return super.gestureRecognizerShouldBegin(gesture)
-    }
+    /// Reading styles and syntax colours.
+    var styler: SourceStyler?
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         sourceHover.dismiss()
@@ -408,7 +384,6 @@ struct TabletEditor: UIViewRepresentable {
             ("[", .command, #selector(outdentSource), "Outdent"),
             ("/", .command, #selector(commentSource), "Toggle Comment"),
             ("f", [.alternate, .shift], #selector(formatSource), "Format Document"),
-            ("r", [.control, .command], #selector(repeatCall), "Repeat Previous Call"),
         ]
         var commands = definitions.map { key, flags, selector, title in
             let command = UIKeyCommand(input: key, modifierFlags: flags, action: selector)
@@ -453,7 +428,7 @@ struct TabletEditor: UIViewRepresentable {
             return workspace?.serviceReady == true && workspace?.busy == false && markedTextRange == nil
         }
         if [#selector(indentSource), #selector(outdentSource), #selector(commentSource), #selector(formatSource),
-            #selector(nextPlaceholder(_:)), #selector(repeatCall)].contains(action)
+            #selector(nextPlaceholder(_:))].contains(action)
         {
             return isEditable && markedTextRange == nil
         }
@@ -525,10 +500,6 @@ struct TabletEditor: UIViewRepresentable {
         selectedRange = range
         workspace?.selection = range
         reveal(range)
-    }
-
-    @objc private func repeatCall() {
-        Task { await repeatPreviousCall() }
     }
 }
 

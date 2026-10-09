@@ -14,7 +14,7 @@ import Testing
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["LEFTBLANK_INTEGRATION"] == "1"))
 @MainActor
 struct WritingFlowTests {
-    @Test func directShortcutsAndLeaderPathsShareTheSameActions() async throws {
+    @Test func directShortcutsAndLeaderPathsShareTheSameActions() throws {
         let app = try WritingFixture(text: "= Shortcuts\n\nBody\n", startService: false)
         defer { app.close() }
         let delegate = AppDelegate(workspace: app.workspace)
@@ -54,14 +54,7 @@ struct WritingFlowTests {
         #expect(outline.id == "outline")
         #expect(outline.keyPath == "v o")
         #expect(outline.shortcuts.first?.label == "⌘4")
-        #expect(WritingCommand.all.filter { !$0.shortcuts.isEmpty }.count == 31)
-        // Control-Command-R repeats the previous call (a chip) at the caret.
-        editor.insertSnippet(Snippet(text: "#let item(id) = [#id]\n#item(\"A1\")\n"), replacing: NSRange(
-            location: editor.string.utf16.count,
-            length: 0,
-        ))
-        #expect(menu.performKeyEquivalent(with: app.key("r", code: 15, modifiers: [.control, .command])))
-        try await app.wait { editor.string.hasSuffix("#item(\"\")") }
+        #expect(WritingCommand.all.filter { !$0.shortcuts.isEmpty }.count == 30)
     }
 
     @Test func discoverInsertUndoRedoAndExport() async throws {
@@ -574,7 +567,7 @@ final class WritingFixture {
 
     func close() {
         if let editor = workspace.editor, !allowsTextKit1 {
-            // A silent switch to TextKit 1 would disable the visual layer.
+            // A silent switch to TextKit 1 would lose TextKit 2 viewport layout.
             #expect(editor.textLayoutManager != nil && !editor.switchedToTextKit1, "The editor fell back to TextKit 1")
         }
         workspace.shutdown()

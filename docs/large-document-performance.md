@@ -1,7 +1,7 @@
 # Real-book editor performance
 
-Measured on 2026-10-08, Apple M4 Pro, macOS 27.0, the TextKit 2 editor with
-the visual layer ([visual editing](visual-editing.md#e-the-delivered-editor)),
+Measured on 2026-10-09, Apple M4 Pro, macOS 27.0, the TextKit 2 editor with
+attribute-only styles ([editor styles](visual-editing.md#the-editor-now)),
 Tinymist 0.15.8 / Typst 0.15.1; iPad numbers are in the same section. These are instrumented debug test runs, not a
 release-mode FPS claim. Both fixture sources, licenses and generators are in
 [Examples/Books](../Examples/Books/README.md).
@@ -16,24 +16,25 @@ Neither book is repeated to manufacture a larger buffer.
 
 | Book | Source bytes | Open (s) | Typing median / p95 / max (ms) | Navigate + draw median / max (ms) | Scroll + draw p95 (ms) |
 |---|---:|---:|---:|---:|---:|
-| war-and-peace | 3,302,718 | 0.56 | 5.52 / 5.75 / 6.87 | 7.14 / 10.13 | 2.56 |
-| sicp | 1,446,633 | 0.52 | 3.78 / 4.15 / 4.64 | 14.83 / 25.01 | 2.98 |
+| war-and-peace | 3,302,718 | 0.57 | 5.26 / 5.77 / 6.78 | 6.52 / 10.45 | 2.68 |
+| sicp | 1,446,633 | 0.39 | 3.50 / 4.01 / 4.40 | 10.73 / 15.14 | 2.69 |
 
 Both books land all six jumps in the viewport with zero hit-test error, and a
 line returns to the same place in the viewport after scrolling three screens
-away and back. TextKit builds about 1,300 of War and Peace's 67,963
-paragraphs and 1,000 of SICP's 20,512 over the whole run; the benchmark fails
+away and back. TextKit builds about 1,250 of War and Peace's 67,963
+paragraphs and 970 of SICP's 20,512 over the whole run; the benchmark fails
 above 5,000, because every edit walks the elements built after it. On CI's
-macOS 15 runners the same run types at 11.8 / 38.4 / 103.5 ms in War and Peace
-and 10.6 / 26.2 / 67.1 ms in SICP (median / p95 / max); see
-[visual editing](visual-editing.md#large-documents-measured). The previous TextKit 1 editor (2026-10-01) opened War and Peace
+macOS 15 runners the run with the removed visual layer typed at 11.8 / 38.4 /
+103.5 ms in War and Peace and 10.6 / 26.2 / 67.1 ms in SICP (median / p95 /
+max); see
+[editor styles](visual-editing.md#large-documents-measured). The previous TextKit 1 editor (2026-10-01) opened War and Peace
 in 4.09 s and SICP in 3.32 s, typed at 9.29 / 52.23 and 6.70 / 10.88 ms
 (median / max), navigated in 4.20 and 6.07 ms median, and scrolled at 5.04 and
-3.89 ms p95. SICP ended at 219.4 MiB (287.8 before).
+3.89 ms p95.
 
 SICP exported to **448 pages** in 0.21 seconds after engine startup.
-The test/editor process ended at 222.0 MiB for War and Peace and
-219.4 MiB for SICP (290.7 and 287.8 with TextKit 1). These are process physical-footprint snapshots,
+The test/editor process ended at 216.9 MiB for War and Peace and
+210.8 MiB for SICP (290.7 and 287.8 with TextKit 1). These are process physical-footprint snapshots,
 not peak memory and not total application memory: Tinymist and WebKit are separate
 processes. Each current report comes from its own fresh test process.
 
@@ -73,7 +74,7 @@ Absolute timings vary with hardware, instrumentation, caches and background load
 ## iPad
 
 iPad Air (5th generation, M1), iPadOS 26.5, `TabletLargeDocumentTests` on the
-production editor ([how to run it](visual-editing.md#reproduce-the-spike)):
+production editor ([how to run it](visual-editing.md#reproduce)):
 
 | Book | Typing median / p95 (ms) | Jumps on target, tap error | Jump median / max (ms) | Memory after typing (MiB) |
 |---|---:|---:|---:|---:|
@@ -82,8 +83,9 @@ production editor ([how to run it](visual-editing.md#reproduce-the-spike)):
 | war-and-peace, before | did not finish 80 keys in 15 minutes | – | – | – |
 | war-and-peace | 96–101 / 97–151 | 6/6, 0 | 152–154 / 390–401 | 802–835 |
 
-Ranges are over runs. The causes and what remains are in
-[visual editing](visual-editing.md#large-documents-measured).
+Ranges are over runs, measured with the visual layer that was removed on
+2026-10-09. The causes and what remains are in
+[editor styles](visual-editing.md#large-documents-measured).
 
 The native text storage remains authoritative; we did not introduce a second
 rope buffer or a terminal editor with another selection/undo model. These fixes

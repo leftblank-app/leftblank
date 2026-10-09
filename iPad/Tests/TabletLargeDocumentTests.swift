@@ -45,7 +45,7 @@ struct TabletLargeDocumentTests {
         try await waitFor { (workspace.editor as? TabletTextView)?.text.utf16.count == source.utf16.count }
         let editor = try #require(workspace.editor as? TabletTextView)
         controller.view.layoutIfNeeded()
-        await editor.session?.settled()
+        await editor.styler?.settled()
         report["open_seconds"] = seconds(opened.duration(to: .now))
         report["memory_open_mib"] = footprint()
         let manager = try #require(editor.textLayoutManager)

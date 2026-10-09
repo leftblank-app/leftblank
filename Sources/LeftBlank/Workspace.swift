@@ -1175,8 +1175,6 @@ final class Workspace: ObservableObject {
             closePalette()
         case "format": closePalette()
             formatDocument()
-        case "repeatCall": closePalette()
-            Task { await editor?.repeatPreviousCall() }
         case "indent": closePalette()
             editLines(.indent)
         case "outdent": closePalette()

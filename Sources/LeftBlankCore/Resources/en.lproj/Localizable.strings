@@ -925,16 +925,7 @@
 "Resize Writing and Preview" = "Resize Writing and Preview";
 "Drag to resize. Double-click to split evenly." = "Drag to resize. Double-click to split evenly.";
 "Drag to resize. Double-tap to split evenly." = "Drag to resize. Double-tap to split evenly.";
-"The equation could not be rendered." = "The equation could not be rendered.";
-"The equation is too large to show in the editor." = "The equation is too large to show in the editor.";
-"The document's rules for equations do not compile: %@" = "The document's rules for equations do not compile: %@";
-"Repeat Previous Call" = "Repeat Previous Call";
-"Insert a copy of the previous function call; Tab moves through its values." = "Insert a copy of the previous function call; Tab moves through its values.";
-"Edit Call" = "Edit Call";
 "Apply" = "Apply";
-"Unknown parameter %@" = "Unknown parameter %@";
-"%@ is not a valid value for %@" = "%@ is not a valid value for %@";
-"Fill in %@ first" = "Fill in %@ first";
 "Update Channel" = "Update Channel";
 "Nightly (more stable)" = "Nightly (more stable)";
 "Every merge (Alpha)" = "Every merge (Alpha)";

@@ -128,9 +128,6 @@ extension WritingFlowTests {
         let previousLanguage = L10n.language
         defer { L10n.setLanguage(previousLanguage) }
         L10n.setLanguage(.simplifiedChinese)
-        // With literal arguments the call is a chip; hover its source.
-        editor.setSelectedRange(NSRange(location: (source as NSString).range(of: "#greet").location + 3, length: 0))
-        await app.settle(editor)
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             app.window.appearance = NSAppearance(named: appearance)
             await app.layout()

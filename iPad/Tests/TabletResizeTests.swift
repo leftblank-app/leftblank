@@ -40,19 +40,19 @@ struct TabletResizeTests {
         }
         let editor = try #require(workspace.editor as? TabletTextView)
         controller.view.layoutIfNeeded()
-        await editor.session?.settled()
+        await editor.styler?.settled()
         let manager = try #require(editor.textLayoutManager)
         workspace.jump(workspace.metrics.position(at: (source as NSString).length / 2))
         window.layoutIfNeeded()
         let top = { TextKit2Geometry.viewportInsertionOffset(at: editor.containerVisibleRect().origin, in: manager) }
         let line = try #require(top())
-        let built = VisualEditorSession.paragraphsBuilt
+        let built = SourceStyler.paragraphsBuilt
         window.frame = CGRect(x: 0, y: 0, width: window.frame.width * 0.6, height: window.frame.height)
         window.layoutIfNeeded()
         let after = try #require(top())
         let shown = try #require(TextKit2Geometry.displayedRange(in: editor.containerVisibleRect(), manager: manager))
         // Re-wrapped, the anchor's line may start up to a line earlier.
         #expect(NSLocationInRange(line, shown) && abs(after - line) < 300, "Top line \(line) became \(after)")
-        #expect(VisualEditorSession.paragraphsBuilt - built < 500)
+        #expect(SourceStyler.paragraphsBuilt - built < 500)
     }
 }

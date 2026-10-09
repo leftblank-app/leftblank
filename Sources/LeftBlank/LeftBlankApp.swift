@@ -257,7 +257,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             "editObject",
             "definition",
             "navigateBack",
-            "repeatCall",
             "indent",
             "outdent",
             "comment",

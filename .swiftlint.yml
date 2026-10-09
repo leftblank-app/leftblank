@@ -175,5 +175,5 @@ custom_rules:
     regex: '\blayoutManager\b'
     match_kinds:
       - identifier
-    message: "One layoutManager access permanently switches a TextKit 2 view to TextKit 1, which disables the visual layer."
+    message: "One layoutManager access permanently switches a TextKit 2 view to TextKit 1, which loses its viewport layout."
     severity: error

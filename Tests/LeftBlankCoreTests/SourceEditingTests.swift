@@ -83,27 +83,14 @@ import Testing
     """
     let text = source as NSString
     let tree = try #require(SyntaxTree(source))
-    let plan = Presentation.plan(
-        source: text,
-        nodes: tree.nodes() ?? [],
-        selection: NSRange(location: text.length, length: 0),
-        definitions: FunctionDefinitions(),
-    )
-    let styled = plan.styles.filter { [.strong, .emphasis, .code].contains($0.style) || $0.style == .heading(level: 1) }
-        .map { text.substring(with: $0.range) }
+    let styled = SourceStyling.runs(tree.nodes() ?? []).map { text.substring(with: $0.range) }
     #expect(styled == ["= 中文😀标题", "*bold*", "_italic_", "`literal *stars*`",
                        "```typ\n= not a heading\n*not bold*\n```", "*code content*"])
     for unfinished in ["```\n*unfinished*", "$ unfinished *bold*", "/* *comment*", "* unfinished ",
                        "Text ``literal ` code`` after"]
     {
         let nodes = try #require(SyntaxTree(unfinished)?.nodes())
-        let plan = Presentation.plan(
-            source: unfinished as NSString,
-            nodes: nodes,
-            selection: NSRange(location: 0, length: 0),
-            definitions: FunctionDefinitions(),
-        )
-        #expect(!plan.styles.contains { $0.style == .strong }, "\(unfinished)")
+        #expect(!SourceStyling.runs(nodes).contains { $0.kind == .strong }, "\(unfinished)")
     }
     let blocks = CodeBlockHighlighting.codeBlocks(in: source + "```python\nprint(42)")
     #expect(blocks.map(\.language) == ["typ", "python"])

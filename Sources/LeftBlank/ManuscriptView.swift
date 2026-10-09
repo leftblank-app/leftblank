@@ -13,8 +13,6 @@ struct ManuscriptView: NSViewRepresentable {
         scroll.backgroundColor = Theme.nativeEditor
         let editor = ManuscriptTextView.make(frame: NSRect(origin: .zero, size: scroll.contentSize))
         editor.workspace = workspace
-        // Equations typeset in their own Tinymist helper, never the manuscript's.
-        editor.session?.mathRenderer = TinymistMathTypesetter.renderer(stateDirectory: workspace.stateDirectory)
         editor.delegate = context.coordinator
         editor.textStorage?.delegate = context.coordinator
         editor.isRichText = false
@@ -64,7 +62,7 @@ struct ManuscriptView: NSViewRepresentable {
                 selection: workspace.selection,
             )
         }
-        if editor.appliedFontSize != workspace.fontSize || editor.session?.isEnabled != workspace.styledSource {
+        if editor.appliedFontSize != workspace.fontSize || editor.styler?.isEnabled != workspace.styledSource {
             editor.highlight()
         }
     }
@@ -186,10 +184,9 @@ final class ManuscriptTextView: NSTextView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        // Dynamic colors already live in storage and TextKit's temporary runs.
-        // Repaint only: changing appearance must not reflow or touch source text.
-        // Equations are images in the old colour; they are typeset again.
-        session?.appearanceDidChange()
+        // Dynamic colors already live in storage and TextKit's rendering
+        // attributes. Repaint only: changing appearance must not reflow or touch
+        // source text.
         needsDisplay = true
         enclosingScrollView?.needsDisplay = true
     }
@@ -212,9 +209,8 @@ final class ManuscriptTextView: NSTextView {
     /// The top line to keep in place until the layout pass after a re-wrap.
     private var resizeAnchor: (offset: Int, y: CGFloat)?
     private var appliedSyntaxRevision = -1
-    /// The visual layer: concealment, styles, chips, images and equations.
-    var session: VisualEditorSession?
-    var chipPopover: NSPopover?
+    /// Reading styles and syntax colours.
+    var styler: SourceStyler?
     private weak var observedUndoManager: UndoManager?
     var workspaceRevision = -1
     private var loading = false
@@ -277,7 +273,7 @@ final class ManuscriptTextView: NSTextView {
         guard !loading else {
             return
         }
-        session?.textDidChange(edited: range, delta: delta)
+        styler?.textDidChange(edited: range, delta: delta)
         characterEditCount += 1
         guard characterEditCount == 1, range.length - delta >= 0,
               NSMaxRange(range) <= storage.length
@@ -473,26 +469,16 @@ final class ManuscriptTextView: NSTextView {
 
     func load(_ content: String, selection: NSRange) {
         dismissTypingAssistance()
-        chipPopover?.close()
         loading = true
         defer { loading = false
             _ = takeCharacterEdit()
         }
         workspaceRevision = workspace?.revision ?? 0
         string = content
-        let size = workspace?.fontSize ?? 16
-        textStorage?.setAttributes(
-            Self.visualStyle(size).baseAttributes,
-            range: NSRange(location: 0, length: textStorage?.length ?? 0),
-        )
         placeholders = []
         undoManager?.removeAllActions()
         setSelectedRange(NSRange(location: min(selection.location, (content as NSString).length), length: 0))
-        appliedSyntaxRevision = -1
-        // Another file of the project may have changed what equations import.
-        (session?.mathRenderer as? EngineMathRenderer)?.cache.removeAll()
-        session?.documentURL = workspace?.documentURL
-        session?.open(selection: selectedRange())
+        restyle()
         highlight()
         // After the first layout pass. Revealing a distant caret before it
         // makes TextKit 2 lay out every paragraph above it, and each later
@@ -506,35 +492,42 @@ final class ManuscriptTextView: NSTextView {
         }
     }
 
-    /// The selection moved: reveal the constructs it touches. A mouse drag
-    /// updates once it ends, so text never moves under the pointer.
+    /// The selection moved: apply styles that waited for a composition. A
+    /// mouse drag updates once it ends.
     func selectionChanged() {
         if !selectingWithMouse {
-            session?.selectionDidChange(selectedRange())
+            styler?.selectionDidChange()
         }
     }
 
-    /// Brings the visual layer up to date with the workspace: font size,
-    /// reading mode and the latest semantic colours for exactly this text.
-    func highlight() {
-        guard let session else {
+    /// Styles the whole text from scratch for the workspace's font size and
+    /// reading mode, and drops its syntax colours until they are set again.
+    private func restyle() {
+        guard let styler else {
             return
         }
         let size = workspace?.fontSize ?? 16
-        if appliedFontSize != size {
-            // Explicit font changes are rare and must take effect immediately.
-            let style = Self.visualStyle(size)
-            let base = style.baseAttributes
-            textStorage?.addAttributes(base, range: NSRange(location: 0, length: textStorage?.length ?? 0))
-            typingAttributes = base
-            session.style = style
-            appliedFontSize = size
+        styler.open(fontSize: size, textColor: Theme.sourceText, isEnabled: workspace?.styledSource ?? true)
+        typingAttributes = styler.baseAttributes
+        appliedFontSize = size
+        appliedSyntaxRevision = -1
+    }
+
+    /// Brings the styles up to date with the workspace: font size, reading
+    /// mode and the latest semantic colours for exactly this text.
+    func highlight() {
+        guard let styler else {
+            return
         }
-        session.isEnabled = workspace?.styledSource ?? true
+        if appliedFontSize != workspace?.fontSize ?? 16 || styler.isEnabled != workspace?.styledSource ?? true {
+            // Explicit font and reading-mode changes are rare and must take
+            // effect immediately.
+            restyle()
+        }
         if let workspace, let snapshot = workspace.syntaxSnapshot, workspace.syntaxRevision != appliedSyntaxRevision,
            workspace.syntaxDocumentRevision == workspaceRevision, snapshot.source.utf16.count == string.utf16.count
         {
-            session.colors.setColors(snapshot.tokens.map { ($0.range, Theme.color(for: $0)) })
+            styler.colors.setColors(snapshot.tokens.map { ($0.range, Theme.color(for: $0)) })
             appliedSyntaxRevision = workspace.syntaxRevision
         }
     }

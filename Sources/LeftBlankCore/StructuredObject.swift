@@ -77,7 +77,7 @@ public struct StructuredObject: Equatable, Sendable {
         if syntax.callee(imageCall) == "figure" {
             guard imageArgs.count == 2, let nested = syntax.arguments(imageArgs[0]),
                   let (key, value) = syntax.named(imageArgs[1]), key == "caption", nodes[value].kind == .str,
-                  let caption = Presentation.decodeString(syntax.text(value))
+                  let caption = TypstString.decode(syntax.text(value))
             else {
                 return nil
             }
@@ -85,7 +85,7 @@ public struct StructuredObject: Equatable, Sendable {
             (imageCall, imageArgs) = (imageArgs[0], nested)
         }
         guard syntax.callee(imageCall) == "image", (1 ... 2).contains(imageArgs.count),
-              nodes[imageArgs[0]].kind == .str, let path = Presentation.decodeString(syntax.text(imageArgs[0]))
+              nodes[imageArgs[0]].kind == .str, let path = TypstString.decode(syntax.text(imageArgs[0]))
         else {
             return nil
         }
@@ -186,9 +186,9 @@ public struct StructuredObject: Equatable, Sendable {
             else {
                 throw ObjectEditError.invalid
             }
-            var call = "image(" + Presentation.encodeString(path) + (width.isEmpty ? "" : ", width: " + width) + ")"
+            var call = "image(" + TypstString.encode(path) + (width.isEmpty ? "" : ", width: " + width) + ")"
             if let caption {
-                call = "figure(\n  \(call),\n  caption: \(Presentation.encodeString(caption)),\n)"
+                call = "figure(\n  \(call),\n  caption: \(TypstString.encode(caption)),\n)"
             }
             if !alignment.isEmpty {
                 call = "align(\(alignment), \(call))"
@@ -253,11 +253,11 @@ private struct ObjectSyntax {
         .contextual, .funcReturn, .loopBreak, .loopContinue, .destructAssignment,
     ]
 
-    let tree: Presentation.Tree
+    let tree: SyntaxChildren
     let source: NSString
 
     init(_ nodes: [SyntaxNode], source: NSString) {
-        tree = Presentation.Tree(nodes)
+        tree = SyntaxChildren(nodes)
         self.source = source
     }
 
