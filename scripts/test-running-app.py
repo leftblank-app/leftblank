@@ -16,11 +16,16 @@ class RunningAppTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='leftblank-process-', dir=os.environ['TMPDIR']) as temporary:
             root = Path(temporary)
             app = root / 'LeftBlank.app'
+            # Copied system binaries such as /bin/sleep violate macOS launch constraints and are
+            # killed at exec, so build an ad-hoc signed stand-in instead.
+            sleeper = root / 'sleeper'
+            subprocess.run(['cc', '-x', 'c', '-o', sleeper, '-'], check=True,
+                           input=b'#include <unistd.h>\nint main(void) { sleep(30); return 0; }\n')
 
             def make_app(build):
                 executable = app / 'Contents/MacOS/LeftBlank'
                 executable.parent.mkdir(parents=True)
-                shutil.copyfile('/bin/sleep', executable)
+                shutil.copyfile(sleeper, executable)
                 executable.chmod(0o755)
                 (app / 'Contents/Info.plist').write_bytes(plistlib.dumps({
                     'CFBundleExecutable': 'LeftBlank', 'CFBundleVersion': build,
@@ -28,7 +33,7 @@ class RunningAppTests(unittest.TestCase):
                 return executable
 
             executable = make_app('1')
-            process = subprocess.Popen([str(executable), '30'])
+            process = subprocess.Popen([str(executable)])
             try:
                 # Wait for exec, without launching or activating the process again.
                 deadline = time.monotonic() + 5
