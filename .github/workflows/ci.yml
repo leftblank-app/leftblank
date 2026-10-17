@@ -400,6 +400,9 @@ jobs:
   publish-preview:
     name: Publish preview update
     needs: [changes, preview]
+    # Without this, the implicit success() also requires the preview job's
+    # skipped (appstore on alpha) or failed (gate on nightly) ancestors.
+    if: ${{ !cancelled() && needs.preview.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
