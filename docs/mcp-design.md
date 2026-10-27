@@ -35,6 +35,8 @@ Hurl 已接入 GitHub CI，针对真实 helper、Swift dispatcher 和隔离文�
 
 开发构建使用 `scripts/build.sh`，会构建并打包 Rust helper；直接 `swift build` 仅编译 Swift，不产生完整可连接的 app。调试时使用隔离文档库，不要把用户私有 connection.json 或 access.json 放进仓库。
 
+创作方法按 MCP 标准分工：Resources（`resources/list`、`resources/read`）暴露只读方法、Typst 组件、示例和许可；Prompts（`prompts/list`、`prompts/get`）按 guide 生成带 `request` 参数的创作模板；Tools 负责实际文档读写、编译和渲染。Prompt 列举接口不是自然语言搜索，客户端或用户根据描述选择模板。三者共用一份目录清单，每个 guide 独立目录。首批包括尺寸图、小黑配图和通用指南；没有专门方法时可选 fallback，使用客户端已有联网工具学习 Typst Universe 包及版本化示例。新增 guide 自动生成 Resources 和 Prompt，无需增加风格专属工具；服务端不承担模型调用或网页搜索。扩展方式、客户端兼容范围和完整工作流见[创作指南](authoring-guides.md)。
+
 ## 现有能力
 
 设计调研基于 `e05d4aa`，实现基线为 `3b98e88`；下表描述接入前的复用依据：

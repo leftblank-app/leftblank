@@ -28,7 +28,7 @@ let package = Package(
         .target(
             name: "LeftBlankCore",
             dependencies: ["ZIPFoundation", "LeftBlankSyntaxFFI"],
-            resources: [.process("Resources")],
+            resources: [.process("Resources"), .copy("AuthoringGuides")],
             swiftSettings: distributionSettings,
         ),
         .target(
