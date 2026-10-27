@@ -4,17 +4,29 @@ LeftBlank's primary automated checks are feature integration tests, with an 80% 
 
 ## Running today
 
-Run `scripts/test.sh` from an SSD checkout. It exercises the real AppKit editor, SwiftUI hosting views, document storage, undo, Tinymist compilation and WebKit preview. Tests use isolated document directories and injected cloud stores, never a personal iCloud account. After nightly Mac validation succeeds, a separate job builds and notarizes LeftBlank Preview, validates its Developer ID signature and cold-launches a relocated copy with the build-directory resource bundle hidden. Pull requests run the functional suite, coverage gate and book benchmarks without the release build or app upload, keeping review feedback faster. Each nightly main run (and any manual `publish_preview` run) that passes Mac regression and App Store validation uploads a runnable Preview app for seven days and publishes it to the default nightly update channel; each Mac-affecting main push that passes Mac regression publishes the opt-in alpha channel. Neither channel waits for iPad results or the combined `build and test` gate; iPad failures still fail that required check. PRs cannot access release credentials. Tagged stable releases retain their separate signing and notarization workflow. The nightly run performs a separate App Store distribution check before Preview packaging to keep the external updater out of the App Store binary. PRs and main pushes skip that distribution rebuild. The launch check uses a fresh library and verifies Chinese starter content plus a ready Tinymist service. Its isolated logs are retained as artifacts. All native UI scenarios share one serialized suite because AppKit menus, field editors and sheet presentation are process-wide. Codecov publishes project and changed-line coverage on each PR.
+Run `scripts/test.sh` from an SSD checkout. It exercises the real AppKit editor, SwiftUI hosting views, document storage, undo, Tinymist compilation and WebKit preview. Tests use isolated document directories and injected cloud stores, never a personal iCloud account. All native UI scenarios share one serialized suite because AppKit menus, field editors and sheet presentation are process-wide.
 
-For build-system-specific resource failures, the native SwiftPM builder can be reproduced separately on toolchains that still support it:
+The mandatory strict SwiftLint check rejects direct `Bundle.module` access outside `Sources/LeftBlankCore/CoreResources.swift`. Shared resources use `CoreResources.bundle` so installed apps resolve `Contents/Resources` before the development fallback. `scripts/test-swiftlint-policy.py` runs the pinned linter on known bad single-line, multiline and Foundation-qualified calls, plus allowed resolver code, comments and strings. These checks run on Mac and iPad source changes, regardless of whether a runtime scenario reaches the offending call.
+
+Every Mac-affecting pull request and main push also builds a Release app and cold-launches a relocated copy with the build-directory resource bundle hidden. The isolated library has saved, read-only MCP access so relaunch loads the authoring catalog. The check requires Chinese starter content, the application icon, a ready Tinymist service and a resumed MCP connection, then runs the authoring Hurl contract over the packaged helper's real HTTP listener. Its logs are retained as artifacts. Unit tests can find development resources; the packaged launch establishes that the installed app works without them. Hurl runs only in GitHub CI unless diagnosing a failed CI run.
+
+After nightly Mac validation succeeds, a separate job builds and notarizes LeftBlank Preview, validates its Developer ID signature and repeats the packaged launch and Hurl check before uploading the runnable app. Each nightly main run (and any manual `publish_preview` run) that passes Mac regression and App Store validation uploads a runnable Preview app for seven days and publishes it to the default nightly update channel; each Mac-affecting main push that passes Mac regression publishes the opt-in alpha channel. Neither channel waits for iPad results or the combined `build and test` gate; iPad failures still fail that required check. PRs cannot access release credentials. Tagged stable releases retain their separate signing and notarization workflow. The nightly run performs a separate App Store distribution check before Preview packaging to keep the external updater out of the App Store binary. PRs and main pushes skip that distribution rebuild.
+
+For build-system-specific resource failures, reproduce the packaged launch with native SwiftPM on toolchains that still support it:
 
 ```sh
 source scripts/environment.sh
-swift test --build-system native --scratch-path .build/native-validation \
-  --filter bundledLanguagesResolveWithoutChangingSystemSettings
+scripts/bootstrap.sh
+scripts/build-mcp.sh
+swift build --build-system native -c release
+native_bin=$(swift build --build-system native -c release --show-bin-path)
+native_app=$(python3 scripts/package-app.py "$native_bin")
+scripts/sign-app.sh "$native_app"
+python3 scripts/smoke-app.py --app "$native_app" \
+  --development-resources "$native_bin/LeftBlank_LeftBlankCore.bundle"
 ```
 
-Keep the scratch path inside the SSD checkout. The hosted CI toolchain is deliberately older than the development machine, so local success is not a substitute for its result.
+Keep build and scratch paths inside the SSD checkout. The hosted CI toolchain is deliberately older than the development machine, so local success is not a substitute for its result.
 
 ## Nightly memory checks
 

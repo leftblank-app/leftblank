@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the production SwiftLint icon rule with real Swift source tokens."""
+"""Prove mandatory SwiftLint rules reject regressions using real Swift source tokens."""
 
 import json
 from pathlib import Path
@@ -15,12 +15,12 @@ SWIFTLINT = Path(sys.argv.pop(1)).resolve() if len(sys.argv) > 1 else (
 )
 
 
-class IconPolicyTests(unittest.TestCase):
-    def lint(self, source, directory='Sources/LeftBlank'):
-        scratch = ROOT / 'build/icon-policy'
+class SwiftLintPolicyTests(unittest.TestCase):
+    def lint(self, source, directory='Sources/LeftBlank', filename='PolicyProbe.swift'):
+        scratch = ROOT / 'build/lint-policy'
         scratch.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=scratch) as temporary:
-            path = Path(temporary) / directory / 'IconPolicyProbe.swift'
+            path = Path(temporary) / directory / filename
             path.parent.mkdir(parents=True)
             path.write_text(source + '\n')
             result = subprocess.run(
@@ -64,6 +64,50 @@ class IconPolicyTests(unittest.TestCase):
         for source in sources:
             with self.subTest(source=source):
                 status, violations = self.lint(source)
+                self.assertEqual(status, 0, violations)
+                self.assertEqual(violations, [])
+
+    def test_direct_module_resources_fail_outside_the_shared_resolver(self):
+        sources = [
+            'let bundle = Bundle.module',
+            'let bundle = Foundation.Bundle.module',
+            'let bundle = Bundle\n    .module',
+            'let bundle = Foundation\n    .Bundle\n    .module',
+            'let url = Bundle.module.url(forResource: "catalog", withExtension: "json")',
+        ]
+        for directory in ('Sources/LeftBlankCore', 'Sources/LeftBlank', 'iPad/Sources', 'Tests/LeftBlankCoreTests'):
+            for source in sources:
+                with self.subTest(directory=directory, source=source):
+                    status, violations = self.lint(source, directory)
+                    self.assertNotEqual(status, 0)
+                    matches = [v for v in violations if v['rule_id'] == 'packaged_resource_bundle']
+                    self.assertEqual(len(matches), 1, violations)
+                    self.assertEqual(matches[0]['severity'], 'Error')
+
+    def test_only_the_core_resolver_can_use_the_module_fallback(self):
+        source = 'let fallback = Bundle.module'
+        status, violations = self.lint(source, 'Sources/LeftBlankCore', 'CoreResources.swift')
+        self.assertEqual(status, 0, violations)
+        self.assertEqual(violations, [])
+        for directory in ('Sources/LeftBlank', 'iPad/Sources', 'iPad/Sources/LeftBlankCore'):
+            with self.subTest(directory=directory):
+                status, violations = self.lint(source, directory, 'CoreResources.swift')
+                self.assertNotEqual(status, 0)
+                self.assertTrue(any(v['rule_id'] == 'packaged_resource_bundle' for v in violations))
+
+    def test_shared_resource_calls_comments_and_strings_are_allowed(self):
+        sources = [
+            'let bundle = CoreResources.bundle',
+            'let url = CoreResources.bundle.url(forResource: "catalog", withExtension: "json")',
+            '// Bundle.module',
+            '/* Bundle.module */',
+            '/// Use CoreResources.bundle instead of Bundle.module.',
+            'let message = "Bundle.module"',
+            'let message = #"Foundation.Bundle.module"#',
+        ]
+        for source in sources:
+            with self.subTest(source=source):
+                status, violations = self.lint(source, 'Sources/LeftBlankCore')
                 self.assertEqual(status, 0, violations)
                 self.assertEqual(violations, [])
 
