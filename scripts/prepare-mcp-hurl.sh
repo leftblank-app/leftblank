@@ -16,4 +16,4 @@ curl --fail --location --retry 3 "https://github.com/Orange-OpenSource/hurl/rele
 echo "$checksum  .tools/hurl/archive.tar.gz" | shasum -a 256 --check
 tar -xzf .tools/hurl/archive.tar.gz -C .tools/hurl --strip-components=1
 rm .tools/hurl/archive.tar.gz
-.tools/hurl/bin/hurlfmt --check Tests/MCP/editing.hurl
+.tools/hurl/bin/hurlfmt --check Tests/MCP/*.hurl

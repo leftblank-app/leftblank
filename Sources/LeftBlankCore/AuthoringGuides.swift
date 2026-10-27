@@ -132,7 +132,7 @@ public enum AuthoringGuides {
     }
 
     private static func resource(_ name: String, directory: String = "AuthoringGuides") throws -> Data {
-        guard let url = Bundle.module.url(forResource: name, withExtension: nil, subdirectory: directory) else {
+        guard let url = CoreResources.bundle.url(forResource: name, withExtension: nil, subdirectory: directory) else {
             throw AgentToolError("unavailable", "A bundled authoring guide resource is missing.")
         }
         return try Data(contentsOf: url)

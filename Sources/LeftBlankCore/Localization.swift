@@ -26,25 +26,14 @@ public extension Notification.Name {
 public enum L10n {
     public static let preferenceKey = "appLanguage"
     private static let state = LocalizationState()
-    /// Native SwiftPM's generated accessor looks beside the executable bundle
-    /// and then in the build checkout. A distributed app keeps resources here.
-    static let resourceBundle: Bundle = {
-        if let url = Bundle.main.url(forResource: "LeftBlank_LeftBlankCore", withExtension: "bundle"),
-           let bundle = Bundle(url: url)
-        {
-            return bundle
-        }
-        return Bundle.module
-    }()
-
     private static let bundles: [AppLanguage: Bundle] = Dictionary(uniqueKeysWithValues:
         [AppLanguage.english, .simplifiedChinese].compactMap { language in
             // SwiftPM's native builder lowercases locale directories; the Xcode
             // builder preserves their spelling. Bundle lookup is case-sensitive.
-            let identifier = resourceBundle.localizations.first {
+            let identifier = CoreResources.bundle.localizations.first {
                 $0.caseInsensitiveCompare(language.rawValue) == .orderedSame
             } ?? language.rawValue
-            return resourceBundle.path(forResource: identifier, ofType: "lproj")
+            return CoreResources.bundle.path(forResource: identifier, ofType: "lproj")
                 .flatMap(Bundle.init(path:)).map { (language, $0) }
         })
 

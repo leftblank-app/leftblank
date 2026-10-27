@@ -25,7 +25,7 @@ public enum ServiceError: LocalizedError {
 @MainActor
 public final class TinymistClient {
     public static var bundledFontURL: URL? {
-        L10n.resourceBundle.url(forResource: "NotoSansSC", withExtension: "ttf")
+        CoreResources.bundle.url(forResource: "NotoSansSC", withExtension: "ttf")
     }
 
     private let makeTransport: @MainActor () throws -> any TinymistTransport

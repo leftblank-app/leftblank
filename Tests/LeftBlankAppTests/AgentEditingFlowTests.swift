@@ -75,6 +75,7 @@ extension WritingFlowTests {
                 "--variable",
                 "tool_count=\(AgentTools.definitions.count)",
                 checkout.appendingPathComponent("Tests/MCP/editing.hurl").path,
+                checkout.appendingPathComponent("Tests/MCP/authoring-guides.hurl").path,
             ]
             process.standardOutput = log
             process.standardError = log

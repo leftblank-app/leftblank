@@ -176,6 +176,19 @@ jobs:
           cargo +1.92.0 test --locked --manifest-path Engine/SyntaxBridge/Cargo.toml
       - name: Functional integration tests and 80% coverage gate
         run: scripts/test.sh
+      - name: Cold-launch the packaged app with saved MCP access
+        run: |
+          source scripts/environment.sh
+          scripts/build.sh release
+          python3 scripts/smoke-app.py --app 'build/LeftBlank Preview.app' --development-resources "$(swift build -c release --show-bin-path)/LeftBlank_LeftBlankCore.bundle" --hurl .tools/hurl/bin/hurl
+      - name: Upload packaged launch diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: packaged-launch-macos-15
+          path: build/launch-smoke
+          if-no-files-found: ignore
+          retention-days: 14
       # Codecov uploads are temporarily disabled while CLI downloads fail TLS handshakes.
       - name: Real book editing and navigation benchmarks
         run: scripts/benchmark-books.sh
@@ -375,7 +388,8 @@ jobs:
       - name: Cold-launch the signed package
         run: |
           source scripts/environment.sh
-          python3 scripts/smoke-app.py --app 'build/LeftBlank Preview.app' --development-resources "$(swift build -c release --show-bin-path)/LeftBlank_LeftBlankCore.bundle"
+          scripts/prepare-mcp-hurl.sh
+          python3 scripts/smoke-app.py --app 'build/LeftBlank Preview.app' --development-resources "$(swift build -c release --show-bin-path)/LeftBlank_LeftBlankCore.bundle" --hurl .tools/hurl/bin/hurl
       - name: Upload runnable app
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

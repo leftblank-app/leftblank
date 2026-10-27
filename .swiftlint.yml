@@ -159,6 +159,15 @@ only_rules:
   - yoda_condition
 
 custom_rules:
+  packaged_resource_bundle:
+    name: "Use the installed-app resource resolver"
+    excluded: '(^|/)(?<!iPad/)Sources/LeftBlankCore/CoreResources\.swift$'
+    regex: '\bBundle\s*\.\s*module\b'
+    match_kinds:
+      - identifier
+      - typeidentifier
+    message: "Use CoreResources.bundle. Native SwiftPM Bundle.module can crash in installed apps; only CoreResources.swift may use the development fallback."
+    severity: error
   phosphor_icons_only:
     name: "Use Phosphor icons"
     included: '(^|/)(Sources|iPad/Sources)/.*\.swift$'

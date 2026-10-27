@@ -67,6 +67,7 @@ class PathClassificationTests(unittest.TestCase):
         'Resources/AppIcon.icns': {'mac'},
         'Resources/en.lproj/InfoPlist.strings': {'mac'},
         'scripts/test.sh': {'mac'},
+        'scripts/test-swiftlint-policy.py': {'mac'},
         'scripts/build-tinymist.sh': {'mac'},
         'scripts/tinymist-native-tls.patch': {'mac'},
         'scripts/release.sh': {'mac'},
@@ -147,7 +148,7 @@ class PathClassificationTests(unittest.TestCase):
         shared = {'scripts/appstore_connect.py', 'scripts/ci_changes.py', 'scripts/coverage.py',
                   'scripts/environment.sh', 'scripts/lint.sh', 'scripts/rust-licenses.py',
                   'scripts/release_metadata.py', 'scripts/test-appstore-release.py', 'scripts/test-ci-policy.py',
-                  'scripts/test-icon-policy.py', 'scripts/tinymist-vfs.patch', 'scripts/update-universe-snapshot.py'}
+                  'scripts/tinymist-vfs.patch', 'scripts/update-universe-snapshot.py'}
         for script in scripts:
             with self.subTest(script=script):
                 self.assertTrue(ci.matches(script, listed) or script in shared,
@@ -425,6 +426,22 @@ class WorkflowContractTests(unittest.TestCase):
                          self.jobs['ipad-build'])
         self.assertEqual(lint.group(1), "matrix.platform == 'engine' && needs.changes.outputs.mac != 'true'")
         self.assertIn('run: scripts/lint.sh', self.jobs['integration'])
+
+    def test_mandatory_lint_checks_its_own_regression_rules(self):
+        lint = (ROOT / 'scripts/lint.sh').read_text()
+        self.assertIn('"$lint" lint --strict --config .swiftlint.yml --no-cache || status=1', lint)
+        self.assertIn('python3 scripts/test-swiftlint-policy.py "$lint" || status=1', lint)
+        self.assertIn('exit "$status"', lint)
+
+    def test_packaged_mcp_contract_gates_prs_and_preview_publication(self):
+        integration, preview = self.jobs['integration'], self.jobs['preview']
+        smoke = 'python3 scripts/smoke-app.py'
+        for block in (integration, preview):
+            self.assertIn(smoke, block)
+            self.assertIn('--hurl .tools/hurl/bin/hurl', block)
+            self.assertLess(block.index('scripts/prepare-mcp-hurl.sh'), block.index(smoke))
+        self.assertLess(integration.index('scripts/build.sh release'), integration.index(smoke))
+        self.assertLess(preview.index(smoke), preview.index('- name: Upload runnable app'))
 
     def test_gate_checks_every_job_and_treats_filtered_skips_as_success(self):
         gate = self.jobs['gate']

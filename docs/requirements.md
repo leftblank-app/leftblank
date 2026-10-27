@@ -18,7 +18,8 @@ The initial acceptance document is an article containing headings, lists, images
 6. Preserve source access, with restrained highlighting and structural assistance. The writing surface need not look exactly like the paginated output.
 7. Keep ordinary `.typ` source and relative assets compatible with external tools. A managed library may simplify how documents are presented without locking away their source.
 8. Use Phosphor Regular for all application-provided interface icons, including actions, navigation and status indicators. Keep macOS's native red/yellow/green close, minimize and zoom controls.
-   CI enforces this with the `phosphor_icons_only` SwiftLint rule: use `PhosphorIcon` on macOS and `TabletIcon` on iPad. SF Symbols initializers (`systemName`, `systemImage`, `systemSymbolName`) are rejected in application sources. `scripts/test-icon-policy.py` verifies both rejected calls and allowed comments, strings and shared components using the pinned linter.
+   CI enforces this with the `phosphor_icons_only` SwiftLint rule: use `PhosphorIcon` on macOS and `TabletIcon` on iPad. SF Symbols initializers (`systemName`, `systemImage`, `systemSymbolName`) are rejected in application sources. `scripts/test-swiftlint-policy.py` verifies both rejected calls and allowed comments, strings and shared components using the pinned linter.
+9. Load shared package resources through `CoreResources.bundle`, which resolves the installed app's `Contents/Resources` before SwiftPM's development fallback. The mandatory `packaged_resource_bundle` SwiftLint rule rejects direct `Bundle.module` access everywhere except `Sources/LeftBlankCore/CoreResources.swift`; the pinned-linter regression tests prove the rejection for Mac, iPad and test sources. Mac regression also cold-launches a relocated Release app with build-directory resources hidden and saved MCP access enabled, then reads authoring content through the real MCP HTTP service using Hurl.
 
 ## Main workflow
 

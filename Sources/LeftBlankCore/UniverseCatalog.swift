@@ -210,7 +210,7 @@ public actor UniverseCatalogStore {
     }()
 
     private static let includedSnapshot: UniverseCatalogSnapshot? = {
-        guard let url = L10n.resourceBundle.url(forResource: "universe-index", withExtension: "json"),
+        guard let url = CoreResources.bundle.url(forResource: "universe-index", withExtension: "json"),
               let data = try? Data(contentsOf: url), data.count <= maximumBytes,
               let saved = try? JSONDecoder().decode(Cache.self, from: data),
               let packages = try? latest(saved.packages)

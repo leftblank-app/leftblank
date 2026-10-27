@@ -41,5 +41,5 @@ fi
 status=0
 "$format" "${paths[@]}" --config .swiftformat --lint --cache ignore || status=1
 "$lint" lint --strict --config .swiftlint.yml --no-cache || status=1
-python3 scripts/test-icon-policy.py "$lint" || status=1
+python3 scripts/test-swiftlint-policy.py "$lint" || status=1
 exit "$status"
