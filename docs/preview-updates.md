@@ -76,9 +76,10 @@ The **nightly** channel publishes from the nightly `build and test` run on main
 (`gh workflow run ci.yml --ref main -f publish_preview=true`), which runs only
 the Mac checks. Once Mac regression and Mac App Store validation pass, a
 signed-preview job starts; iPad failures do not block it. The **alpha** channel
-publishes from every main push that selected the Mac jobs, once that push's
-PR-level `build and test` gate passes; docs-only and iPad-only pushes publish
-nothing. Both channels share the `build and test` run number, so build numbers
+publishes from every main push that selected the Mac jobs, once Mac regression
+passes. Neither channel waits for the iPad jobs or the combined `build and test`
+gate; iPad failures still fail that required check. Docs-only and iPad-only pushes
+publish nothing. Both channels share the `build and test` run number, so build numbers
 increase across channels. Main pushes never cancel the nightly or a manual run; a cancelled
 publication at worst leaves a build release that the next one supersedes. The
 signed-preview job
