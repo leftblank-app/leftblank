@@ -19,7 +19,7 @@ let package = Package(
             name: "LeftBlankCore",
             dependencies: ["ZIPFoundation", "LeftBlankSyntaxFFI"],
             path: "LeftBlankCore",
-            resources: [.process("Resources")],
+            resources: [.process("Resources"), .copy("AuthoringGuides")],
         ),
     ],
 )

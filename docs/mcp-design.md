@@ -35,7 +35,7 @@ Hurl 已接入 GitHub CI，针对真实 helper、Swift dispatcher 和隔离文�
 
 开发构建使用 `scripts/build.sh`，会构建并打包 Rust helper；直接 `swift build` 仅编译 Swift，不产生完整可连接的 app。调试时使用隔离文档库，不要把用户私有 connection.json 或 access.json 放进仓库。
 
-创作方法通过共享层的 `list_authoring_guides` / `read_authoring_guide` 按需发现和读取，随应用打包目录清单、方法说明、原生 Typst 绘图组件及可运行示例。首批包括尺寸图和小黑风格配图；新增方法只增加资源与清单，不增加风格专属工具。agent 继续使用现有文档编辑、编译和渲染工具完成作品，服务端不承担模型调用。扩展方式和完整工作流见[创作指南](authoring-guides.md)。
+创作方法通过共享层的 `list_authoring_guides` / `read_authoring_guide` 按需发现和读取，随应用按每种指南独立目录打包方法说明、Typst 组件及可运行示例。首批包括尺寸图、小黑风格配图和通用创作指南；没有专门方法时，agent 可选择标记为 fallback 的指南，使用自身可用的联网工具学习 Typst Universe 包及版本化示例，再通过现有文档编辑、编译和渲染工具完成作品。新增方法只增加目录内容与清单，不增加风格专属工具；服务端不承担模型调用或网页搜索。扩展方式和完整工作流见[创作指南](authoring-guides.md)。
 
 ## 现有能力
 

@@ -1,0 +1,140 @@
+[
+  {
+    "id": "dimensional-drawing",
+    "title": "Dimensional drawings / 工业尺寸图",
+    "summary": "Turn a component, product reference, or concept brief into a monochrome drawing sheet with views, variable dimensions, details, and traceable assumptions.",
+    "version": "1.0.0",
+    "keywords": [
+      "dimensional",
+      "industrial",
+      "drawing",
+      "technical",
+      "blueprint",
+      "component",
+      "card",
+      "dialog",
+      "product",
+      "工业",
+      "尺寸",
+      "图纸",
+      "工程图",
+      "结构图",
+      "工业设计"
+    ],
+    "files": [
+      {
+        "path": "guide.md",
+        "description": "Workflow, brief, drawing conventions, file usage, and visual QA."
+      },
+      {
+        "path": "drawing-kit.typ",
+        "description": "Native Typst dimensions, leaders, detail circles, and variable tables."
+      },
+      {
+        "path": "main.typ",
+        "description": "Complete component card sheet with a plan and enlarged corner.",
+        "entrypoint": true
+      },
+      {
+        "path": "product.typ",
+        "description": "Complete physical enclosure sheet with front, top, and side views.",
+        "entrypoint": true
+      },
+      {
+        "path": "license.txt",
+        "description": "Source attribution and the upstream MIT license."
+      }
+    ]
+  },
+  {
+    "id": "xiaohei-illustrations",
+    "title": "Xiaohei explanatory illustrations / 小黑风格配图",
+    "summary": "Translate a paragraph or presentation claim into one white-background 16:9 explanatory scene with an active black character, restrained annotations, and editable Typst geometry.",
+    "version": "1.0.0",
+    "keywords": [
+      "illustration",
+      "explanatory",
+      "xiaohei",
+      "handdrawn",
+      "hand-drawn",
+      "metaphor",
+      "presentation",
+      "slide",
+      "ppt",
+      "小黑",
+      "手绘",
+      "配图",
+      "正文",
+      "隐喻",
+      "演示",
+      "幻灯片",
+      "观点"
+    ],
+    "files": [
+      {
+        "path": "guide.md",
+        "description": "From a vague claim to a visual metaphor, slide composition, and QA."
+      },
+      {
+        "path": "illustration-kit.typ",
+        "description": "Native Typst sketch strokes, short annotations, and a poseable black character."
+      },
+      {
+        "path": "main.typ",
+        "description": "A character plugs an attention leak: one scene for a presentation or article.",
+        "entrypoint": true
+      },
+      {
+        "path": "feedback.typ",
+        "description": "A character reshapes a paper aircraft using feedback: a different visual metaphor.",
+        "entrypoint": true
+      },
+      {
+        "path": "license.txt",
+        "description": "Source attribution, adaptation notes, and the upstream MIT license."
+      }
+    ]
+  },
+  {
+    "id": "general-authoring",
+    "title": "General Typst authoring / 通用创作与包调研",
+    "summary": "Fallback when no specialized guide fits: form a brief, research official Typst Universe packages and versioned examples, prove a small experiment, then compile, render and adapt.",
+    "version": "1.0.0",
+    "fallback": true,
+    "keywords": [
+      "general",
+      "fallback",
+      "typst",
+      "universe",
+      "package",
+      "template",
+      "research",
+      "example",
+      "通用",
+      "兜底",
+      "包",
+      "模板",
+      "调研",
+      "示例"
+    ],
+    "files": [
+      {
+        "path": "guide.md",
+        "description": "Fallback workflow for learning from official documentation, packages and examples."
+      },
+      {
+        "path": "research-notes.md",
+        "description": "Compact brief, package provenance, experiment and review record."
+      },
+      {
+        "path": "main.typ",
+        "description": "Package-free representative experiment page that displays the actual compiler version.",
+        "entrypoint": true
+      },
+      {
+        "path": "license.txt",
+        "description": "License for the original LeftBlank fallback guide and starter."
+      }
+    ]
+  }
+]

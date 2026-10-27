@@ -4,7 +4,6 @@ import Foundation
 enum AuthoringGuides {
     struct File: Decodable, Sendable {
         let path: String
-        let resource: String
         let description: String
         let entrypoint: Bool?
 
@@ -22,12 +21,14 @@ enum AuthoringGuides {
         let summary: String
         let version: String
         let keywords: [String]
+        let fallback: Bool?
         let files: [File]
 
         var json: JSONValue {
             .object([
                 "id": .string(id), "title": .string(title), "summary": .string(summary),
                 "version": .string(version), "keywords": .array(keywords.map(JSONValue.string)),
+                "fallback": .bool(fallback ?? false),
             ])
         }
 
@@ -41,7 +42,7 @@ enum AuthoringGuides {
 
     static let maximumFileBytes = 32 * 1024
     private static let catalog = Result {
-        let data = try resource("authoring-guides.json")
+        let data = try resource("catalog.json")
         return try JSONDecoder().decode([Guide].self, from: data)
     }
 
@@ -65,7 +66,7 @@ enum AuthoringGuides {
                 details: ["suggested_tool": .string("read_authoring_guide")],
             )
         }
-        let data = try resource(file.resource)
+        let data = try resource(file.path, directory: "AuthoringGuides/\(guide.id)")
         guard data.count <= maximumFileBytes, let text = String(data: data, encoding: .utf8) else {
             throw AgentToolError("unavailable", "The bundled guide file is not bounded UTF-8 text.")
         }
@@ -75,8 +76,8 @@ enum AuthoringGuides {
         ])
     }
 
-    private static func resource(_ name: String) throws -> Data {
-        guard let url = Bundle.module.url(forResource: name, withExtension: nil) else {
+    private static func resource(_ name: String, directory: String = "AuthoringGuides") throws -> Data {
+        guard let url = Bundle.module.url(forResource: name, withExtension: nil, subdirectory: directory) else {
             throw AgentToolError("unavailable", "A bundled authoring guide resource is missing.")
         }
         return try Data(contentsOf: url)

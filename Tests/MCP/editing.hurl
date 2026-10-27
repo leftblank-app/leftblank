@@ -214,7 +214,7 @@ MCP-Protocol-Version: 2025-11-25
     "name": "read_authoring_guide",
     "arguments": {
       "id": "{{illustration_guide}}",
-      "path": "../authoring-guides.json"
+      "path": "../catalog.json"
     }
   }
 }
@@ -222,6 +222,51 @@ HTTP 200
 [Asserts]
 jsonpath "$.result.isError" == true
 jsonpath "$.result.structuredContent.error.code" == "not_found"
+
+# Browsing exposes a general fallback for requests without a specialized guide.
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+{
+  "jsonrpc": "2.0",
+  "id": 605,
+  "method": "tools/call",
+  "params": {
+    "name": "list_authoring_guides",
+    "arguments": {}
+  }
+}
+HTTP 200
+[Captures]
+fallback_guide: jsonpath "$.result.structuredContent.items[?(@.fallback == true)].id"
+[Asserts]
+jsonpath "$.result.isError" == false
+jsonpath "$.result.structuredContent.items[?(@.fallback == true)].id" == "general-authoring"
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+{
+  "jsonrpc": "2.0",
+  "id": 606,
+  "method": "tools/call",
+  "params": {
+    "name": "read_authoring_guide",
+    "arguments": {
+      "id": "{{fallback_guide}}"
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.isError" == false
+jsonpath "$.result.structuredContent.guide.fallback" == true
+jsonpath "$.result.structuredContent.text" contains "https://typst.app/universe/"
+jsonpath "$.result.structuredContent.files[?(@.path == 'main.typ')].entrypoint" == true
 
 POST {{url}}
 Authorization: Bearer {{token}}

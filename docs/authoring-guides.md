@@ -22,6 +22,11 @@ File paths are exact catalog entries, not arbitrary filesystem access. The tools
 are available even for read-only or document-scoped connections because bundled
 guides contain no user document data.
 
+Metadata includes a `fallback` boolean. When no specialized method fits, browse
+the catalog without a query and load a guide marked `fallback: true`. This keeps
+fallback selection independent of a hardcoded guide ID. A search does not silently
+replace missing specialized matches with an unrelated guide.
+
 Example sequence:
 
 ```text
@@ -48,9 +53,11 @@ scope take precedence. Simple text edits need not load an unrelated guide.
 | --- | --- | --- |
 | `dimensional-drawing` | Monochrome UI/product drawing sheets with dimensions, views, details, and assumptions | `main.typ`: component card; `product.typ`: physical enclosure |
 | `xiaohei-illustrations` | White 16:9 explanatory scenes for articles and presentation inclusion | `main.typ`: attention leak; `feedback.typ`: reshaping a paper aircraft |
+| `general-authoring` (fallback) | Research official Typst documentation, Universe packages and versioned examples; prove an approach before expanding | `main.typ`: package-free experiment with actual compiler version; `research-notes.md`: provenance/review record |
 
-Each workflow includes its method, a small native Typst kit, two entry examples,
-and source attribution/license text. The examples need no external package,
+The two visual workflows include a method, a small native Typst kit, two entry
+examples, and source attribution/license text. The fallback adds a package-free
+probe and research record. All bundled examples need no external package,
 browser, image-generation API, or raster asset. The Xiaohei adaptation keeps
 labels and geometry editable; its look is a native sketch approximation, and
 quality still depends on adapting the visual action to the content.
@@ -62,10 +69,33 @@ capabilities when requested, but must describe what it actually delivered.
 
 ## Extending the catalog
 
-Content lives in `Sources/LeftBlankCore/Resources/AuthoringGuides/`. SwiftPM's
-existing `.process("Resources")` rule bundles the files. Because processing can
-flatten resource directories, every physical resource basename must be unique.
-Logical paths within a guide remain short and portable.
+Content lives in `Sources/LeftBlankCore/AuthoringGuides/`, one directory per guide:
+
+```text
+AuthoringGuides/
+  catalog.json
+  dimensional-drawing/
+    guide.md
+    drawing-kit.typ
+    main.typ
+    product.typ
+    license.txt
+  xiaohei-illustrations/
+    guide.md
+    illustration-kit.typ
+    main.typ
+    feedback.typ
+    license.txt
+  general-authoring/
+    guide.md
+    research-notes.md
+    main.typ
+    license.txt
+```
+
+Both package manifests use `.copy("AuthoringGuides")` to preserve that hierarchy
+inside the shared resource bundle. Guides can reuse filenames such as `guide.md`
+and `main.typ`; catalog paths are relative to the directory named by the guide ID.
 
 To add a capability such as mathematical presentations or arXiv paper authoring:
 
@@ -76,9 +106,10 @@ To add a capability such as mathematical presentations or arXiv paper authoring:
    sibling paths, not bundle resource names.
 3. Add attribution and applicable license information. Check the availability of
    fonts, packages, export formats, and external capabilities the workflow needs.
-4. Append an entry to `authoring-guides.json` with a stable unique `id`, `title`,
+4. Append an entry to `catalog.json` with a stable unique `id`, `title`,
    `summary`, `version`, bilingual `keywords`, and `files`. Each file descriptor
-   contains `path`, `resource`, `description`, and optional `entrypoint`.
+   contains `path`, `description`, and optional `entrypoint`. Mark a general
+   fallback guide with `fallback: true`; specialized guides default to false.
 5. Verify all resource references, compile each entry example using its logical
    project filenames, inspect rendered pages, and cover discovery/read behavior.
 
@@ -93,9 +124,9 @@ change is needed. A catalog descriptor looks like:
   "version": "1.0.0",
   "keywords": ["short discovery terms", "中文关键词"],
   "files": [
-    {"path": "guide.md", "resource": "future-guide.md", "description": "Workflow."},
-    {"path": "main.typ", "resource": "future-example.typ", "description": "Complete example.", "entrypoint": true},
-    {"path": "license.txt", "resource": "future-license.txt", "description": "Source attribution and license."}
+    {"path": "guide.md", "description": "Workflow."},
+    {"path": "main.typ", "description": "Complete example.", "entrypoint": true},
+    {"path": "license.txt", "description": "Source attribution and license."}
   ]
 }
 ```
@@ -105,6 +136,22 @@ directions; they are not shipped catalog entries. Paper guides should distinguis
 research claims and verified citations from placeholders. Mathematics guides
 should preserve editable equations and check the actual mathematical content,
 in addition to page layout.
+
+## General fallback and package research
+
+The fallback teaches an agent to turn an unfamiliar request into a brief, search
+[Typst Universe](https://typst.app/universe/) using its available network tools,
+read the candidate's versioned documentation and minimal example, check compiler
+requirements and licensing, then test one representative page in LeftBlank's
+actual engine. It records source URLs, selected versions, unresolved dependencies,
+and visual review. Package imports pin the version that was actually inspected.
+
+LeftBlank currently exposes document tools rather than MCP package-search or
+package-source-reading tools. The guide relies on the client's existing web/HTTP
+capabilities for research and the application's engine for package resolution.
+Without those research tools, it uses supplied/project examples or native Typst
+and states what could not be verified. A local CLI's successful compile does not
+establish that the app engine can resolve the same packages, fonts, or assets.
 
 ## Verification and acceptance
 
@@ -125,6 +172,12 @@ Check that it discovers a suitable guide, identifies the takeaway and unknowns,
 adapts a source example, and inspects the rendered result. These prompts test the
 complete agent experience; schema and compilation tests alone cannot establish
 creative quality or client-side guide selection.
+
+Also try a request with no dedicated guide, such as a mathematical presentation.
+Check that the client browses to the fallback, reads authoritative documentation
+for a suitable package if needed, pins an inspected version, and tests one page
+before expanding. Without network tools, it should state that research limit
+and use available material instead of inventing package APIs.
 
 ## Attribution
 

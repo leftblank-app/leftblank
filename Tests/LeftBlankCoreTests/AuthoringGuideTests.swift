@@ -28,7 +28,7 @@ struct AuthoringGuideTests {
     @Test func bilingualSearchAndPaginationUseTheExistingQueryContract() async throws {
         let fixture = try AgentFixture()
         defer { fixture.close() }
-        for query in ["DIMENSIONAL", "工业", "xiaohei", "小黑"] {
+        for query in ["DIMENSIONAL", "工业", "xiaohei", "小黑", "通用", "Universe"] {
             let result = await fixture.call("list_authoring_guides", ["query": .string(query)])
             #expect(!result.isError)
             #expect(!result.value["items"].array.isEmpty)
@@ -45,6 +45,27 @@ struct AuthoringGuideTests {
             "query": .string("xiaohei"), "limit": .number(1), "cursor": .string(cursor),
         ])
         #expect(changed.value["error"]["code"].string == "cursor_expired")
+    }
+
+    @Test func unmatchedRequestsCanDiscoverAReadOnlyFallback() async throws {
+        let fixture = try AgentFixture()
+        defer { fixture.close() }
+        let access = AgentToolAccess(documentIDs: [], canWrite: false)
+        let unmatched = await fixture.dispatcher.call("list_authoring_guides", arguments: .object([
+            "query": .string("unsupported-guide-xyz"),
+        ]), access: access)
+        #expect(unmatched.value["items"].array.isEmpty)
+        let catalog = await fixture.dispatcher.call("list_authoring_guides", arguments: .object([:]), access: access)
+        let fallback = try #require(catalog.value["items"].array.first {
+            $0["fallback"].foundationValue as? Bool == true
+        })
+        let read = await fixture.dispatcher.call("read_authoring_guide", arguments: .object([
+            "id": fallback["id"],
+        ]), access: access)
+        #expect(!read.isError)
+        #expect(read.value["guide"]["fallback"].foundationValue as? Bool == true)
+        #expect(read.value["text"].string?.isEmpty == false)
+        #expect(fixture.host.writes == 0)
     }
 
     @Test func bundledFilesHaveUniquePathsAndRunnableExamples() throws {
@@ -74,7 +95,10 @@ struct AuthoringGuideTests {
         let missing = await fixture.call("read_authoring_guide", ["id": .string("arxiv-not-yet-shipped")])
         #expect(missing.value["error"]["code"].string == "not_found")
         #expect(missing.value["error"]["suggested_tool"].string == "list_authoring_guides")
-        for path in ["../guide.md", "/etc/passwd", "main.typ/../guide.md", "authoring-guides.json", ""] {
+        for path in [
+            "../guide.md", "/etc/passwd", "main.typ/../guide.md", "../catalog.json", "catalog.json",
+            "../xiaohei-illustrations/main.typ", "",
+        ] {
             let result = await fixture.call("read_authoring_guide", [
                 "id": .string("dimensional-drawing"), "path": .string(path),
             ])
