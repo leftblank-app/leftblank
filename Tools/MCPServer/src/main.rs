@@ -47,12 +47,16 @@ struct Configuration {
     port: u16,
     token: String,
     tools: Vec<Tool>,
+    resources: Vec<Resource>,
+    prompts: Vec<Prompt>,
     instructions: String,
 }
 
 #[derive(Clone)]
 struct Bridge {
     tools: Arc<Vec<Tool>>,
+    resources: Arc<Vec<Resource>>,
+    prompts: Arc<Vec<Prompt>>,
     instructions: Arc<String>,
     output: mpsc::Sender<String>,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
@@ -80,6 +84,70 @@ impl Drop for PendingCall {
     }
 }
 
+impl Bridge {
+    /// One bounded, cancellable application bridge for tools, resource reads and prompt rendering.
+    async fn forward(
+        &self,
+        method: &str,
+        arguments: Value,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Value, ErrorData> {
+        let id = self.serial.fetch_add(1, Ordering::Relaxed);
+        let (sender, receiver) = oneshot::channel();
+        {
+            let mut pending = self
+                .pending
+                .lock()
+                .map_err(|_| ErrorData::internal_error("Bridge unavailable", None))?;
+            if pending.len() >= 32 {
+                return Ok(
+                    json!({"value":{"error":{"code":"busy","message":"Too many pending requests"}},"is_error":true}),
+                );
+            }
+            pending.insert(id, sender);
+        }
+        let mut call = PendingCall {
+            id,
+            bridge: self.clone(),
+            finished: false,
+        };
+        let frame = json!({"id": id, "method": method, "arguments": arguments}).to_string();
+        self.output.send(frame).await.map_err(|_| {
+            ErrorData::internal_error("Bridge disconnected; write result may be unknown", None)
+        })?;
+        let value = tokio::select! {
+            result = receiver => result.map_err(|_| ErrorData::internal_error("Bridge disconnected; write result may be unknown", None))?,
+            _ = context.ct.cancelled() => return Err(ErrorData::internal_error("Cancelled; check document state before retrying a write", None)),
+            _ = self.shutdown.cancelled() => return Err(ErrorData::internal_error("Application closed; write result may be unknown", None)),
+            _ = tokio::time::sleep(Duration::from_secs(90)) => return Ok(json!({"value":{"error":{"code":"timeout","message":"Result unknown. Read the document before retrying a write."}},"is_error":true})),
+        };
+        call.finished = true;
+        Ok(value)
+    }
+
+    async fn authoring(
+        &self,
+        method: &str,
+        arguments: Value,
+        context: RequestContext<RoleServer>,
+    ) -> Result<Value, ErrorData> {
+        let value = self.forward(method, arguments, context).await?;
+        if value.get("is_error").and_then(Value::as_bool) != Some(false) {
+            let error = &value["value"]["error"];
+            let message = error["message"]
+                .as_str()
+                .unwrap_or("Authoring content unavailable")
+                .to_owned();
+            return Err(if error["code"] == "invalid_params" {
+                ErrorData::invalid_params(message, None)
+            } else {
+                ErrorData::internal_error(message, None)
+            });
+        }
+        Ok(value["value"].clone())
+    }
+}
+
 impl ServerHandler for Bridge {
     fn get_info(&self) -> ServerConfig {
         // The tool set is fixed for a helper's lifetime, but a restarted app may offer different
@@ -87,6 +155,8 @@ impl ServerHandler for Bridge {
         ServerConfig::new(
             ServerCapabilities::builder()
                 .enable_tools()
+                .enable_resources()
+                .enable_prompts()
                 .enable_tool_list_changed()
                 .build(),
         )
@@ -109,6 +179,89 @@ impl ServerHandler for Bridge {
             }
             _ => result,
         })
+    }
+    async fn list_resources(
+        &self,
+        request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, ErrorData> {
+        if request.and_then(|r| r.cursor).is_some() {
+            return Err(ErrorData::invalid_params("Unexpected cursor", None));
+        }
+        let result = ListResourcesResult::with_all_items(self.resources.as_ref().clone());
+        Ok(if modern(&context) {
+            result.with_ttl_ms(0).with_cache_scope(CacheScope::Private)
+        } else {
+            result
+        })
+    }
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResponse, ErrorData> {
+        let is_modern = modern(&context);
+        let value = self
+            .authoring("resources/read", json!({"uri":request.uri}), context)
+            .await?;
+        let mut result: ReadResourceResult = serde_json::from_value(value).map_err(|_| {
+            ErrorData::internal_error("Invalid application resource response", None)
+        })?;
+        result.result_type = Some(ResultType::COMPLETE);
+        if is_modern {
+            result = result.with_ttl_ms(0).with_cache_scope(CacheScope::Private);
+        }
+        Ok(result.into())
+    }
+    async fn list_resource_templates(
+        &self,
+        request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, ErrorData> {
+        if request.and_then(|r| r.cursor).is_some() {
+            return Err(ErrorData::invalid_params("Unexpected cursor", None));
+        }
+        // Bundled files have concrete URIs; there are no parameterized resources.
+        let result = ListResourceTemplatesResult::with_all_items(Vec::new());
+        Ok(if modern(&context) {
+            result.with_ttl_ms(0).with_cache_scope(CacheScope::Private)
+        } else {
+            result
+        })
+    }
+    async fn list_prompts(
+        &self,
+        request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListPromptsResult, ErrorData> {
+        if request.and_then(|r| r.cursor).is_some() {
+            return Err(ErrorData::invalid_params("Unexpected cursor", None));
+        }
+        let result = ListPromptsResult::with_all_items(self.prompts.as_ref().clone());
+        Ok(if modern(&context) {
+            result.with_ttl_ms(0).with_cache_scope(CacheScope::Private)
+        } else {
+            result
+        })
+    }
+    async fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<GetPromptResponse, ErrorData> {
+        let value = self
+            .authoring(
+                "prompts/get",
+                json!({
+                    "name":request.name,"arguments":request.arguments.unwrap_or_default()
+                }),
+                context,
+            )
+            .await?;
+        let mut result: GetPromptResult = serde_json::from_value(value)
+            .map_err(|_| ErrorData::internal_error("Invalid application prompt response", None))?;
+        result.result_type = Some(ResultType::COMPLETE);
+        Ok(result.into())
     }
     fn accepted_subscription_filter(
         &self,
@@ -139,37 +292,13 @@ impl ServerHandler for Bridge {
         if self.get_tool(&request.name).is_none() {
             return Err(ErrorData::invalid_params("Unknown tool", None));
         }
-        let id = self.serial.fetch_add(1, Ordering::Relaxed);
-        let (sender, receiver) = oneshot::channel();
-        {
-            let mut pending = self
-                .pending
-                .lock()
-                .map_err(|_| ErrorData::internal_error("Bridge unavailable", None))?;
-            if pending.len() >= 32 {
-                return Ok(CallToolResult::structured_error(
-                    json!({"error":{"code":"busy","message":"Too many pending requests"}}),
-                )
-                .into());
-            }
-            pending.insert(id, sender);
-        }
-        let mut call = PendingCall {
-            id,
-            bridge: self.clone(),
-            finished: false,
-        };
-        let frame = json!({"id": id, "method": request.name, "arguments": request.arguments.unwrap_or_default()}).to_string();
-        self.output.send(frame).await.map_err(|_| {
-            ErrorData::internal_error("Bridge disconnected; write result may be unknown", None)
-        })?;
-        let value = tokio::select! {
-            result = receiver => result.map_err(|_| ErrorData::internal_error("Bridge disconnected; write result may be unknown", None))?,
-            _ = context.ct.cancelled() => return Err(ErrorData::internal_error("Cancelled; check document state before retrying a write", None)),
-            _ = self.shutdown.cancelled() => return Err(ErrorData::internal_error("Application closed; write result may be unknown", None)),
-            _ = tokio::time::sleep(Duration::from_secs(90)) => return Ok(CallToolResult::structured_error(json!({"error":{"code":"timeout","message":"Result unknown. Read the document before retrying a write."}})).into()),
-        };
-        call.finished = true;
+        let value = self
+            .forward(
+                &request.name,
+                json!(request.arguments.unwrap_or_default()),
+                context,
+            )
+            .await?;
         let payload = value.get("value").cloned().unwrap_or(Value::Null);
         let mut result = if value
             .get("is_error")
@@ -197,6 +326,12 @@ impl ServerHandler for Bridge {
         }
         Ok(result.into())
     }
+}
+
+fn modern(context: &RequestContext<RoleServer>) -> bool {
+    context
+        .protocol_version()
+        .is_some_and(|version| version.as_str() >= ProtocolVersion::V_2026_07_28.as_str())
 }
 
 async fn authenticate(
@@ -339,7 +474,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .ok_or("missing configuration")??;
     let config: Configuration = serde_json::from_str(&line)?;
-    if config.bridge_version != 1
+    if config.bridge_version != 2
         || config.token.len() != 64
         || !config.token.bytes().all(|b| b.is_ascii_hexdigit())
         || config.tools.is_empty()
@@ -353,6 +488,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (output, mut outgoing) = mpsc::channel::<String>(64);
     let bridge = Bridge {
         tools: Arc::new(config.tools),
+        resources: Arc::new(config.resources),
+        prompts: Arc::new(config.prompts),
         instructions: Arc::new(config.instructions),
         output: output.clone(),
         pending: Arc::new(Mutex::new(HashMap::new())),
@@ -394,7 +531,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     });
     let app = router(bridge, &config.token, port, Sessions::new()?);
     output
-        .send(json!({"event":"ready", "bridge_version":1, "port":port}).to_string())
+        .send(json!({"event":"ready", "bridge_version":2, "port":port}).to_string())
         .await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown.cancelled_owned())
@@ -422,6 +559,8 @@ mod tests {
         .unwrap();
         let bridge = Bridge {
             tools: Arc::new(vec![tool]),
+            resources: Arc::new(Vec::new()),
+            prompts: Arc::new(Vec::new()),
             instructions: Arc::new(String::new()),
             output,
             pending: Arc::new(Mutex::new(HashMap::new())),

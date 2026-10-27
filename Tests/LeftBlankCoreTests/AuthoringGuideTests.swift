@@ -4,130 +4,118 @@ import Testing
 
 @MainActor
 struct AuthoringGuideTests {
-    @Test func discoveryIsReadOnlyAndAvailableWithoutDocumentAccess() async throws {
+    @Test func discoverySeparatesContentFromDocumentTools() async throws {
         let fixture = try AgentFixture()
         defer { fixture.close() }
-        let access = AgentToolAccess(documentIDs: [], canWrite: false)
-        let listed = await fixture.dispatcher.call("list_authoring_guides", arguments: .object([:]), access: access)
-        #expect(!listed.isError)
-        let ids = listed.value["items"].array.compactMap { $0["id"].string }
-        #expect(ids.contains("dimensional-drawing") && ids.contains("xiaohei-illustrations"))
-        let read = await fixture.dispatcher.call("read_authoring_guide", arguments: .object([
-            "id": .string("xiaohei-illustrations"),
-        ]), access: access)
-        #expect(!read.isError)
-        #expect(read.value["path"].string == "guide.md")
-        #expect(read.value["text"].string?.isEmpty == false)
+        let prompts = try AuthoringGuides.prompts()
+        let names = prompts.compactMap { $0["name"].string }
+        #expect(names.contains("dimensional-drawing") && names.contains("xiaohei-illustrations"))
+        #expect(Set(names).count == prompts.count)
+        #expect(prompts.contains { $0["description"].string?.contains("小黑") == true })
+        let resources = try AuthoringGuides.resources()
+        #expect(!resources.isEmpty)
+        for prompt in prompts {
+            let result = try AuthoringGuides.getPrompt(name: #require(prompt["name"].string), arguments: .object([
+                "request": .string("请根据现有内容设计一张配图"),
+            ]))
+            #expect(!result["messages"].array.isEmpty)
+        }
+        #expect(AgentTools.definitions.allSatisfy { !$0.name.contains("authoring_guide") })
         #expect(fixture.host.writes == 0)
         #expect(try await fixture.library.list().isEmpty)
-        for name in ["list_authoring_guides", "read_authoring_guide"] {
-            #expect(AgentTools.definitions.first { $0.name == name }?.readOnly == true)
-        }
     }
 
-    @Test func bilingualSearchAndPaginationUseTheExistingQueryContract() async throws {
-        let fixture = try AgentFixture()
-        defer { fixture.close() }
-        for query in ["DIMENSIONAL", "工业", "xiaohei", "小黑", "通用", "Universe"] {
-            let result = await fixture.call("list_authoring_guides", ["query": .string(query)])
-            #expect(!result.isError)
-            #expect(!result.value["items"].array.isEmpty)
-        }
-        let absent = await fixture.call("list_authoring_guides", ["query": .string("unsupported-guide-xyz")])
-        #expect(absent.value["items"].array.isEmpty)
-        let first = await fixture.call("list_authoring_guides", ["limit": .number(1)])
-        #expect(first.value["items"].array.count == 1)
-        let cursor = try #require(first.value["next_cursor"].string)
-        let next = await fixture.call("list_authoring_guides", ["limit": .number(1), "cursor": .string(cursor)])
-        #expect(next.value["items"].array.count == 1)
-        #expect(next.value["items"].array.first?["id"].string != first.value["items"].array.first?["id"].string)
-        let changed = await fixture.call("list_authoring_guides", [
-            "query": .string("xiaohei"), "limit": .number(1), "cursor": .string(cursor),
-        ])
-        #expect(changed.value["error"]["code"].string == "cursor_expired")
+    @Test func promptPreservesTheRequestAndEmbedsTheMatchingWorkflow() throws {
+        let request = "画一个设备外壳，尺寸未知。\n保留 {{request}} 和中文，不推测测量值。"
+        let result = try AuthoringGuides.getPrompt(name: "dimensional-drawing", arguments: .object([
+            "request": .string(request),
+        ]))
+        let messages = result["messages"].array
+        #expect(messages.last?["content"]["text"].string == "User request:\n" + request)
+        let embedded = try #require(messages.first { $0["content"]["type"].string == "resource" })
+        let uri = try #require(embedded["content"]["resource"]["uri"].string)
+        let read = try AuthoringGuides.readResource(uri: uri)
+        #expect(embedded["content"]["resource"]["text"].string == read["contents"].array.first?["text"].string)
+        #expect(messages.first?["content"]["text"].string?.contains("product.typ") == true)
     }
 
-    @Test func unmatchedRequestsCanDiscoverAReadOnlyFallback() async throws {
-        let fixture = try AgentFixture()
-        defer { fixture.close() }
-        let access = AgentToolAccess(documentIDs: [], canWrite: false)
-        let unmatched = await fixture.dispatcher.call("list_authoring_guides", arguments: .object([
-            "query": .string("unsupported-guide-xyz"),
-        ]), access: access)
-        #expect(unmatched.value["items"].array.isEmpty)
-        let catalog = await fixture.dispatcher.call("list_authoring_guides", arguments: .object([:]), access: access)
-        let fallback = try #require(catalog.value["items"].array.first {
-            $0["fallback"].foundationValue as? Bool == true
+    @Test func unmatchedRequestsCanDiscoverTheGeneralFallback() throws {
+        let fallback = try #require(AuthoringGuides.prompts().first {
+            $0["_meta"]["app.leftblank/authoringGuide"]["fallback"].foundationValue as? Bool == true
         })
-        let read = await fixture.dispatcher.call("read_authoring_guide", arguments: .object([
-            "id": fallback["id"],
-        ]), access: access)
-        #expect(!read.isError)
-        #expect(read.value["guide"]["fallback"].foundationValue as? Bool == true)
-        #expect(read.value["text"].string?.isEmpty == false)
-        #expect(fixture.host.writes == 0)
+        let result = try AuthoringGuides.getPrompt(name: #require(fallback["name"].string), arguments: .object([
+            "request": .string("制作数学演示文稿"),
+        ]))
+        let embedded = try #require(result["messages"].array.first { $0["content"]["type"].string == "resource" })
+        #expect(embedded["content"]["resource"]["text"].string?.contains("https://typst.app/universe/") == true)
     }
 
-    @Test func bundledFilesHaveUniquePathsAndRunnableExamples() throws {
-        let rows = try AuthoringGuides.list()
-        let ids = rows.compactMap { $0["id"].string }
-        #expect(Set(ids).count == rows.count)
-        for id in ids {
-            let guide = try AuthoringGuides.read(id: id)
-            #expect(guide["guide"]["version"].string?.isEmpty == false)
-            let files = guide["files"].array
-            let paths = files.compactMap { $0["path"].string }
-            #expect(Set(paths).count == files.count)
+    @Test func bundledResourcesHaveUniqueURIsAndRunnableExamples() throws {
+        let resources = try AuthoringGuides.resources()
+        let uris = resources.compactMap { $0["uri"].string }
+        #expect(Set(uris).count == resources.count)
+        for prompt in try AuthoringGuides.prompts() {
+            let files = resources.filter {
+                $0["_meta"]["app.leftblank/authoringGuide"]["id"].string == prompt["name"].string
+            }
+            #expect(files.contains { $0["_meta"]["app.leftblank/entrypoint"].foundationValue as? Bool == true })
+            let paths = files.compactMap { $0["_meta"]["app.leftblank/path"].string }
             #expect(paths.contains("guide.md") && paths.contains("license.txt"))
-            #expect(files.contains { $0["entrypoint"].foundationValue as? Bool == true })
-            for path in paths {
-                let file = try AuthoringGuides.read(id: id, path: path)
-                let source = try #require(file["text"].string)
-                #expect(!source.isEmpty && source.utf8.count <= AuthoringGuides.maximumFileBytes)
-                #expect(file["path"].string == path)
+        }
+        for descriptor in resources {
+            let uri = try #require(descriptor["uri"].string)
+            let read = try AuthoringGuides.readResource(uri: uri)
+            let file = try #require(read["contents"].array.first)
+            let source = try #require(file["text"].string)
+            #expect(!source.isEmpty && source.utf8.count <= AuthoringGuides.maximumFileBytes)
+            #expect(file["uri"].string == descriptor["uri"].string)
+            #expect(file["mimeType"].string == descriptor["mimeType"].string)
+        }
+    }
+
+    @Test func resourceSelectorsAndPromptArgumentsAreValidated() throws {
+        for uri in [
+            "file:///etc/passwd", "leftblank://guides/missing/guide.md",
+            "leftblank://guides/dimensional-drawing/../catalog.json",
+            "leftblank://guides/dimensional-drawing/%2e%2e/catalog.json",
+            "leftblank://guides/dimensional-drawing/main.typ/../guide.md",
+            "leftblank://guides/dimensional-drawing/../xiaohei-illustrations/main.typ", "",
+        ] {
+            #expect(throws: (any Error).self) { try AuthoringGuides.readResource(uri: uri) }
+        }
+        #expect(throws: (any Error).self) {
+            try AuthoringGuides.getPrompt(name: "missing", arguments: .object(["request": .string("a")]))
+        }
+        for arguments: JSONValue in [
+            .null, .object([:]), .object(["request": .string("  \n")]), .object(["request": .number(2)]),
+            .object(["request": .string("a"), "unknown": .string("b")]),
+            .object(["request": .string(String(repeating: "中", count: AuthoringGuides.maximumFileBytes))]),
+        ] {
+            #expect(throws: (any Error).self) {
+                try AuthoringGuides.getPrompt(name: "dimensional-drawing", arguments: arguments)
             }
         }
-    }
-
-    @Test func guideSelectorsCannotReadProjectOrHostFiles() async throws {
-        let fixture = try AgentFixture()
-        defer { fixture.close() }
-        let missing = await fixture.call("read_authoring_guide", ["id": .string("arxiv-not-yet-shipped")])
-        #expect(missing.value["error"]["code"].string == "not_found")
-        #expect(missing.value["error"]["suggested_tool"].string == "list_authoring_guides")
-        for path in [
-            "../guide.md", "/etc/passwd", "main.typ/../guide.md", "../catalog.json", "catalog.json",
-            "../xiaohei-illustrations/main.typ", "",
-        ] {
-            let result = await fixture.call("read_authoring_guide", [
-                "id": .string("dimensional-drawing"), "path": .string(path),
-            ])
-            #expect(result.value["error"]["code"].string == "not_found")
-        }
-        #expect(await fixture.call("read_authoring_guide", [:]).value["error"]["code"].string == "invalid_params")
-        #expect(await fixture.call("list_authoring_guides", ["document_id": .string("x")])
-            .value["error"]["code"].string == "invalid_params")
     }
 
     @Test func startersCanBeMaterializedThroughExistingDocumentTools() async throws {
         let fixture = try AgentFixture()
         defer { fixture.close() }
-        let listed = await fixture.call("list_authoring_guides", [:])
-        for row in listed.value["items"].array {
-            let id = try #require(row["id"].string)
-            let guide = await fixture.call("read_authoring_guide", ["id": .string(id)])
-            let main = await fixture.call("read_authoring_guide", ["id": .string(id), "path": .string("main.typ")])
+        let resources = try AuthoringGuides.resources()
+        for prompt in try AuthoringGuides.prompts() {
+            let id = try #require(prompt["name"].string)
+            let files = resources.filter { $0["_meta"]["app.leftblank/authoringGuide"]["id"].string == id }
+            let main = try AuthoringGuides.readResource(uri: "leftblank://guides/\(id)/main.typ")["contents"].array[0]
             let created = await fixture.call("create_document", [
-                "title": .string(id), "source": main.value["text"], "request_id": .string(id + "-create"),
+                "title": .string(id), "source": main["text"], "request_id": .string(id + "-create"),
             ])
             #expect(!created.isError)
             let document = created.value["document"]["document_id"]
             var revisions: [String: JSONValue] = [:]
             var patch = "*** Begin Patch\n"
-            for file in guide.value["files"].array where file["path"].string != "main.typ" {
-                let path = try #require(file["path"].string)
-                let content = await fixture.call("read_authoring_guide", ["id": .string(id), "path": .string(path)])
-                let text = try #require(content.value["text"].string)
+            for file in files where file["_meta"]["app.leftblank/path"].string != "main.typ" {
+                let path = try #require(file["_meta"]["app.leftblank/path"].string)
+                let content = try AuthoringGuides.readResource(uri: #require(file["uri"].string))
+                let text = try #require(content["contents"].array.first?["text"].string)
                 revisions[path] = .null
                 patch += "*** Add File: \(path)\n" + text.components(separatedBy: "\n").map { "+" + $0 }
                     .joined(separator: "\n") + "\n"
@@ -139,7 +127,7 @@ struct AuthoringGuideTests {
             ])
             #expect(!applied.isError, "\(applied.value)")
             let read = await fixture.call("read_file", ["document_id": document, "path": .string("main.typ")])
-            #expect(read.value["text"].string == main.value["text"].string)
+            #expect(read.value["text"].string == main["text"].string)
         }
     }
 }

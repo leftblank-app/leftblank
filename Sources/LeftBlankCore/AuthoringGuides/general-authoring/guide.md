@@ -2,6 +2,8 @@
 
 Use this fallback when no specialized authoring guide fits the user's request, or when a guide needs an unfamiliar Typst feature. The method is to clarify the intended result, learn from authoritative documentation and a small working example, then adapt and inspect it. User instructions take precedence. Loading this guide does not provide the agent with network access or install a package.
 
+Read supporting files with `resources/read` at the exact URIs from `resources/list`: `leftblank://guides/general-authoring/<filename>`. `main.typ` is the native probe and `research-notes.md` records the brief and evidence.
+
 ## Form a compact brief
 
 Infer the reader, purpose, content structure, output dimensions, and required format from the material already available. Separate supplied facts, derived results, and provisional design choices. Ask only about unknowns that would materially change the result. For a rough draft, state reasonable assumptions and proceed.

@@ -69,4 +69,4 @@ The native Typst kits and demonstration scenes are newly written for LeftBlank;
 no upstream example images or rendering code are bundled. Complete original
 notices and adaptation notes are in AuthoringGuides/dimensional-drawing/license.txt
 and AuthoringGuides/xiaohei-illustrations/license.txt inside LeftBlank_LeftBlankCore.bundle,
-also readable through read_authoring_guide.
+also readable through MCP resources/read at leftblank://guides/<guide-id>/license.txt.

@@ -61,6 +61,8 @@ session: header "Mcp-Session-Id"
 header "Mcp-Session-Id" exists
 jsonpath "$.result.protocolVersion" == "2025-11-25"
 jsonpath "$.result.capabilities.tools.listChanged" == true
+jsonpath "$.result.capabilities.resources" exists
+jsonpath "$.result.capabilities.prompts" exists
 
 # The session issued above is honoured; one from an earlier helper (app restart) gets 404.
 POST {{url}}
@@ -107,6 +109,8 @@ HTTP 200
 [Asserts]
 jsonpath "$.result.tools" count == {{tool_count}}
 jsonpath "$.result.tools[?(@.name == 'str_replace')].inputSchema.properties.old_str" exists
+jsonpath "$.result.tools[?(@.name == 'list_authoring_guides')]" not exists
+jsonpath "$.result.tools[?(@.name == 'read_authoring_guide')]" not exists
 jsonpath "$.result.ttlMs" not exists
 jsonpath "$.result.cacheScope" not exists
 
@@ -129,8 +133,7 @@ HTTP 200
 jsonpath "$.result.structuredContent.platform" == "macos"
 jsonpath "$.result.structuredContent.mcp.connected" == true
 
-# A vague slide-illustration request can discover and read an entire method
-# without creating a document or installing a client-specific skill.
+# Standard prompts select a workflow; resources supply its bounded, read-only source files.
 POST {{url}}
 Authorization: Bearer {{token}}
 Content-Type: application/json
@@ -139,20 +142,16 @@ MCP-Protocol-Version: 2025-11-25
 {
   "jsonrpc": "2.0",
   "id": 601,
-  "method": "tools/call",
-  "params": {
-    "name": "list_authoring_guides",
-    "arguments": {
-      "query": "小黑"
-    }
-  }
+  "method": "prompts/list"
 }
 HTTP 200
 [Captures]
-illustration_guide: jsonpath "$.result.structuredContent.items[?(@.id == 'xiaohei-illustrations')].id"
+illustration_prompt: jsonpath "$.result.prompts[?(@.name == 'xiaohei-illustrations')].name"
 [Asserts]
-jsonpath "$.result.isError" == false
-jsonpath "$.result.structuredContent.items[?(@.id == 'xiaohei-illustrations')].id" == "xiaohei-illustrations"
+jsonpath "$.result.prompts[?(@.name == 'xiaohei-illustrations')].arguments[0].name" == "request"
+jsonpath "$.result.prompts[?(@.name == 'xiaohei-illustrations')].arguments[0].required" == true
+jsonpath "$.result.prompts[?(@.name == 'general-authoring')].description" contains "Fallback"
+jsonpath "$.result.ttlMs" not exists
 
 POST {{url}}
 Authorization: Bearer {{token}}
@@ -162,21 +161,15 @@ MCP-Protocol-Version: 2025-11-25
 {
   "jsonrpc": "2.0",
   "id": 602,
-  "method": "tools/call",
-  "params": {
-    "name": "read_authoring_guide",
-    "arguments": {
-      "id": "{{illustration_guide}}"
-    }
-  }
+  "method": "resources/list"
 }
 HTTP 200
+[Captures]
+illustration_source: jsonpath "$.result.resources[?(@.name == 'xiaohei-illustrations/main.typ')].uri"
 [Asserts]
-jsonpath "$.result.isError" == false
-jsonpath "$.result.structuredContent.path" == "guide.md"
-jsonpath "$.result.structuredContent.text" isString
-jsonpath "$.result.structuredContent.files[?(@.path == 'main.typ')].entrypoint" == true
-jsonpath "$.result.structuredContent.files[?(@.path == 'license.txt')]" exists
+jsonpath "$.result.resources[?(@.name == 'xiaohei-illustrations/guide.md')].mimeType" == "text/markdown"
+jsonpath "$.result.resources[?(@.name == 'xiaohei-illustrations/license.txt')]" exists
+jsonpath "$.result.ttlMs" not exists
 
 POST {{url}}
 Authorization: Bearer {{token}}
@@ -186,20 +179,22 @@ MCP-Protocol-Version: 2025-11-25
 {
   "jsonrpc": "2.0",
   "id": 603,
-  "method": "tools/call",
+  "method": "prompts/get",
   "params": {
-    "name": "read_authoring_guide",
+    "name": "{{illustration_prompt}}",
     "arguments": {
-      "id": "{{illustration_guide}}",
-      "path": "main.typ"
+      "request": "为这一页做一张配图：反馈帮助改进设计。"
     }
   }
 }
 HTTP 200
 [Asserts]
-jsonpath "$.result.isError" == false
-jsonpath "$.result.structuredContent.path" == "main.typ"
-jsonpath "$.result.structuredContent.text" contains "#import"
+jsonpath "$.result.messages[1].content.type" == "resource"
+jsonpath "$.result.messages[1].content.resource.uri" == "leftblank://guides/xiaohei-illustrations/guide.md"
+jsonpath "$.result.messages[1].content.resource.text" isString
+jsonpath "$.result.messages[2].content.text" contains "反馈帮助改进设计"
+jsonpath "$.result.messages[0].content.text" contains "feedback.typ"
+jsonpath "$.result.resultType" not exists
 
 POST {{url}}
 Authorization: Bearer {{token}}
@@ -209,21 +204,18 @@ MCP-Protocol-Version: 2025-11-25
 {
   "jsonrpc": "2.0",
   "id": 604,
-  "method": "tools/call",
+  "method": "resources/read",
   "params": {
-    "name": "read_authoring_guide",
-    "arguments": {
-      "id": "{{illustration_guide}}",
-      "path": "../catalog.json"
-    }
+    "uri": "{{illustration_source}}"
   }
 }
 HTTP 200
 [Asserts]
-jsonpath "$.result.isError" == true
-jsonpath "$.result.structuredContent.error.code" == "not_found"
+jsonpath "$.result.contents[0].uri" == "{{illustration_source}}"
+jsonpath "$.result.contents[0].text" contains "#import"
+jsonpath "$.result.ttlMs" not exists
+jsonpath "$.result.resultType" not exists
 
-# Browsing exposes a general fallback for requests without a specialized guide.
 POST {{url}}
 Authorization: Bearer {{token}}
 Content-Type: application/json
@@ -232,18 +224,14 @@ MCP-Protocol-Version: 2025-11-25
 {
   "jsonrpc": "2.0",
   "id": 605,
-  "method": "tools/call",
+  "method": "resources/read",
   "params": {
-    "name": "list_authoring_guides",
-    "arguments": {}
+    "uri": "leftblank://guides/xiaohei-illustrations/../catalog.json"
   }
 }
 HTTP 200
-[Captures]
-fallback_guide: jsonpath "$.result.structuredContent.items[?(@.fallback == true)].id"
 [Asserts]
-jsonpath "$.result.isError" == false
-jsonpath "$.result.structuredContent.items[?(@.fallback == true)].id" == "general-authoring"
+jsonpath "$.error.code" == -32602
 
 POST {{url}}
 Authorization: Bearer {{token}}
@@ -253,20 +241,69 @@ MCP-Protocol-Version: 2025-11-25
 {
   "jsonrpc": "2.0",
   "id": 606,
-  "method": "tools/call",
+  "method": "prompts/get",
   "params": {
-    "name": "read_authoring_guide",
+    "name": "general-authoring",
     "arguments": {
-      "id": "{{fallback_guide}}"
+      "request": "制作数学演示文稿"
     }
   }
 }
 HTTP 200
 [Asserts]
-jsonpath "$.result.isError" == false
-jsonpath "$.result.structuredContent.guide.fallback" == true
-jsonpath "$.result.structuredContent.text" contains "https://typst.app/universe/"
-jsonpath "$.result.structuredContent.files[?(@.path == 'main.typ')].entrypoint" == true
+jsonpath "$.result.messages[1].content.resource.text" contains "https://typst.app/universe/"
+jsonpath "$.result.messages[0].content.text" contains "research-notes.md"
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+{
+  "jsonrpc": "2.0",
+  "id": 607,
+  "method": "prompts/get",
+  "params": {
+    "name": "missing-guide",
+    "arguments": {
+      "request": "a"
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.error.code" == -32602
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+{
+  "jsonrpc": "2.0",
+  "id": 608,
+  "method": "prompts/get",
+  "params": {
+    "name": "{{illustration_prompt}}"
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.error.code" == -32602
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+{
+  "jsonrpc": "2.0",
+  "id": 609,
+  "method": "resources/templates/list"
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.resourceTemplates" count == 0
 
 POST {{url}}
 Authorization: Bearer {{token}}
@@ -627,6 +664,8 @@ HTTP 200
 [Asserts]
 jsonpath "$.result.supportedVersions" includes "2026-07-28"
 jsonpath "$.result.capabilities.tools" exists
+jsonpath "$.result.capabilities.resources" exists
+jsonpath "$.result.capabilities.prompts" exists
 
 POST {{url}}
 Authorization: Bearer {{token}}
@@ -655,3 +694,146 @@ jsonpath "$.result.tools" count == {{tool_count}}
 jsonpath "$.result.tools[*].name" includes "get_app_state"
 jsonpath "$.result.ttlMs" == 0
 jsonpath "$.result.cacheScope" == "private"
+
+# The same authoring primitives use the current protocol response shapes.
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: prompts/list
+{
+  "jsonrpc": "2.0",
+  "id": 610,
+  "method": "prompts/list",
+  "params": {
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientInfo": {
+        "name": "leftblank-hurl",
+        "version": "1"
+      },
+      "io.modelcontextprotocol/clientCapabilities": {}
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.prompts[?(@.name == 'dimensional-drawing')]" exists
+jsonpath "$.result.ttlMs" == 0
+jsonpath "$.result.cacheScope" == "private"
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: resources/list
+{
+  "jsonrpc": "2.0",
+  "id": 611,
+  "method": "resources/list",
+  "params": {
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientInfo": {
+        "name": "leftblank-hurl",
+        "version": "1"
+      },
+      "io.modelcontextprotocol/clientCapabilities": {}
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.resources[?(@.name == 'general-authoring/main.typ')]" exists
+jsonpath "$.result.ttlMs" == 0
+jsonpath "$.result.cacheScope" == "private"
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: resources/templates/list
+{
+  "jsonrpc": "2.0",
+  "id": 612,
+  "method": "resources/templates/list",
+  "params": {
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientInfo": {
+        "name": "leftblank-hurl",
+        "version": "1"
+      },
+      "io.modelcontextprotocol/clientCapabilities": {}
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.resourceTemplates" count == 0
+jsonpath "$.result.ttlMs" == 0
+jsonpath "$.result.cacheScope" == "private"
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: resources/read
+Mcp-Name: leftblank://guides/general-authoring/guide.md
+{
+  "jsonrpc": "2.0",
+  "id": 613,
+  "method": "resources/read",
+  "params": {
+    "uri": "leftblank://guides/general-authoring/guide.md",
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientInfo": {
+        "name": "leftblank-hurl",
+        "version": "1"
+      },
+      "io.modelcontextprotocol/clientCapabilities": {}
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.contents[0].text" contains "Typst Universe"
+jsonpath "$.result.resultType" == "complete"
+jsonpath "$.result.ttlMs" == 0
+jsonpath "$.result.cacheScope" == "private"
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: prompts/get
+Mcp-Name: dimensional-drawing
+{
+  "jsonrpc": "2.0",
+  "id": 614,
+  "method": "prompts/get",
+  "params": {
+    "name": "dimensional-drawing",
+    "arguments": {
+      "request": "画一个外壳"
+    },
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientInfo": {
+        "name": "leftblank-hurl",
+        "version": "1"
+      },
+      "io.modelcontextprotocol/clientCapabilities": {}
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.messages[1].content.resource.uri" == "leftblank://guides/dimensional-drawing/guide.md"
+jsonpath "$.result.resultType" == "complete"

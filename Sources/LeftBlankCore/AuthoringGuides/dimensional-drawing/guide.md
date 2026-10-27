@@ -40,7 +40,7 @@ For a physical product, replace the views with aligned front/top/right views and
 
 ## Read and use the starter files
 
-`read_authoring_guide` returns one logical file at a time. Read `drawing-kit.typ`, one relevant example, and `license.txt` by their listed logical paths. `main.typ` is a component card; `product.typ` is a physical enclosure. Their numbers define illustrative example designs and are not measurements of a user's product.
+`resources/read` returns one bundled file at a time. Discover exact URIs with `resources/list`; all files in this guide use `leftblank://guides/dimensional-drawing/<filename>`. Read `drawing-kit.typ`, one relevant example, and `license.txt` through those URIs. `main.typ` is a component card; `product.typ` is a physical enclosure. Their numbers define illustrative example designs and are not measurements of a user's product.
 
 Create a new document with the selected example as `main.typ`, then add `drawing-kit.typ` and the attribution text using the normal versioned editing tools. Both entry examples import `drawing-kit.typ` as a sibling. If preserving both examples in one project, keep `main.typ` and `product.typ` as separate compilation entries; do not concatenate their page setup. For an existing document, inspect its files and revisions first and avoid overwriting user work.
 

@@ -45,7 +45,7 @@ The native kit supplies useful drawing mechanics, not an automatic aesthetic gua
 
 ## Read and use the starter files
 
-Read `illustration-kit.typ`, a relevant entry example, and `license.txt` using their logical paths. `main.typ` shows an attention leak; `feedback.typ` shows a character reshaping an aircraft in response to its flight. They are different composition demonstrations, not a fixed scene library.
+Read `illustration-kit.typ`, a relevant entry example, and `license.txt` with `resources/read` at the exact URIs from `resources/list`: `leftblank://guides/xiaohei-illustrations/<filename>`. `main.typ` shows an attention leak; `feedback.typ` shows a character reshaping an aircraft in response to its flight. They are different composition demonstrations, not a fixed scene library.
 
 Create a document using the selected entry as `main.typ` and add `illustration-kit.typ` and the attribution text with the normal versioned editing tools. Both examples import `illustration-kit.typ` as a sibling. Preserve separate entry files if keeping both in one project. For an existing project, read current files and revisions before changing them.
 

@@ -6,46 +6,67 @@ select a suitable example, write editable Typst, and inspect the result using th
 existing document tools. The server does not run a second language model or make
 creative decisions for the client.
 
-## Discovery and loading
+## MCP discovery and loading
 
-`list_authoring_guides(query?, limit?, cursor?)` lists guide metadata. The query
-accepts short descriptive terms, including the catalog's Chinese and English
-keywords. Leave the query empty to browse. Use returned cursors rather than
-constructing them. A query with no match returns an empty list; it does not claim
-that an unsupported workflow is installed.
+Guides use the standard [MCP Resources](https://modelcontextprotocol.io/specification/2026-07-28/server/resources)
+and [Prompts](https://modelcontextprotocol.io/specification/2025-11-25/server/prompts)
+interfaces. Document operations remain Tools; there are no guide-reading tools.
 
-`read_authoring_guide(id, path?)` reads one file from a selected guide. Omitting
-`path` selects `guide.md`. The response includes the guide metadata, the requested
-logical path and text, and its available files. The file list's `entrypoint`
-boolean identifies runnable examples; it is false for helper modules and prose.
-File paths are exact catalog entries, not arbitrary filesystem access. The tools
-are available even for read-only or document-scoped connections because bundled
-guides contain no user document data.
+- `prompts/list` lists a prompt per guide, including a description, bilingual
+  keywords, and the required string argument `request`.
+- `prompts/get(name, arguments: {request})` returns messages containing the
+  workflow as an embedded resource, supporting resource URIs, and the supplied
+  request. It prepares context for the client's model; it does not run a model.
+- `resources/list` exposes all bundled guide files with exact URIs, descriptions,
+  and MIME types. `resources/read(uri)` returns bounded UTF-8 content.
+- `tools/list` and `tools/call` expose actual document operations such as
+  `create_document`, `apply_patch`, `compile_document`, and `render_page`.
 
-Metadata includes a `fallback` boolean. When no specialized method fits, browse
-the catalog without a query and load a guide marked `fallback: true`. This keeps
-fallback selection independent of a hardcoded guide ID. A search does not silently
-replace missing specialized matches with an unrelated guide.
+`prompts/list` has no standard natural-language search argument. The client or
+user selects a prompt from the returned descriptions, then passes the user's
+request to `prompts/get`. MCP describes prompts as user-controlled, commonly
+exposed as slash commands, while allowing other host interaction patterns.
+Server instructions can suggest discovery, but cannot make a host automatically
+select or execute a prompt. A client that only exposes Tools will not discover
+these guides until it also supports Resources or Prompts.
 
-Example sequence:
+An agent with resource access can alternatively read a workflow directly, without
+invoking a prompt. The user's explicit requirements take precedence in either
+path. Simple text edits need not load an unrelated workflow.
+
+Example protocol sequence (JSON-RPC envelopes and transport metadata omitted):
 
 ```text
-list_authoring_guides(query: "工业 尺寸")
-read_authoring_guide(id: "dimensional-drawing")
-read_authoring_guide(id: "dimensional-drawing", path: "drawing-kit.typ")
-read_authoring_guide(id: "dimensional-drawing", path: "main.typ")
-read_authoring_guide(id: "dimensional-drawing", path: "license.txt")
+prompts/list
+prompts/get {"name":"dimensional-drawing","arguments":{"request":"画一张设备外壳尺寸图，尺寸暂未提供"}}
+resources/read {"uri":"leftblank://guides/dimensional-drawing/drawing-kit.typ"}
+resources/read {"uri":"leftblank://guides/dimensional-drawing/product.typ"}
+resources/read {"uri":"leftblank://guides/dimensional-drawing/license.txt"}
 ```
 
-The agent can then create a document using the example's text as `main.typ`, add
-the helper file with `apply_patch`, and adapt both to the user's material. Existing
-documents still require normal reads and expected revisions. Guides do not bypass
-grants, revision checks, or write permissions.
+Each guide has one prompt. Each catalog file has one concrete URI of the form
+`leftblank://guides/<id>/<path>`. Only exact catalog entries can be read: caller
+URIs are never normalized into filesystem paths. There are no parameterized
+resources, so `resources/templates/list` returns an empty list.
 
-Server instructions and tool descriptions direct visual creation tasks to the
-catalog. They are guidance to the connected agent, not a guarantee that every
-host automatically loads or follows the workflow. The user's explicit style and
-scope take precedence. Simple text edits need not load an unrelated guide.
+Namespaced `_meta` fields describe application semantics, not extra MCP methods:
+`app.leftblank/authoringGuide` contains `id`, `version`, and `fallback`;
+resource metadata also contains `app.leftblank/path` and `app.leftblank/entrypoint`.
+When no specialized guide fits, the client can select the described general
+fallback. Human-readable descriptions remain sufficient for selection.
+
+All catalog lists fit in a single response; an unexpected cursor is rejected.
+Resources and Prompts are immutable during a helper's lifetime, so their optional
+change/subscription capabilities are not advertised. For protocol 2026-07-28,
+list/read responses use `ttlMs: 0` and `cacheScope: private`, requiring a fresh
+fetch after an app update. Legacy clients retain their version's response shape.
+Unknown resources, unknown prompts, and invalid prompt arguments return JSON-RPC
+InvalidParams errors rather than tool error payloads.
+
+These bundled resources contain no user documents and remain available with
+read-only or document-scoped grants. Creating/editing their copied source still
+uses normal Tools permissions and expected revisions. Prompt retrieval does not
+grant access to a document or authorize a write.
 
 ## Initial workflows
 
@@ -113,8 +134,9 @@ To add a capability such as mathematical presentations or arXiv paper authoring:
 5. Verify all resource references, compile each entry example using its logical
    project filenames, inspect rendered pages, and cover discovery/read behavior.
 
-No Swift switch over guide IDs, new domain-specific drawing tool, or transport
-change is needed. A catalog descriptor looks like:
+Resource and prompt descriptors are generated from the same catalog in the
+shared Swift layer. No Swift switch over guide IDs, new domain-specific drawing
+tool, or transport change is needed. A catalog descriptor looks like:
 
 ```json
 {

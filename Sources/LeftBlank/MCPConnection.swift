@@ -204,21 +204,25 @@ final class MCPConnection: ObservableObject {
             try input.fileHandleForWriting.close()
             try output.fileHandleForWriting.close()
             try errors.fileHandleForWriting.close()
-            try connection.send(.object(["bridge_version": .number(1), "port": .number(Double(port)),
+            try connection.send(.object(["bridge_version": .number(2), "port": .number(Double(port)),
                                          "token": .string(value.token),
                                          "instructions": .string(AgentTools.instructions),
-                                         "tools": .array(AgentTools.definitions.filter { value.canWrite || $0.readOnly }
-                                             .map { tool in .object([
-                                                 "name": .string(tool.name),
-                                                 "description": .string(tool.description),
-                                                 "inputSchema": tool.inputSchema,
-                                                 "outputSchema": .object(["type": .string("object")]),
-                                                 "annotations": .object([
-                                                     "readOnlyHint": .bool(tool.readOnly),
-                                                     "destructiveHint": .bool(tool.destructive),
-                                                     "openWorldHint": .bool(false),
-                                                 ]),
-                                             ]) })]))
+                                         "resources": .array(AuthoringGuides.resources()),
+                                         "prompts": .array(AuthoringGuides.prompts()),
+                                         "tools": .array(
+                                             AgentTools.definitions.filter { value.canWrite || $0.readOnly }
+                                                 .map { tool in .object([
+                                                     "name": .string(tool.name),
+                                                     "description": .string(tool.description),
+                                                     "inputSchema": tool.inputSchema,
+                                                     "outputSchema": .object(["type": .string("object")]),
+                                                     "annotations": .object([
+                                                         "readOnlyHint": .bool(tool.readOnly),
+                                                         "destructiveHint": .bool(tool.destructive),
+                                                         "openWorldHint": .bool(false),
+                                                     ]),
+                                                 ]) },
+                                         )]))
             try await withCheckedThrowingContinuation { continuation in
                 startup = continuation
                 startupTimeout = Task { [weak self] in
@@ -239,7 +243,7 @@ final class MCPConnection: ObservableObject {
             return
         }
         if message["event"].string == "ready" {
-            guard !isRunning, message["bridge_version"].int == 1, let assigned = message["port"].int,
+            guard !isRunning, message["bridge_version"].int == 2, let assigned = message["port"].int,
                   (1 ... 65535).contains(assigned), port == 0 || assigned == port
             else {
                 fail()
@@ -284,7 +288,32 @@ final class MCPConnection: ObservableObject {
         }
         let session = generation
         calls[id] = Task { [weak self] in
-            let result = await dispatcher.call(method, arguments: message["arguments"], access: configuration.access)
+            let result: AgentToolResult
+            do {
+                switch method {
+                case "resources/read":
+                    result = try AgentToolResult(AuthoringGuides.readResource(
+                        uri: message["arguments"]["uri"].string ?? "",
+                    ))
+                case "prompts/get":
+                    result = try AgentToolResult(AuthoringGuides.getPrompt(
+                        name: message["arguments"]["name"].string ?? "",
+                        arguments: message["arguments"]["arguments"],
+                    ))
+                default:
+                    result = await dispatcher.call(
+                        method,
+                        arguments: message["arguments"],
+                        access: configuration.access,
+                    )
+                }
+            } catch let error as AgentToolError {
+                result = AgentToolResult(.object(["error": error.json]), isError: true)
+            } catch {
+                result = AgentToolResult(.object(["error": AgentToolError(
+                    "unavailable", "The bundled authoring content could not be read.",
+                ).json]), isError: true)
+            }
             guard let self, generation == session else {
                 return
             }
