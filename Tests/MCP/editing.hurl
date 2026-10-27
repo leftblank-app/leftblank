@@ -129,6 +129,100 @@ HTTP 200
 jsonpath "$.result.structuredContent.platform" == "macos"
 jsonpath "$.result.structuredContent.mcp.connected" == true
 
+# A vague slide-illustration request can discover and read an entire method
+# without creating a document or installing a client-specific skill.
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+{
+  "jsonrpc": "2.0",
+  "id": 601,
+  "method": "tools/call",
+  "params": {
+    "name": "list_authoring_guides",
+    "arguments": {
+      "query": "小黑"
+    }
+  }
+}
+HTTP 200
+[Captures]
+illustration_guide: jsonpath "$.result.structuredContent.items[?(@.id == 'xiaohei-illustrations')].id"
+[Asserts]
+jsonpath "$.result.isError" == false
+jsonpath "$.result.structuredContent.items[?(@.id == 'xiaohei-illustrations')].id" == "xiaohei-illustrations"
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+{
+  "jsonrpc": "2.0",
+  "id": 602,
+  "method": "tools/call",
+  "params": {
+    "name": "read_authoring_guide",
+    "arguments": {
+      "id": "{{illustration_guide}}"
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.isError" == false
+jsonpath "$.result.structuredContent.path" == "guide.md"
+jsonpath "$.result.structuredContent.text" isString
+jsonpath "$.result.structuredContent.files[?(@.path == 'main.typ')].entrypoint" == true
+jsonpath "$.result.structuredContent.files[?(@.path == 'license.txt')]" exists
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+{
+  "jsonrpc": "2.0",
+  "id": 603,
+  "method": "tools/call",
+  "params": {
+    "name": "read_authoring_guide",
+    "arguments": {
+      "id": "{{illustration_guide}}",
+      "path": "main.typ"
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.isError" == false
+jsonpath "$.result.structuredContent.path" == "main.typ"
+jsonpath "$.result.structuredContent.text" contains "#import"
+
+POST {{url}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2025-11-25
+{
+  "jsonrpc": "2.0",
+  "id": 604,
+  "method": "tools/call",
+  "params": {
+    "name": "read_authoring_guide",
+    "arguments": {
+      "id": "{{illustration_guide}}",
+      "path": "../authoring-guides.json"
+    }
+  }
+}
+HTTP 200
+[Asserts]
+jsonpath "$.result.isError" == true
+jsonpath "$.result.structuredContent.error.code" == "not_found"
+
 POST {{url}}
 Authorization: Bearer {{token}}
 Content-Type: application/json

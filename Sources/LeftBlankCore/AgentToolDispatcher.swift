@@ -163,6 +163,22 @@ public final class AgentToolDispatcher {
                 .null
             return AgentToolResult(.object(state))
         }
+        if name == "list_authoring_guides" {
+            let values = try AuthoringGuides.list(query: args.string("query"))
+            return try AgentToolResult(page(
+                values,
+                args: args,
+                name: name,
+                snapshot: AgentTools.digest(AgentTools.canonical(.array(values))),
+                access: access,
+            ))
+        }
+        if name == "read_authoring_guide" {
+            return try AgentToolResult(AuthoringGuides.read(
+                id: args.string("id"),
+                path: args.string("path", default: "guide.md"),
+            ))
+        }
         if name == "list_documents" {
             let docs = try await library.list(
                 query: args.string("query"),
