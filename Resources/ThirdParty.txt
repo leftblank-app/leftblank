@@ -60,3 +60,12 @@ The macOS app additionally bundles the LeftBlank MCP helper built with rmcp 3.5.
 https://github.com/modelcontextprotocol/rust-sdk
 Its complete pinned dependency notices are in the macOS-only MCP-LICENSES.txt.
 The helper and its dependencies are not part of the iOS app or Tinymist engine.
+
+Bundled authoring guides adapt dimensional-drawing by Enes Ozturk (MIT)
+and ian-xiaohei-illustrations by Ian (MIT).
+https://github.com/enesozturk/dimensional-drawing/tree/5c457437c8c83524308aad3b7443e81adcc13153
+https://github.com/helloianneo/ian-xiaohei-illustrations/tree/8961915fcdbca57f288ec52b173056501d8a87f2
+The native Typst kits and demonstration scenes are newly written for LeftBlank;
+no upstream example images or rendering code are bundled. Complete original
+notices and adaptation notes are in dimensional-license.txt and xiaohei-license.txt
+inside LeftBlank_LeftBlankCore.bundle, also readable through read_authoring_guide.
