@@ -41,6 +41,18 @@ def needs(block):
     return set(value.strip('[]').replace(' ', '').split(',')) - {''}
 
 
+def condition_passes(block, context, *, cancelled=False):
+    """Evaluate the workflow's publication conditions with supplied job results."""
+    expression = field(block, 'if')
+    if expression == '>-':
+        expression = re.search(r'    if: >-\n((?:      .*\n)+)', block).group(1)
+    expression = ' '.join(expression.removeprefix('${{').removesuffix('}}').split())
+    expression = expression.replace('!cancelled()', repr(not cancelled))
+    expression = re.sub(r'needs\.[\w.-]+', lambda match: repr(context[match.group()]), expression)
+    expression = expression.replace('&&', ' and ').replace('||', ' or ')
+    return eval(expression, {'__builtins__': {}})
+
+
 class PathClassificationTests(unittest.TestCase):
     TABLE = {
         # Mac app, MCP helper and Mac-only packaging.
@@ -434,17 +446,38 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_preview_publishes_each_channel_after_its_checks(self):
         preview, publish = self.jobs['preview'], self.jobs['publish-preview']
-        self.assertEqual(needs(preview), {'changes', 'integration', 'appstore', 'gate'})
-        condition = re.search(r'    if: >-\n((?:      .*\n)+)', preview).group(1)
-        # Nightly needs only the Mac checks; alpha needs the whole PR-level gate.
-        for clause in ("!cancelled() && needs.changes.outputs.publish == 'true'",
-                       "needs.integration.result == 'success'",
-                       "needs.changes.outputs.channel == 'nightly' && needs.appstore.result == 'success'",
-                       "needs.changes.outputs.channel == 'alpha' && needs.gate.result == 'success'"):
-            self.assertIn(clause, ' '.join(condition.split()))
+        # Neither job may inherit a dependency on the combined gate or iPad jobs.
+        self.assertEqual(needs(preview), {'changes', 'integration', 'appstore'})
+        self.assertEqual(needs(publish), {'changes', 'preview'})
+        # Override implicit success(): alpha intentionally skips App Store checks.
+        self.assertEqual(field(publish, 'if'), "${{ !cancelled() && needs.preview.result == 'success' }}")
         self.assertIn('LEFTBLANK_PREVIEW_CHANNEL: ${{ needs.changes.outputs.channel }}', preview)
         self.assertIn('PREVIEW_CHANNEL: ${{ needs.changes.outputs.channel }}', publish)
         self.assertIn('channel: ${{ steps.select.outputs.channel }}', self.jobs['changes'])
+
+    def test_preview_conditions_require_only_the_selected_mac_checks(self):
+        for channel in ('alpha', 'nightly', 'unknown'):
+            for integration in ('success', 'failure', 'cancelled', 'skipped'):
+                for appstore in ('success', 'failure', 'cancelled', 'skipped'):
+                    for publish in ('true', 'false'):
+                        for cancelled in (False, True):
+                            context = {'needs.changes.outputs.channel': channel,
+                                       'needs.changes.outputs.publish': publish,
+                                       'needs.integration.result': integration,
+                                       'needs.appstore.result': appstore}
+                            expected = (not cancelled and publish == 'true' and integration == 'success' and
+                                        (channel == 'alpha' or (channel == 'nightly' and appstore == 'success')))
+                            with self.subTest(context=context, cancelled=cancelled):
+                                self.assertEqual(condition_passes(self.jobs['preview'], context, cancelled=cancelled),
+                                                 expected)
+
+    def test_publish_requires_a_successful_package_and_an_active_run(self):
+        for preview in ('success', 'failure', 'cancelled', 'skipped'):
+            for cancelled in (False, True):
+                with self.subTest(preview=preview, cancelled=cancelled):
+                    self.assertEqual(condition_passes(self.jobs['publish-preview'],
+                                                     {'needs.preview.result': preview}, cancelled=cancelled),
+                                     preview == 'success' and not cancelled)
 
 if __name__ == '__main__':
     unittest.main()

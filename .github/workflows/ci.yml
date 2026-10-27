@@ -32,7 +32,8 @@ permissions:
 # - Pull requests and main pushes run exactly the same checks: the selected
 #   Mac regression and iPad smoke suite (native unit tests plus a few curated
 #   UI scenarios on one 11-inch simulator). A main push that selected the Mac
-#   jobs then publishes the opt-in alpha channel of LeftBlank Preview.
+#   jobs then publishes the opt-in alpha channel of LeftBlank Preview once
+#   Mac regression passes, independently of the iPad results.
 # - The nightly schedule on main runs everything: the full iPad suite (every
 #   UI scenario on both sizes, coverage, memory metrics and sanitizers), Mac App
 #   Store validation and Mac memory safety, then signs and publishes LeftBlank
@@ -294,18 +295,16 @@ jobs:
           path: build/memory
           if-no-files-found: warn
           retention-days: 14
-  # The nightly channel publishes from the nightly run, or on demand from a
-  # main dispatch with publish_preview, after the Mac checks pass: an iPad
-  # failure fails the gate and is reported, but does not hold back the Mac
-  # preview. The alpha channel publishes from a Mac-affecting main push once
-  # its whole PR-level gate passes; a newer push cancels it with the run.
+  # Both channels depend only on their Mac checks. An iPad failure still
+  # fails the required gate, but neither delays nor blocks Mac publication.
+  # Nightly also requires App Store validation; alpha needs Mac regression.
   preview:
     name: Signed preview
-    needs: [changes, integration, appstore, gate]
+    needs: [changes, integration, appstore]
     if: >-
       !cancelled() && needs.changes.outputs.publish == 'true' && needs.integration.result == 'success' &&
       ((needs.changes.outputs.channel == 'nightly' && needs.appstore.result == 'success') ||
-      (needs.changes.outputs.channel == 'alpha' && needs.gate.result == 'success'))
+      needs.changes.outputs.channel == 'alpha')
     runs-on: macos-15
     timeout-minutes: 60
     outputs:
@@ -400,6 +399,9 @@ jobs:
   publish-preview:
     name: Publish preview update
     needs: [changes, preview]
+    # Alpha skips App Store validation. Override implicit success() so that
+    # a skipped ancestor cannot suppress publication of a successful package.
+    if: ${{ !cancelled() && needs.preview.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

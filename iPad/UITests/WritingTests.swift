@@ -198,31 +198,6 @@ final class WritingTests: XCTestCase {
         starter.tap()
     }
 
-    /// Focuses the editor with the caret at the end, from the keyboard. The
-    /// simulator drops the first synthesized shortcut after the editor takes
-    /// focus, before any typing (every time on iOS 27, with TextKit 1 too;
-    /// sometimes on iOS 26.2). A single Cmd+A then left the caret where the
-    /// tap put it, and the test's text landed inside the starter text
-    /// (nightly run 37855201726). Cmd+Down is idempotent: repeat it until the
-    /// status bar reports the end.
-    private func caretToEnd(_ editor: XCUIElement, in app: XCUIApplication) {
-        editor.tap()
-        let lines = (editor.value as? String ?? "").components(separatedBy: "\n")
-        let end = "\(lines.count - 1):\(lines.last?.utf16.count ?? 0)"
-        let position = app.staticTexts["source-position"].firstMatch
-        let reached = poll(timeout: 20) {
-            guard position.value as? String != end else {
-                return true
-            }
-            editor.typeKey(.downArrow, modifierFlags: .command)
-            return poll(timeout: 1) { position.value as? String == end }
-        }
-        if !reached {
-            capture("Caret at end")
-        }
-        expect(reached) == true
-    }
-
     /// Places the caret at the end of a short document and returns only once
     /// the editor has keyboard focus and reports the caret there.
     private func focusEndOfShortDocument(_ editor: XCUIElement, in app: XCUIApplication) {
@@ -670,7 +645,7 @@ final class WritingTests: XCTestCase {
     func testRenderedFunctionHelpKeepsTheManuscript() {
         let app = startWriting()
         let editor = app.textViews["manuscript"].firstMatch
-        caretToEnd(editor, in: app)
+        focusEndOfShortDocument(editor, in: app)
         let starter = editor.value as? String ?? ""
         editor.typeText("#align(center)[Hi]")
         editor.typeKey(.leftArrow, modifierFlags: .command)
