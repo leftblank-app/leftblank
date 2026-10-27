@@ -5,7 +5,7 @@ import Foundation
 public enum WelcomeDocument {
     public static func source(language: AppLanguage? = nil) -> String {
         let suffix = AppLanguage.resolve(language ?? L10n.language) == .simplifiedChinese ? ".zh-Hans" : ""
-        guard let url = L10n.resourceBundle.url(forResource: "Welcome" + suffix, withExtension: "typ"),
+        guard let url = CoreResources.bundle.url(forResource: "Welcome" + suffix, withExtension: "typ"),
               let source = try? String(contentsOf: url, encoding: .utf8)
         else {
             return DocumentTemplate.blank.source
@@ -19,13 +19,13 @@ public enum WelcomeDocument {
 
     public static func thumbnailURL(language: AppLanguage) -> URL? {
         let suffix = AppLanguage.resolve(language) == .simplifiedChinese ? ".zh-Hans" : ""
-        return L10n.resourceBundle.url(forResource: "welcome-cover" + suffix, withExtension: "png")
+        return CoreResources.bundle.url(forResource: "welcome-cover" + suffix, withExtension: "png")
     }
 
     public static let markFilename = "leftblank-mark.svg"
 
     public static func assets() throws -> [String: Data] {
-        guard let url = L10n.resourceBundle.url(forResource: "leftblank-mark", withExtension: "svg") else {
+        guard let url = CoreResources.bundle.url(forResource: "leftblank-mark", withExtension: "svg") else {
             throw CocoaError(.fileNoSuchFile)
         }
         return try [markFilename: Data(contentsOf: url)]

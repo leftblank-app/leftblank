@@ -14,8 +14,7 @@ public actor CodeBlockHighlighting {
 
     public func tokens(in source: String) -> [HighlightToken] {
         if context == nil {
-            let bundle = Bundle.main.url(forResource: "LeftBlank_LeftBlankCore", withExtension: "bundle")
-                .flatMap(Bundle.init(url:)) ?? Bundle.module
+            let bundle = CoreResources.bundle
             guard let url = bundle.url(forResource: "highlight.min", withExtension: "js"),
                   let script = try? String(contentsOf: url, encoding: .utf8),
                   let engine = JSContext()

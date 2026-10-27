@@ -426,6 +426,16 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(lint.group(1), "matrix.platform == 'engine' && needs.changes.outputs.mac != 'true'")
         self.assertIn('run: scripts/lint.sh', self.jobs['integration'])
 
+    def test_packaged_mcp_contract_gates_prs_and_preview_publication(self):
+        integration, preview = self.jobs['integration'], self.jobs['preview']
+        smoke = 'python3 scripts/smoke-app.py'
+        for block in (integration, preview):
+            self.assertIn(smoke, block)
+            self.assertIn('--hurl .tools/hurl/bin/hurl', block)
+            self.assertLess(block.index('scripts/prepare-mcp-hurl.sh'), block.index(smoke))
+        self.assertLess(integration.index('scripts/build.sh release'), integration.index(smoke))
+        self.assertLess(preview.index(smoke), preview.index('- name: Upload runnable app'))
+
     def test_gate_checks_every_job_and_treats_filtered_skips_as_success(self):
         gate = self.jobs['gate']
         self.assertEqual(field(gate, 'name'), 'build and test')
