@@ -14,7 +14,9 @@ import WebKit
         let web = fixture.web
         #expect(try await web
             .evaluateJavaScript("window.leftblankRestoreReading({page:1,x:.5,y:.4,viewportY:.2})") as? Bool == true)
-        try await Task.sleep(for: .milliseconds(500))
+        // WebKit delivers the scroll event and bounded restore passes asynchronously;
+        // a fixed sleep can read the previous anchor on a busy CI runner.
+        try await waitForJavaScript(web, condition: "window.leftblankCaptureReading()?.page === 1")
         let first = try #require(await web.evaluateJavaScript("window.leftblankCaptureReading()"))
         #expect(PreviewReadingAnchor(message: first)?.page == 1)
         // A rendering pass only adds glyphs. It must not restore an old page.
@@ -23,7 +25,7 @@ import WebKit
         document.getElementById('typst-container-main').scrollTop = 2200;
         document.querySelector('.typst-page').innerHTML = '<rect width="600" height="1000"/>';
         """)
-        try await Task.sleep(for: .milliseconds(500))
+        try await waitForJavaScript(web, condition: "window.leftblankCaptureReading()?.page === 2")
         let last = try #require(await web.evaluateJavaScript("window.leftblankCaptureReading()"))
         #expect(PreviewReadingAnchor(message: last)?.page == 2)
     }
