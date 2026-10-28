@@ -95,6 +95,7 @@ extension AgentToolDispatcher {
             access: access,
         ).objectValues
         value["incomplete"] = .bool(!snapshot.omitted.isEmpty)
+        value["path_base"] = .string("document_root")
         return .object(value)
     }
 

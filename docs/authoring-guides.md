@@ -84,7 +84,7 @@ labels and geometry editable; its look is a native sketch approximation, and
 quality still depends on adapting the visual action to the content.
 
 The guide explains the limits of the output path. LeftBlank MCP does not thereby
-gain image generation, arbitrary binary import, or PPTX export. A slide-sized
+gain image generation or PPTX export. Existing resources can be uploaded in a complete import_project manifest within its encoded size limit. A slide-sized
 Typst document is not a PowerPoint deck. An agent may use separately available
 capabilities when requested, but must describe what it actually delivered.
 

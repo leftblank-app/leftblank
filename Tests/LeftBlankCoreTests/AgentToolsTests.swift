@@ -20,6 +20,9 @@ struct AgentToolsTests {
         let read = await fixture.call("read_file", base)
         #expect(read.value["text"].string == "= Draft\nHello 中文 😀\n")
         let revision = try #require(read.value["revision"].string)
+        #expect(created.value["files"].array.first?["after_revision"].string == revision)
+        let createdMetadata = await fixture.call("get_document", ["document_id": .string(id)])
+        #expect(created.value["project_revision"].string == createdMetadata.value["project_revision"].string)
         var edit = base
         edit.merge([
             "old_str": .string("Hello"),
@@ -405,7 +408,7 @@ struct AgentToolsTests {
         #expect(wide.value["width"].int == AgentImage.maximumEdge)
         #expect((wide.value["height"].int ?? .max) < 700)
         #expect(await read("main.typ").value["error"]["code"].string == "not_image")
-        #expect(await read("missing.png").value["error"]["code"].string == "unavailable")
+        #expect(await read("missing.png").value["error"]["code"].string == "not_found")
         #expect(await read("../a.png").value["error"]["code"].string == "unsafe_path")
         #expect(await read("main.typ").images.isEmpty)
     }

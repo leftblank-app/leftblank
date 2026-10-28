@@ -20,6 +20,7 @@ public enum AgentProjectFiles {
         let pieces = path.components(separatedBy: "/")
         guard !path.isEmpty, path.utf8.count <= 1024, !path.contains("\\"), !path.contains("\0"),
               pieces.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") }),
+              pieces.first?.caseInsensitiveCompare(DocumentLibrary.metadataName) != .orderedSame,
               !path.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
         else {
             throw AgentToolError("unsafe_path", "Use a project-relative path without hidden components or traversal.")
@@ -48,8 +49,11 @@ public enum AgentProjectFiles {
         return current
     }
 
-    public static func capture(root: URL) throws -> AgentProjectSnapshot {
-        try CoordinatedFileAccess.read(root) { directory in
+    public static func capture(root: URL, paths: Set<String>? = nil) throws -> AgentProjectSnapshot {
+        if let paths {
+            return try capturePaths(paths, root: root)
+        }
+        return try CoordinatedFileAccess.read(root) { directory in
             let keys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey]
             guard let enumerator = FileManager.default.enumerator(
                 at: directory,
@@ -60,6 +64,10 @@ public enum AgentProjectFiles {
             }
             var files: [String: Data] = [:], omitted: [String] = [], size = 0, count = 0
             for case let file as URL in enumerator {
+                let path = String(file.path.dropFirst(directory.path.count + 1))
+                if path.caseInsensitiveCompare(DocumentLibrary.metadataName) == .orderedSame {
+                    continue
+                }
                 count += 1
                 guard count <= 2000 else {
                     throw AgentToolError(
@@ -67,7 +75,6 @@ public enum AgentProjectFiles {
                         "Agent access is limited to 2000 project entries.",
                     )
                 }
-                let path = String(file.path.dropFirst(directory.path.count + 1))
                 let values = try file.resourceValues(forKeys: keys)
                 if values.isSymbolicLink == true {
                     enumerator.skipDescendants()
@@ -100,6 +107,45 @@ public enum AgentProjectFiles {
                 files[path] = data
             }
             return AgentProjectSnapshot(root: directory, files: files, omitted: omitted.sorted())
+        }
+    }
+
+    /// Single-file reads and edit rechecks do not need to reread every project resource.
+    private static func capturePaths(_ paths: Set<String>, root: URL) throws -> AgentProjectSnapshot {
+        try CoordinatedFileAccess.read(root) { directory in
+            var files: [String: Data] = [:], omitted: [String] = [], size = 0
+            for path in paths.sorted() {
+                let file = try url(path, in: directory)
+                let values: URLResourceValues
+                do {
+                    values = try file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+                } catch let error as NSError where error.domain == NSCocoaErrorDomain &&
+                    [NSFileReadNoSuchFileError, NSFileNoSuchFileError].contains(error.code)
+                {
+                    continue
+                }
+                guard values.isRegularFile == true,
+                      LibraryCloudEnvironment.state(of: file) != .waitingForDownload
+                else {
+                    omitted.append(path)
+                    continue
+                }
+                guard let bytes = values.fileSize, bytes <= 16 * 1024 * 1024,
+                      size + bytes <= 64 * 1024 * 1024
+                else {
+                    throw AgentToolError(
+                        "project_too_large",
+                        "Agent access is limited to 16 MiB per file and 64 MiB per read.",
+                    )
+                }
+                let data = try Data(contentsOf: file)
+                guard data.count <= 16 * 1024 * 1024, size + data.count <= 64 * 1024 * 1024 else {
+                    throw AgentToolError("project_too_large", "The files exceeded the read budget.")
+                }
+                files[path] = data
+                size += data.count
+            }
+            return AgentProjectSnapshot(root: directory, files: files, omitted: omitted)
         }
     }
 

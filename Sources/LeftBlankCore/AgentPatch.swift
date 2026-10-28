@@ -48,17 +48,29 @@ public enum AgentPatch {
             switch kind {
             case "add":
                 guard sources[path] == nil, body.allSatisfy({ $0.hasPrefix("+") }) else {
-                    throw AgentToolError("invalid_patch", "Add requires an absent path and + prefixed lines.")
+                    throw AgentToolError(
+                        "invalid_patch",
+                        "Add requires an absent path and + prefixed lines.",
+                        details: ["path": .string(path)],
+                    )
                 }
                 changes.append(Change(path: path, text: body.map { String($0.dropFirst()) + "\n" }.joined()))
             case "delete":
                 guard sources[path] != nil, body.isEmpty else {
-                    throw AgentToolError("invalid_patch", "Delete requires an existing UTF-8 file and no hunks.")
+                    throw AgentToolError(
+                        "invalid_patch",
+                        "Delete requires an existing UTF-8 file and no hunks.",
+                        details: ["path": .string(path), "requires_existing_text": .bool(true)],
+                    )
                 }
                 changes.append(Change(path: path, text: nil))
             default:
                 guard let source = sources[path], !body.isEmpty else {
-                    throw AgentToolError("invalid_patch", "Update requires an existing UTF-8 file and hunks.")
+                    throw AgentToolError(
+                        "invalid_patch",
+                        "Update requires an existing UTF-8 file and hunks.",
+                        details: ["path": .string(path), "requires_existing_text": .bool(true)],
+                    )
                 }
                 try changes.append(Change(path: path, text: update(source, body: body, path: path)))
             }

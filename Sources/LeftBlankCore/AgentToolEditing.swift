@@ -46,7 +46,15 @@ extension AgentToolDispatcher {
             changes = [AgentPatch.Change(path: path, text: text.replacingCharacters(in: match, with: new))]
             expected = [path: args["expected_revision"]]
         case "apply_patch":
-            changes = try AgentPatch.parse(args.string("input"), sources: snapshot.texts)
+            do { changes = try AgentPatch.parse(args.string("input"), sources: snapshot.texts) }
+            catch let error as AgentToolError {
+                if case .bool(true)? = error.details["requires_existing_text"],
+                   let path = error.details["path"]?.string, snapshot.texts[path] == nil
+                {
+                    throw unreadable(path, snapshot: snapshot)
+                }
+                throw error
+            }
             expected = args["expected_revisions"].objectValues
         case "restore_file_version":
             let path = args.string("path")
@@ -68,19 +76,21 @@ extension AgentToolDispatcher {
             }
             if let data = snapshot.files[change.path] {
                 guard snapshot.texts[change.path] != nil else {
-                    throw AgentToolError(
-                        "not_text",
-                        "Binary or oversized files cannot be patched.",
-                    )
+                    throw unreadable(change.path, snapshot: snapshot)
                 }
                 guard expected[change.path]?.string == revision(data, document: document, path: change.path) else {
-                    throw AgentToolError("revision_conflict", "Read the current revision of \(change.path).")
+                    throw AgentToolError(
+                        "revision_conflict",
+                        "Read the current file revision before editing.",
+                        details: ["path": .string(change.path)],
+                    )
                 }
             } else {
                 guard expected[change.path]?.isNull == true, !snapshot.omitted.contains(change.path) else {
                     throw AgentToolError(
                         "revision_conflict",
                         "An absent file requires a null revision and an available parent directory.",
+                        details: ["path": .string(change.path)],
                     )
                 }
             }
@@ -88,6 +98,10 @@ extension AgentToolDispatcher {
                 throw AgentToolError(
                     "file_too_large",
                     "Edited text exceeds 2 MiB.",
+                    details: [
+                        "path": .string(change.path),
+                        "maximum_bytes": .number(Double(AgentTools.maximumTextBytes)),
+                    ],
                 )
             }
         }
@@ -108,13 +122,18 @@ extension AgentToolDispatcher {
                 versions[change.path] = version.id.uuidString
             }
         }
-        let current = try await capture(document)
+        let current = try await capture(document, paths: Set(changes.map(\.path)))
         for change in changes where current.files[change.path] != snapshot.files[change.path] {
-            throw AgentToolError("revision_conflict", "\(change.path) changed while preparing the edit.")
+            throw AgentToolError(
+                "revision_conflict",
+                "The file changed while preparing the edit.",
+                details: ["path": .string(change.path)],
+            )
         }
         try Task.checkCancellation()
         try host.agentValidate(changes, document: document)
         var results: [JSONValue] = [], issue: JSONValue?, saved = true
+        var unconfirmed: [JSONValue] = []
         for change in changes {
             do {
                 let saveStatus = try host.agentApply(change, before: snapshot.files[change.path], document: document)
@@ -130,16 +149,32 @@ extension AgentToolDispatcher {
                     "save_status": .string(saveStatus), "deleted": .bool(change.text == nil),
                     "diff": AgentDiff.json(before: snapshot.texts[change.path], after: change.text),
                 ]))
+                if saveStatus != "saved", issue == nil {
+                    issue = AgentToolError(
+                        "save_failed",
+                        "The change was applied but has not been saved successfully.",
+                        details: ["path": .string(change.path),
+                                  "mutation_state": .string("applied")],
+                    ).json
+                }
             } catch {
-                issue = failure(error).value["error"]
+                var details = failure(error).value["error"].objectValues
+                details["path"] = .string(change.path)
+                details["mutation_state"] = .string(results.isEmpty ? "unknown" : "partially_applied")
+                issue = .object(details)
+                unconfirmed.append(.string(change.path))
                 break
             }
         }
         let updated = try? await capture(document)
+        let applied = Set(results.compactMap { $0["path"].string })
+        let remaining = changes.filter { !applied.contains($0.path) }.map { JSONValue.string($0.path) }
         return AgentToolResult(.object([
             "request_id": args["request_id"],
-            "status": .string(issue == nil ? "applied" : results.isEmpty ? "rejected" : "partially_applied"),
+            "status": .string(issue == nil || remaining.isEmpty ? "applied" : results
+                .isEmpty ? "rejected" : "partially_applied"),
             "files": .array(results), "error": issue ?? .null,
+            "remaining_paths": .array(remaining), "unconfirmed_paths": .array(unconfirmed),
             "project_revision": updated.map { .string(projectRevision($0, document: document)) } ?? .null,
         ]), isError: issue != nil || !saved)
     }
