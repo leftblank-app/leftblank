@@ -71,6 +71,8 @@ class PathClassificationTests(unittest.TestCase):
         'scripts/build-tinymist.sh': {'mac'},
         'scripts/tinymist-native-tls.patch': {'mac'},
         'scripts/release.sh': {'mac'},
+        'scripts/staple_app.py': {'mac'},
+        'scripts/test-staple-app.py': {'mac'},
         'scripts/publish-preview.py': {'mac'},
         'scripts/preview_channels.py': {'mac'},
         'scripts/check-memory.sh': {'mac'},
@@ -432,6 +434,17 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn('"$lint" lint --strict --config .swiftlint.yml --no-cache || status=1', lint)
         self.assertIn('python3 scripts/test-swiftlint-policy.py "$lint" || status=1', lint)
         self.assertIn('exit "$status"', lint)
+
+    def test_ticket_retry_contracts_gate_preview_and_tagged_releases(self):
+        contract = 'python3 scripts/test-staple-app.py'
+        self.assertIn(contract, self.jobs['integration'])
+        self.assertIn(contract, jobs('release.yml')['validate'])
+        release = (ROOT / 'scripts/release.sh').read_text()
+        ticket = 'python3 scripts/staple_app.py "$app"'
+        self.assertLess(release.index('if result.get("status") != "Accepted"'), release.index(ticket))
+        self.assertLess(release.index(ticket), release.index('codesign --verify --deep --strict'))
+        self.assertLess(release.index(ticket), release.index('spctl --assess'))
+        self.assertLess(release.index(ticket), release.index('archive="LeftBlank-${version}'))
 
     def test_packaged_mcp_contract_gates_prs_and_preview_publication(self):
         integration, preview = self.jobs['integration'], self.jobs['preview']

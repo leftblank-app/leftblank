@@ -47,6 +47,7 @@ MAC = (
     'scripts/publish-preview.py',
     'scripts/release.sh', 'scripts/release-appstore.sh', 'scripts/running_app.py', 'scripts/sign-app.sh',
     'scripts/smoke-app.py', 'scripts/sparkle-tools.sh', 'scripts/test-icloud-profile.py',
+    'scripts/staple_app.py', 'scripts/test-staple-app.py',
     'scripts/test-preview-release.py', 'scripts/test-running-app.py', 'scripts/test-tinymist-build.py',
     'scripts/test-swiftlint-policy.py',
     'scripts/test.sh', 'scripts/tinymist-native-tls.patch', 'scripts/verify-update.swift',

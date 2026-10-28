@@ -204,6 +204,7 @@ jobs:
         run: |
           source scripts/environment.sh
           python3 scripts/test-preview-release.py
+          python3 scripts/test-staple-app.py
           python3 scripts/test-appstore-release.py
           python3 scripts/test-running-app.py
           python3 scripts/test-tinymist-build.py

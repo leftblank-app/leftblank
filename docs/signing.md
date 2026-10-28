@@ -42,6 +42,8 @@ continues to verify only Developer ID packaging.
 
 Missing credentials, invalid certificates, team mismatch, rejected notarization or timeout stop public publication. There is no fallback to development signing. The temporary signing keychain joins the search list so codesign can locate the identity and chain. Cleanup restores the old list and removes the temporary keychain, certificate and API key. Notarization submission results remain available for investigation; private keys are never uploaded as artifacts.
 
+Ticket stapling and validation each retry explicit Apple network errors up to five attempts, waiting 15, 30, 60 and 120 seconds. Every attempt is saved under `build/notarization/stapler-*.log` in the release diagnostics. Missing, invalid or revoked tickets still stop publication, as does an exhausted network retry; signature and Gatekeeper checks remain mandatory.
+
 Development builds use `scripts/build.sh release`. Set `LEFTBLANK_DISTRIBUTION=preview` to package `build/LeftBlank Preview.app`; `LEFTBLANK_BUILD_NUMBER` must be an increasing `run_number.run_attempt` for published builds. `scripts/release.sh` requires the settings above. Local temporary release material stays on the external SSD.
 
 ## Completed verification
