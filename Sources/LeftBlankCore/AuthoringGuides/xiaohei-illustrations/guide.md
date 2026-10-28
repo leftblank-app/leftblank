@@ -51,7 +51,7 @@ Create a document using the selected entry as `main.typ` and add `illustration-k
 
 The kit provides sketch strokes, arrowheads, labels, and a body silhouette. The caller supplies arm and leg paths so the pose can fit the new scene; do not reuse a generic pose when the topic calls for another action. Keep labels, character, props, and relationships editable. The native route uses no external package, raster image, or image-generation service.
 
-If the agent separately has an image-generation capability and the user wants a richer bitmap illustration, it may use that capability for the visual pass. LeftBlank MCP does not itself provide image generation or arbitrary binary upload. Do not promise those tools, silently replace technical structure with a generated image, or claim a raster image is editable vector content. Keep technical labels and factual relationships under deterministic control when their accuracy matters.
+If the agent separately has an image-generation capability and the user wants a richer bitmap illustration, it may use that capability for the visual pass. LeftBlank MCP does not itself generate images. Existing bitmap assets can be uploaded with a complete import_project file manifest using data_base64 (6 MiB encoded manifest limit). Do not promise those tools, silently replace technical structure with a generated image, or claim a raster image is editable vector content. Keep technical labels and factual relationships under deterministic control when their accuracy matters.
 
 ## Visual QA and delivery
 

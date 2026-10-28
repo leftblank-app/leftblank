@@ -18,8 +18,8 @@ LeftBlank 的技术内核是面向 Typst 的代码编辑器，用户体验仍围
 
 本次从 origin/main 的 `3b98e88` 开始实现：
 
-- 共享 Swift 层提供 16 个工具的清单、schema 校验、dispatcher、版本检查、精确替换、patch、项目文件读取与搜索、文档管理和文件历史恢复。对外列表类结果统一放在 items；历史结果放在 versions，修改结果放在 files。
-- macOS 层通过 Workspace 接入未保存 buffer、原生撤销、IME 与同步冲突保护。关闭的文件使用协调访问；单个编辑文件上限 2 MiB，项目读取上限 2000 项、单个资源 16 MiB、合计 64 MiB。超出上限明确报错。所有工具调用暂时串行，并发请求返回 busy。
+- 共享 Swift 层提供统一工具清单、schema 校验、dispatcher、版本检查、精确替换、patch、项目文件读取与搜索、文档管理和文件历史恢复。对外列表类结果统一放在 items；历史结果放在 versions，修改结果放在 files。
+- macOS 层通过 Workspace 接入未保存 buffer、原生撤销、IME 与同步冲突保护。关闭的文件使用协调访问；单个编辑文件上限 2 MiB，项目读取上限 2000 项、单个资源 16 MiB、合计 64 MiB。超出上限明确报错。读取可以并发，写操作独占执行；引擎调用依次执行。
 - Rust helper 使用锁定的 rmcp 3.5.0，只承担 MCP transport、认证与私有 JSON 行协议。macOS 构建和签名脚本打包 helper；iPad 继续使用独立依赖图，CI 增加产物检查。
 - 入口位于 **设置 → 编程智能体**：默认关闭；新启用的连接可读写文稿库里的所有文档（包括新建文稿），启用后复制配置提示词。设置页保留连接启停和复制提示词，删除文稿范围与只读权限选项。既有连接继续遵守已保存的权限，重新启用后采用新的完整文稿权限。状态表示本机服务已启用，不代表某个 agent 已完成连接。停用会撤销当前凭证，再次启用使用新凭证。配置不会同步到 iCloud。
 - 写操作去重只保留当前 helper/dispatcher 生命周期内最近 256 个请求，按授权身份隔离；不承诺重启后或缓存过期后的 exactly-once。游标最多保留 128 个，服务重启后失效。
@@ -36,6 +36,79 @@ Hurl 已接入 GitHub CI，针对真实 helper、Swift dispatcher 和隔离文�
 开发构建使用 `scripts/build.sh`，会构建并打包 Rust helper；直接 `swift build` 仅编译 Swift，不产生完整可连接的 app。调试时使用隔离文档库，不要把用户私有 connection.json 或 access.json 放进仓库。
 
 创作方法按 MCP 标准分工：Resources（`resources/list`、`resources/read`）暴露只读方法、Typst 组件、示例和许可；Prompts（`prompts/list`、`prompts/get`）按 guide 生成带 `request` 参数的创作模板；Tools 负责实际文档读写、编译和渲染。Prompt 列举接口不是自然语言搜索，客户端或用户根据描述选择模板。三者共用一份目录清单，每个 guide 独立目录。首批包括尺寸图、小黑配图和通用指南；没有专门方法时可选 fallback，使用客户端已有联网工具学习 Typst Universe 包及版本化示例。新增 guide 自动生成 Resources 和 Prompt，无需增加风格专属工具；服务端不承担模型调用或网页搜索。扩展方式、客户端兼容范围和完整工作流见[创作指南](authoring-guides.md)。
+
+## 项目创建、路径与错误恢复（2026-10-28）
+
+新建单文件时直接 `create_document(title, source, request_id)`，source 是完整的 main.typ。
+已有文稿使用当前版本进行 `str_replace` 或批量 `apply_patch`；新增路径采用 Add File 和 null 前置版本，
+不需要先逐个读取不存在的文件。创建与导入均要求文库范围的编辑权限。
+
+### 一次导入完整项目
+
+`import_project(title, entry, files, request_id)` 接收明确的上传清单。每项包含相对路径 path，
+以及且仅有一个 text 或 data_base64 字符串；二进制使用标准 Base64。entry 必须指向清单中实际存在、
+不超过 2 MiB 的 UTF-8 .typ 文件，支持嵌套入口。示例业务参数：
+
+```json
+{
+  "title": "Book",
+  "entry": "book/main.typ",
+  "files": [
+    {"path": "book/main.typ", "text": "#include \"../chapters/intro.typ\"\n"},
+    {"path": "chapters/intro.typ", "text": "= Introduction\n"},
+    {"path": "assets/data.bin", "data_base64": "AAEC/w=="}
+  ],
+  "request_id": "import-book-1"
+}
+```
+
+本机 agent 可以在工作目录生成文件后，用本地程序序列化清单并提交 MCP 调用，无需让模型再输出一遍所有文件。
+该接口传输明确的文件内容，不要求应用读取 agent 的任意本地目录，因而不依赖额外的目录沙箱访问授权。
+应用不生成图片；agent 已持有的图片、字体和其他资源可以随项目一同导入。
+
+完整 files JSON 的上限为 6 MiB，计入 JSON 转义、路径与 Base64 开销。文件和隐含父目录合计最多 2000 项；
+单个资源最多 16 MiB、项目最多 64 MiB，实际上传同时受到更小的编码清单上限约束。文本字段最多 2 MiB。
+超限时明确返回大小与修复指引；传输层在超过 8 MiB IPC 帧之前拒绝请求，不让大请求断开应用桥接。
+应剔除生成的 PDF、预览和其他非必要文件，或压缩资源。当前不提供分块上传、ZIP 接收或覆盖现有项目的二进制资源接口。
+
+清单先检查所有路径、入口、内容、重复与文件/目录冲突，再写入文库的暂存目录；全部成功后才发布新文档。
+拒绝绝对路径、父目录跳转、隐藏组件、内部元数据 document.json，以及大小写或 Unicode 规范化造成的路径别名。
+失败与取消会清理暂存目录，不发布半份项目。新导入路径与清单保持一致，不额外加 Project/ 前缀；
+旧文件夹导入保留原有路径。结果返回 document_id、准确入口、逐文件版本与 project_revision，可直接继续编辑或编译。
+
+### 路径基准
+
+所有 MCP path、entry 与 files[].path 均相对于文档根目录。get_document 返回 path_base=document_root、
+entry、typst_root=library_root 和 typst_document_prefix，例如 /<document UUID>/。以 list_files 返回值为准，
+旧导入项目可能有 Project/ 前缀。内部 document.json 不被列举、读取、搜索或修改。
+
+Typst 源码中的相对引用从该源码文件的目录解析；以 / 开头的引用从文库 Documents 逻辑根解析，
+与编辑器预览保持一致。MCP 编译、渲染和查询在独立副本中复现这层 UUID 目录结构，但只复制当前授权文档，
+不自动扩大到其他文档。跨文档依赖未被捕获时报告失败，并给出依赖检查指引。
+
+单文件读取、精确替换与历史恢复只捕获目标文件，编辑前的并发检查只复查受影响路径；
+编辑后仍完整捕获项目以返回真实 project_revision。编译和列表保持完整项目预算，不缓存过期输入。
+成功生成 PDF 的 unverified 状态不是工具错误，表示外部包与系统字体尚未完全固定。
+
+### 可执行的错误恢复
+
+业务错误继续使用 MCP isError=true 和 error.code/message。保留既有 not_found 等错误码，
+额外提供 parameter/expected（参数校验）、安全的文档相对 path、path_base、tool、document_id 和 mutation_state。
+缺失路径、下载中、非 UTF-8/二进制、超出文本编辑限额、权限不足分别返回不同原因。
+Foundation 文件错误不会直接泄露用户文库的绝对路径。编译诊断保留 code、source、range 与文档相对路径。
+
+error.recovery 包含 instructions、next_calls（tool 与完整 arguments）、retry 和 request_id 指引。
+恢复调用用于发现或读取当前状态，不自动执行写操作或扩大授权。例如缺失 main.typ 时引导 list_files，
+再使用实际入口；版本冲突引导读取当前内容；游标过期保留原查询并删除 cursor；参数错误指出字段与约束。
+编译失败保留实际 status、diagnostics、engine_message，并提示源码引用规则及未上传资源。
+
+写结果区分 applied、partially_applied 与不确定状态；保存失败明确报告已应用但未保存。
+files、remaining_paths 与 unconfirmed_paths 帮助 agent 核实每个文件后只处理剩余工作。
+传输超时或断线不能声称没有修改。request_id 相同且参数相同会返回缓存结果（包括失败）；
+修正参数或重新规划写入须使用新 ID，结果未知时先读取核实，禁止盲目重放。
+
+真实 MCP 回归由 Tests/MCP/project-import.hurl 覆盖拒绝导入无残留、源码与图片导入、
+根据错误提供的工具发现准确路径、修复读取、即时编译以及具体参数错误。该场景随已有 runner 在 GitHub CI 执行。
 
 ## 现有能力
 
@@ -224,7 +297,7 @@ read_file 的历史读取只返回 version_id 和不可变快照信息，不伪�
 
 str_replace 与 apply_patch 是有意保留的两种表达方式，复用同一个 EditBatch；不再加第三套全文写入或范围编辑入口。get_diagnostics 读取缓存状态，compile_document 执行严格验证，职责不同。get_document 只返回文档状态，list_files 只负责目录，不再重复返回整棵文件树。
 
-“完整”在本版指文本项目的发现、读取、搜索、增删改、编译和文件级恢复闭环。页面视觉审查、二进制资源导入和最终文件导出是单独的出版工作流，不能被宣称已由源码工具覆盖；下文明确列出后续边界。
+初始 16 个工具覆盖文本项目的发现、读取、搜索、增删改、编译和文件级恢复。后续加入的 render_page、read_image 与本次 import_project 扩展了视觉审查及项目资源导入；新增契约见上文，不能将这些能力混同为最终文件导出。
 
 文档元数据版本、文件内容版本、项目版本和历史快照 ID 是不同概念，均不可相互代用。版本 token 由服务端产生，必须处理重启、磁盘变化和 iCloud 切换，不能直接暴露 Workspace 内部递增整数。
 

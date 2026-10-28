@@ -212,11 +212,14 @@ extension Workspace: AgentToolHost {
     ) async throws -> T {
         let directory = stateDirectory.appendingPathComponent("AgentCompiles/" + UUID().uuidString)
         let root = directory.appendingPathComponent("Project"), output = directory.appendingPathComponent("Output")
+        // Match DocumentLibrary.compilationRoot: / starts at Documents, above this document's UUID.
+        // Only this authorized document is copied; unrelated library documents remain inaccessible.
+        let documentRoot = root.appendingPathComponent(snapshot.root.lastPathComponent)
         defer { try? FileManager.default.removeItem(at: directory) }
         try await Task.detached(priority: .utility) {
             try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
             for (path, data) in snapshot.files {
-                let file = root.appendingPathComponent(path)
+                let file = documentRoot.appendingPathComponent(path)
                 try FileManager.default.createDirectory(
                     at: file.deletingLastPathComponent(),
                     withIntermediateDirectories: true,
@@ -225,7 +228,9 @@ extension Workspace: AgentToolHost {
             }
         }.value
         try Task.checkCancellation()
-        let session = IsolatedAgentEngine(directory: directory, source: root.appendingPathComponent(entry))
+        let session = IsolatedAgentEngine(
+            directory: directory, documentRoot: documentRoot, source: documentRoot.appendingPathComponent(entry),
+        )
         defer { session.engine.stop() }
         await session.start(text: snapshot.texts[entry] ?? "", output: output)
         return try await body(session)
@@ -262,33 +267,41 @@ extension Workspace: AgentToolHost {
 private final class IsolatedAgentEngine: AgentEngineSession {
     let engine = TinymistClient()
     let directory: URL
+    let documentRoot: URL
     let source: URL
     private var root: URL {
         directory.appendingPathComponent("Project")
     }
 
     private var started = false
+    private var startupMessage: String?
     private var issues: [String: [JSONValue]] = [:]
 
-    init(directory: URL, source: URL) {
+    init(directory: URL, documentRoot: URL, source: URL) {
         self.directory = directory
+        self.documentRoot = documentRoot
         self.source = source
     }
 
     func start(text: String, output: URL) async {
-        let root = root
+        let root = root, documentRoot = documentRoot
         engine.onNotification = { [weak self] method, params in
             guard method == "textDocument/publishDiagnostics", let uri = params["uri"].string,
                   let url = URL(string: uri),
-                  url.path.hasPrefix(root.path + "/")
+                  url.path.hasPrefix(documentRoot.path + "/")
             else {
                 return
             }
-            let path = String(url.path.dropFirst(root.path.count + 1))
+            let path = String(url.path.dropFirst(documentRoot.path.count + 1))
             self?.issues[path] = params["diagnostics"].array.prefix(100).map { item in
                 .object([
                     "path": .string(path),
-                    "message": .string(AgentTools.excerpt(item["message"].string ?? "", limit: 2000)),
+                    "message": .string(AgentTools.excerpt(
+                        (item["message"].string ?? "")
+                            .replacingOccurrences(of: root.path, with: "<library_root>"), limit: 2000,
+                    )),
+                    "code": item["code"], "source": item["source"],
+                    "path_base": .string("document_root"),
                     "severity": .string([1: "error", 2: "warning", 3: "info",
                                          4: "hint"][item["severity"].int ?? 1] ?? "info"),
                     "range": item["range"],
@@ -300,7 +313,9 @@ private final class IsolatedAgentEngine: AgentEngineSession {
             try await engine.start(root: root, outputDirectory: output)
             try engine.open(source, text: text, version: 1)
             started = true
-        } catch {}
+        } catch {
+            startupMessage = error.localizedDescription
+        }
     }
 
     func run(_ export: AgentEngineExport) async throws -> AgentEngineOutput {
@@ -310,7 +325,7 @@ private final class IsolatedAgentEngine: AgentEngineSession {
     /// Without options the command writes into the private output folder; with them, data stays in memory.
     func run(command: String, options: JSONValue?) async throws -> AgentEngineOutput {
         guard started else {
-            return finish(.engineUnavailable)
+            return finish(.engineUnavailable, message: startupMessage)
         }
         let response: JSONValue
         do {

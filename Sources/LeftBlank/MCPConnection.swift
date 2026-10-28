@@ -354,6 +354,7 @@ final class MCPConnection: ObservableObject {
         3. 按已安装客户端官方文档配置用户私有范围的 Streamable HTTP 服务，凭证通过 Authorization Bearer 使用。保留其他配置；同名不同应用的连接报告冲突。不要修改全局审批或信任设置。确保客户端重启后仍能取得凭证。
         4. 重载服务，列出工具并只读调用 get_app_state，验证应用和 instance_id。不要读取正文或修改文档来测试安装。无法在当前会话重载时，报告配置已写入、尚未验证，并给出重连步骤。
         5. 简要报告配置位置、服务名称和验证结果，不显示凭证。遇到文件缺失、身份不符、认证失败或重定向时停止，让我回到应用重新启用连接。不要扫描凭证或绕开 MCP 访问文档库。
+        连接后的创作请遵循 server instructions：单文件使用 create_document，多文件和资源使用 import_project 完整清单导入；持续修改使用 str_replace 或批量 apply_patch。路径使用 get_document.entry 和 list_files 的原值；报错时按 error.recovery 的指引读取状态并修复，避免盲目重放写请求。
         官方参考：https://developers.openai.com/codex/mcp 和 https://code.claude.com/docs/en/mcp
         """
     }

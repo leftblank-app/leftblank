@@ -37,7 +37,8 @@ use tokio_util::{
 };
 
 const MAX_FRAME: usize = 8 * 1024 * 1024;
-const MAX_BODY: usize = 4 * 1024 * 1024;
+// Leave room for the HTTP/RPC envelope, then reject oversized IPC frames with a tool error.
+const MAX_BODY: usize = MAX_FRAME + 64 * 1024;
 const SESSION_HEADER: &str = "mcp-session-id";
 
 #[derive(Deserialize)]
@@ -85,6 +86,44 @@ impl Drop for PendingCall {
 }
 
 impl Bridge {
+    fn failure(
+        &self,
+        code: &str,
+        message: &str,
+        method: &str,
+        arguments: &Value,
+        state: &str,
+    ) -> Value {
+        let read_only = self
+            .get_tool(method)
+            .and_then(|tool| tool.annotations)
+            .and_then(|annotations| annotations.read_only_hint)
+            .unwrap_or(false);
+        let state = if read_only { "not_applicable" } else { state };
+        let next_call = arguments
+            .get("document_id")
+            .and_then(Value::as_str)
+            .map(|id| json!({"tool":"get_document","arguments":{"document_id":id}}))
+            .unwrap_or_else(|| json!({"tool":"get_app_state","arguments":{}}));
+        let instruction = match code {
+            "payload_too_large" => {
+                "Reduce the request before retrying. import_project files JSON is limited to 6 MiB; exclude generated outputs or reduce resource sizes."
+            }
+            "busy" => "Wait for pending calls to finish, then read current state before retrying.",
+            _ => {
+                "The operation may already have changed the document. Read current state and inspect file revisions and save status before planning remaining work; never replay the write blindly."
+            }
+        };
+        json!({"value":{"error":{
+            "code":code,"message":message,"tool":method,"mutation_state":state,
+            "recovery":{
+                "instructions":instruction,"next_calls":[next_call],
+                "retry":if state == "unknown" { "inspect_state_first" } else { "after_correction" },
+                "request_id":"Use a new request_id after correction or replanning; reuse an ID only for the identical request outcome."
+            }
+        }},"is_error":true})
+    }
+
     /// One bounded, cancellable application bridge for tools, resource reads and prompt rendering.
     async fn forward(
         &self,
@@ -93,6 +132,15 @@ impl Bridge {
         context: RequestContext<RoleServer>,
     ) -> Result<Value, ErrorData> {
         let id = self.serial.fetch_add(1, Ordering::Relaxed);
+        let frame = json!({"id": id, "method": method, "arguments": &arguments}).to_string();
+        if frame.len() >= MAX_FRAME {
+            let mut result = self.failure("payload_too_large",
+                "The request exceeds the 8 MiB bridge frame limit; no operation was sent to the application.",
+                method, &arguments, "not_applied");
+            result["value"]["error"]["maximum_bytes"] = json!(MAX_FRAME - 1);
+            result["value"]["error"]["actual_bytes"] = json!(frame.len());
+            return Ok(result);
+        }
         let (sender, receiver) = oneshot::channel();
         {
             let mut pending = self
@@ -100,9 +148,13 @@ impl Bridge {
                 .lock()
                 .map_err(|_| ErrorData::internal_error("Bridge unavailable", None))?;
             if pending.len() >= 32 {
-                return Ok(
-                    json!({"value":{"error":{"code":"busy","message":"Too many pending requests"}},"is_error":true}),
-                );
+                return Ok(self.failure(
+                    "busy",
+                    "Too many pending requests; no operation was sent.",
+                    method,
+                    &arguments,
+                    "not_applied",
+                ));
             }
             pending.insert(id, sender);
         }
@@ -111,15 +163,23 @@ impl Bridge {
             bridge: self.clone(),
             finished: false,
         };
-        let frame = json!({"id": id, "method": method, "arguments": arguments}).to_string();
-        self.output.send(frame).await.map_err(|_| {
-            ErrorData::internal_error("Bridge disconnected; write result may be unknown", None)
-        })?;
+        if self.output.send(frame).await.is_err() {
+            return Ok(self.failure(
+                "outcome_unknown",
+                "Bridge disconnected; check document state.",
+                method,
+                &arguments,
+                "unknown",
+            ));
+        }
         let value = tokio::select! {
-            result = receiver => result.map_err(|_| ErrorData::internal_error("Bridge disconnected; write result may be unknown", None))?,
-            _ = context.ct.cancelled() => return Err(ErrorData::internal_error("Cancelled; check document state before retrying a write", None)),
-            _ = self.shutdown.cancelled() => return Err(ErrorData::internal_error("Application closed; write result may be unknown", None)),
-            _ = tokio::time::sleep(Duration::from_secs(90)) => return Ok(json!({"value":{"error":{"code":"timeout","message":"Result unknown. Read the document before retrying a write."}},"is_error":true})),
+            result = receiver => match result {
+                Ok(value) => value,
+                Err(_) => return Ok(self.failure("outcome_unknown", "Bridge disconnected; result is unknown.", method, &arguments, "unknown")),
+            },
+            _ = context.ct.cancelled() => return Ok(self.failure("cancelled", "Cancelled; check state before retrying.", method, &arguments, "unknown")),
+            _ = self.shutdown.cancelled() => return Ok(self.failure("outcome_unknown", "Application closed; result is unknown.", method, &arguments, "unknown")),
+            _ = tokio::time::sleep(Duration::from_secs(90)) => return Ok(self.failure("timeout", "Timed out; result is unknown.", method, &arguments, "unknown")),
         };
         call.finished = true;
         Ok(value)
@@ -633,6 +693,28 @@ mod tests {
         assert!(!second.recognizes(&id));
         assert!(!first.recognizes(&format!("{}-1", first.instance)));
         assert!(!first.recognizes("stale"));
+    }
+
+    #[tokio::test]
+    async fn oversized_tool_call_is_rejected_before_ipc_and_helper_stays_usable() {
+        let (port, shutdown) = serve(Sessions::new().unwrap()).await;
+        let auth = format!("Bearer {TOKEN}");
+        let headers = [
+            ("Authorization", auth.as_str()),
+            ("MCP-Protocol-Version", "2025-11-25"),
+        ];
+        let oversized = json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{
+            "name":"get_app_state", "arguments":{"payload":"x".repeat(MAX_FRAME)}}});
+        let (status, _, body) = post(port, oversized, &headers).await;
+        assert_eq!(status, 200);
+        let response: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(response["result"]["isError"], true);
+        let error = &response["result"]["structuredContent"]["error"];
+        assert_eq!(error["code"], "payload_too_large");
+        assert_eq!(error["mutation_state"], "not_applied");
+        assert_eq!(error["recovery"]["retry"], "after_correction");
+        assert_eq!(post(port, list(), &headers).await.0, 200);
+        shutdown.cancel();
     }
 
     #[tokio::test]

@@ -47,7 +47,7 @@ public final class AgentToolDispatcher {
         let compiling = Self.engineTools.contains(name)
         if compiling {
             guard await compiles.acquire(exclusive: true) else {
-                return failure(CancellationError())
+                return AgentToolRecovery.enrich(failure(CancellationError()), tool: name, arguments: arguments)
             }
         }
         defer {
@@ -56,7 +56,7 @@ public final class AgentToolDispatcher {
             }
         }
         guard await gate.acquire(exclusive: exclusive) else {
-            return failure(CancellationError())
+            return AgentToolRecovery.enrich(failure(CancellationError()), tool: name, arguments: arguments)
         }
         defer { gate.release(exclusive: exclusive) }
         do {
@@ -96,15 +96,16 @@ public final class AgentToolDispatcher {
             let result: AgentToolResult
             do { result = try await execute(name, args: args, access: access) }
             catch { result = failure(error) }
+            let recovered = AgentToolRecovery.enrich(result, tool: name, arguments: arguments)
             if let key {
-                cachedWrites[key] = (fingerprint, result)
+                cachedWrites[key] = (fingerprint, recovered)
                 writeOrder.append(key)
                 if writeOrder.count > 256 {
                     cachedWrites.removeValue(forKey: writeOrder.removeFirst())
                 }
             }
-            return result
-        } catch { return failure(error) }
+            return recovered
+        } catch { return AgentToolRecovery.enrich(failure(error), tool: name, arguments: arguments) }
     }
 
     func failure(_ error: Error) -> AgentToolResult {
@@ -138,9 +139,20 @@ public final class AgentToolDispatcher {
             }
             issue = AgentToolError(code, error.localizedDescription)
         } else {
+            let native = error as NSError
+            let missing = native.domain == NSCocoaErrorDomain && [NSFileNoSuchFileError, NSFileReadNoSuchFileError]
+                .contains(native.code) || native.domain == NSPOSIXErrorDomain && native.code == Int(ENOENT)
+            let denied = native.domain == NSCocoaErrorDomain && [
+                NSFileReadNoPermissionError,
+                NSFileWriteNoPermissionError,
+            ]
+            .contains(native.code) || native.domain == NSPOSIXErrorDomain && [Int(EACCES), Int(EPERM)]
+            .contains(native.code)
             issue = AgentToolError(
-                "unavailable",
-                "The document operation could not complete. Check the application state and read again.",
+                missing ? "not_found" : denied ? "filesystem_permission_denied" : "unavailable",
+                missing ? "The requested file or directory no longer exists. List current project paths." :
+                    denied ? "LeftBlank does not have permission to access the requested file or directory." :
+                    "The document operation could not complete. Check the application state and read again.",
             )
         }
         return AgentToolResult(.object(["error": issue.json]), isError: true)
@@ -196,11 +208,25 @@ public final class AgentToolDispatcher {
                 throw error
             }
             await host.agentFinishMetadataChange(document)
+            let data = Data(args.string("source").utf8)
+            let snapshot = AgentProjectSnapshot(root: document.folderURL, files: ["main.typ": data], omitted: [])
+            let projectRevision = projectRevision(snapshot, document: document)
+            var description = metadata(document).objectValues
+            description["project_revision"] = .string(projectRevision)
             return AgentToolResult(.object([
                 "request_id": args["request_id"],
                 "status": .string("applied"),
-                "document": metadata(document),
+                "document": .object(description),
+                "project_revision": .string(projectRevision), "path_base": .string("document_root"),
+                "files": .array([.object([
+                    "path": .string("main.typ"), "before_revision": .null,
+                    "after_revision": .string(revision(data, document: document, path: "main.typ")),
+                    "save_status": .string("saved"),
+                ])]),
             ]))
+        }
+        if name == "import_project" {
+            return try await importProject(args, access: access)
         }
         let document = try await document(args, access: access)
         if ["rename_document", "trash_document", "restore_document"].contains(name) {
@@ -264,7 +290,24 @@ public final class AgentToolDispatcher {
         if name == "get_editor_context" {
             return try editorContext(document)
         }
-        let snapshot = try await capture(document)
+        if name == "get_diagnostics" {
+            let values = host.agentDiagnostics(in: document).filter { item in
+                (args["path"].isNull || item["path"].string == args.string("path")) &&
+                    (args["severity"].isNull || item["severity"].string == args.string("severity"))
+            }
+            var result = try page(
+                values,
+                args: args,
+                name: name,
+                snapshot: AgentTools.digest(AgentTools.canonical(.array(values))),
+                access: access,
+            ).objectValues
+            result["freshness"] = .string("unknown")
+            return AgentToolResult(.object(result))
+        }
+        let paths: Set<String>? = ["read_file", "read_image", "str_replace", "restore_file_version"].contains(name)
+            ? [args.string("path")] : nil
+        let snapshot = try await capture(document, paths: paths)
         let projectRevision = projectRevision(snapshot, document: document)
         switch name {
         case "get_document":
@@ -298,7 +341,7 @@ public final class AgentToolDispatcher {
             let path = args.string("path")
             _ = try AgentProjectFiles.url(path, in: document.folderURL)
             guard let data = snapshot.files[path] else {
-                throw AgentToolError("unavailable", "The file is unavailable or still downloading.")
+                throw unreadable(path, snapshot: snapshot)
             }
             let prepared = try AgentImage.prepare(data)
             return AgentToolResult(.object([
@@ -311,20 +354,6 @@ public final class AgentToolDispatcher {
                 "converted": .bool(prepared.converted),
             ]), images: [prepared.image])
         case "search_text": return try AgentToolResult(search(snapshot, document: document, args: args, access: access))
-        case "get_diagnostics":
-            let values = host.agentDiagnostics(in: document).filter { item in
-                (args["path"].isNull || item["path"].string == args.string("path")) &&
-                    (args["severity"].isNull || item["severity"].string == args.string("severity"))
-            }
-            var result = try page(
-                values,
-                args: args,
-                name: name,
-                snapshot: AgentTools.digest(AgentTools.canonical(.array(values))),
-                access: access,
-            ).objectValues
-            result["freshness"] = .string("unknown")
-            return AgentToolResult(.object(result))
         case "compile_document":
             guard projectRevision == args.string("expected_project_revision") else {
                 throw AgentToolError(
@@ -359,40 +388,49 @@ public final class AgentToolDispatcher {
         }
     }
 
-    /// Why a path has no text in the snapshot. Codes stay stable; hints say what to do instead.
+    /// Missing, unavailable, oversized and binary inputs need different repair steps.
     func unreadable(_ path: String, snapshot: AgentProjectSnapshot) -> AgentToolError {
+        let details: [String: JSONValue] = ["path": .string(path)]
         guard let data = snapshot.files[path] else {
             if snapshot.omitted.contains(path) {
-                return AgentToolError(
-                    "unavailable",
-                    "\(path) is still downloading, or is a symlink or special file that agent tools cannot read.",
-                )
+                do {
+                    let url = try AgentProjectFiles.url(path, in: snapshot.root)
+                    if LibraryCloudEnvironment.state(of: url) == .waitingForDownload {
+                        return AgentToolError(
+                            "download_pending",
+                            "The file is still downloading from iCloud.",
+                            details: details,
+                        )
+                    }
+                    return AgentToolError("unavailable", "The path is a special or unavailable file.", details: details)
+                } catch let error as AgentToolError {
+                    return AgentToolError(error.code, error.message, details: details)
+                } catch {
+                    return AgentToolError("unavailable", "The path cannot currently be accessed.", details: details)
+                }
             }
             return AgentToolError(
                 "not_found",
-                "No file exists at \(path). Use list_files to find project paths.",
-                details: ["suggested_tool": .string("list_files")],
+                "No file exists at the requested document-relative path. Use list_files to find project paths.",
+                details: details.merging(["suggested_tool": .string("list_files")]) { $1 },
             )
         }
         if !data.contains(0), String(data: data, encoding: .utf8) != nil {
             return AgentToolError(
                 "file_too_large",
-                "\(path) is \(data.count) bytes; files over 2 MiB can be read with read_file " +
-                    "(start_line and max_lines) but not edited.",
-                details: ["suggested_tool": .string("read_file")],
+                "The file is \(data.count) bytes; the edit limit is 2 MiB. " +
+                    "Use read_file with start_line and max_lines to read large text in line windows.",
+                details: details.merging(["suggested_tool": .string("read_file"), "bytes": .number(Double(data.count)),
+                                          "maximum_bytes": .number(Double(AgentTools.maximumTextBytes))]) { $1 },
             )
         }
         if AgentImage.isImage(data) {
             return AgentToolError(
-                "not_text",
-                "\(path) is an image. Use read_image to view it.",
-                details: ["suggested_tool": .string("read_image")],
+                "not_text", "The file is an image. Use read_image to view it.",
+                details: details.merging(["suggested_tool": .string("read_image")]) { $1 },
             )
         }
-        return AgentToolError(
-            "not_text",
-            "\(path) is binary or not valid UTF-8 text; only UTF-8 text files can be read or edited as text.",
-        )
+        return AgentToolError("not_text", "The file is binary or not valid UTF-8 text.", details: details)
     }
 
     func document(_ args: AgentArguments, access: AgentToolAccess) async throws -> LibraryDocument {
@@ -402,14 +440,20 @@ public final class AgentToolDispatcher {
         guard let document = try await library.list(includeTrashed: true, allowedDocumentIDs: [id])
             .first(where: { $0.id == id })
         else {
-            throw AgentToolError("not_found", "The document is unavailable.")
+            throw AgentToolError(
+                "not_found",
+                "The document is unavailable.",
+                details: ["resource": .string("document")],
+            )
         }
         return document
     }
 
-    func capture(_ document: LibraryDocument) async throws -> AgentProjectSnapshot {
+    func capture(_ document: LibraryDocument, paths: Set<String>? = nil) async throws -> AgentProjectSnapshot {
         let root = document.folderURL
-        var snapshot = try await Task.detached(priority: .utility) { try AgentProjectFiles.capture(root: root) }.value
+        var snapshot = try await Task.detached(priority: .utility) {
+            try AgentProjectFiles.capture(root: root, paths: paths)
+        }.value
         try Task.checkCancellation()
         guard let current = try await library.list(includeTrashed: true, allowedDocumentIDs: [document.id])
             .first(where: { $0.id == document.id }),
@@ -417,7 +461,7 @@ public final class AgentToolDispatcher {
         else {
             throw AgentToolError("revision_conflict", "The library or document metadata changed.")
         }
-        if let live = try host?.agentLiveText(in: document) {
+        if let live = try host?.agentLiveText(in: document), paths == nil || paths?.contains(live.path) == true {
             snapshot.files[live.path] = Data(live.text.utf8)
         }
         return snapshot
@@ -441,6 +485,8 @@ public final class AgentToolDispatcher {
     func metadata(_ document: LibraryDocument) -> JSONValue {
         .object(["document_id": .string(document.id.uuidString), "title": .string(document.title),
                  "metadata_revision": .string(document.metadataRevision), "entry": .string(entry(document)),
+                 "path_base": .string("document_root"), "typst_root": .string("library_root"),
+                 "typst_document_prefix": .string("/" + document.folderURL.lastPathComponent + "/"),
                  "trashed": .bool(document.isTrashed), "has_conflicts": .bool(document.hasUnresolvedConflicts)])
     }
 

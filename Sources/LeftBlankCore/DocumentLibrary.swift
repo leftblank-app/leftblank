@@ -304,6 +304,29 @@ public actor DocumentLibrary {
         }
     }
 
+    /// Publishes an uploaded project only after every validated file has been written.
+    /// Paths stay relative to the document root, including a nested compilation entry.
+    public func importProject(title: String, manifest: AgentProjectImport) throws -> LibraryDocument {
+        let title = try validatedTitle(title)
+        try Task.checkCancellation()
+        return try createDocument(title: title, sourcePath: manifest.entry) { source in
+            var root = source
+            for _ in manifest.entry.split(separator: "/") {
+                root.deleteLastPathComponent()
+            }
+            for (path, data) in manifest.files.sorted(by: { $0.key < $1.key }) {
+                try Task.checkCancellation()
+                let destination = try AgentProjectFiles.url(path, in: root)
+                try manager.createDirectory(
+                    at: destination.deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                )
+                try data.write(to: destination, options: .atomic)
+            }
+            try Task.checkCancellation()
+        }
+    }
+
     public func exportSource(_ id: UUID, to destination: URL) throws {
         let document = try read(id)
         try CoordinatedFileAccess.write(destination) { target in
@@ -400,7 +423,7 @@ public actor DocumentLibrary {
         )
     }
 
-    private static let metadataName = "document.json"
+    static let metadataName = "document.json"
     private struct Metadata: Codable {
         var schema = 1
         var id: UUID
@@ -610,11 +633,11 @@ public actor DocumentLibrary {
         let final = documents.appendingPathComponent(id.uuidString)
         let staging = documents.appendingPathComponent(".pending-" + id.uuidString)
         let metadata = Metadata(id: id, title: title, createdAt: now(), modifiedAt: now(), sourcePath: sourcePath)
+        defer { try? manager.removeItem(at: staging) }
         try manager.createDirectory(
             at: staging.appendingPathComponent(sourcePath).deletingLastPathComponent(),
             withIntermediateDirectories: true,
         )
-        defer { try? manager.removeItem(at: staging) }
         try populate(staging.appendingPathComponent(sourcePath))
         try JSONEncoder().encode(metadata).write(
             to: staging.appendingPathComponent(Self.metadataName),
