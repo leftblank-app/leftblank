@@ -104,8 +104,7 @@ if result.get("status") != "Accepted":
     raise SystemExit("Apple notarization status: " + str(result.get("status", "unknown")))
 print("Apple notarization accepted: " + result["id"])
 PY
-xcrun stapler staple "$app"
-xcrun stapler validate "$app"
+python3 scripts/staple_app.py "$app"
 codesign --verify --deep --strict "$app"
 spctl --assess --type execute --verbose=2 "$app"
 version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Resources/Info.plist)

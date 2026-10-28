@@ -27,7 +27,10 @@ jobs:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
       - name: Release contracts
-        run: python3 scripts/test-appstore-release.py
+        run: |
+          source scripts/environment.sh
+          python3 scripts/test-appstore-release.py
+          python3 scripts/test-staple-app.py
       - name: Validate source version and tag
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
