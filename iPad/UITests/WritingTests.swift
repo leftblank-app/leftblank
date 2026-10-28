@@ -647,13 +647,22 @@ final class WritingTests: XCTestCase {
         let editor = app.textViews["manuscript"].firstMatch
         focusEndOfShortDocument(editor, in: app)
         let starter = editor.value as? String ?? ""
-        editor.typeText("#align(center)[Hi]")
-        editor.typeKey(.leftArrow, modifierFlags: .command)
-        for _ in 0 ..< 3 {
-            editor.typeKey(.rightArrow, modifierFlags: [])
-        }
-        let original = editor.value as? String
-        expect(original) == starter + "#align(center)[Hi]"
+        // Finish on the function identifier, then select that final word by
+        // touch. Synthesized arrows can leave XCTest waiting for UIKit animations.
+        let source = "#align(center)[Hi]\n#let layout = align"
+        let original = starter + source
+        editor.typeText(source)
+        let frame = editor.frame
+        let keyboard = app.keyboards.firstMatch
+        let bottom = keyboard.exists ? min(frame.maxY, keyboard.frame.minY - 60) : frame.maxY
+        editor.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.width / 2, dy: bottom - frame.minY - 20)).doubleTap()
+        let lines = original.components(separatedBy: "\n")
+        let selected = "\(lines.count - 1):\((lines.last?.utf16.count ?? 0) - "align".utf16.count)"
+        waitForState(NSPredicate { _, _ in
+            editor.value as? String == original
+                && app.staticTexts["source-position"].firstMatch.value as? String == selected
+        }, in: app, name: "Function identifier at cursor")
         app.buttons["document-actions"].firstMatch.tap()
         let assistance = app.buttons["Writing Assistance"]
         waitForStableControl(assistance, in: app)

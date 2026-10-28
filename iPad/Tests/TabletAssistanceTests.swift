@@ -378,16 +378,19 @@ struct TabletAssistanceTests {
 }
 
 extension TabletAssistanceTests {
-    @Test func helpExamplesRenderWithTheEmbeddedEngineAndKeepTheManuscript() async throws {
+    @Test(arguments: [false, true])
+    func helpExamplesRenderWithTheEmbeddedEngineAndKeepTheManuscript(selectedReference: Bool) async throws {
         let (workspace, editor, _, _) = try await fixture()
         defer { workspace.client.stop()
             try? FileManager.default.removeItem(at: workspace.stateDirectory)
         }
         workspace.activeSourceURL = nil
-        let source = "#align(center)[Hi]"
+        let source = "#align(center)[Hi]" + (selectedReference ? "\n#let layout = align" : "")
         let document = try await workspace.library.create(title: "Examples", text: source)
         await workspace.open(document)
-        workspace.selection = NSRange(location: 3, length: 0)
+        workspace.selection = selectedReference
+            ? NSRange(location: source.utf16.count - "align".utf16.count, length: "align".utf16.count)
+            : NSRange(location: 3, length: 0)
         editor.selectedRange = workspace.selection
         let selection = workspace.selection, preview = workspace.previewURL
         workspace.requestAssistance(.help)
